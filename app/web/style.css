@@ -86,6 +86,7 @@ main { max-width: 1680px; margin: 0 auto; padding: 18px 24px 40px; }
 .chat { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .chat-head { height: 41px; padding: 0 14px; border-bottom: 1px solid var(--line); display: flex; gap: 10px; align-items: center; flex: none; }
 .model-select { width: 210px; }
+.model-status { padding: 6px 14px; color: #946200; background: #fff8e6; font-size: 12px; flex: none; }
 .chat-body { flex: 1; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; min-height: 0; background: #fafaf8; }
 .msg { display: flex; gap: 8px; align-items: flex-start; }
 .msg.user { justify-content: flex-end; }

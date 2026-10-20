@@ -150,20 +150,46 @@ export default defineComponent({
     const empty = computed(() => !messages.value.length);
 
     // ----- model picker (global setting: every job uses the chosen model) -----
-    const modelState = ref({ current: "", groups: [], loading: false });
+    const modelState = ref({ current: meta.model || "", groups: [], loading: false, saving: false, error: null });
+    let confirmedModel = meta.model || "";
+    let modelRevision = 0;
+    watch(() => meta.model, (model) => {
+      if (!modelState.value.current) modelState.value.current = confirmedModel = model;
+    });
+    const modelGroups = computed(() => {
+      const { current, groups } = modelState.value;
+      return current && !groups.some((g) => g.models.includes(current))
+        ? [{ label: "当前模型", models: [current] }, ...groups] : groups;
+    });
     const loadModels = async (refresh = false) => {
+      if (modelState.value.loading) return;
+      const revision = modelRevision;
       modelState.value.loading = true;
-      const data = await call(() => api(`/models${refresh ? "?refresh=1" : ""}`));
-      if (data) {
-        modelState.value = { ...data, loading: false };
-        if (data.error) ElMessage.warning(`没能获取 B.AI 的模型列表：${data.error}`);
-      } else modelState.value.loading = false;
+      try {
+        const data = await api(`/models${refresh ? "?refresh=1" : ""}`, { signal: AbortSignal.timeout(10000) });
+        modelState.value.groups = data.groups;
+        modelState.value.error = data.error;
+        if (revision === modelRevision) modelState.value.current = confirmedModel = data.current;
+      } catch (error) {
+        modelState.value.error = error.name === "TimeoutError" ? "获取模型列表超时，请重试" : error.message;
+      } finally {
+        modelState.value.loading = false;
+      }
     };
-    const refreshModels = () => loadModels(true);
+    const refreshModels = (force = false) => loadModels(force);
     const changeModel = async (id) => {
-      const r = await call(() => api("/models/current", { method: "PUT", body: { model: id } }), `已切换到 ${id}`);
-      if (!r) await loadModels();
-      else if (r.unverified) ElMessage.warning("没能核对模型列表，如果这个模型不可用，下一次调用会报错。");
+      modelRevision += 1;
+      modelState.value.saving = true;
+      try {
+        const r = await call(() => api("/models/current", { method: "PUT", body: { model: id }, signal: AbortSignal.timeout(10000) }), `已切换到 ${id}`);
+        if (!r) modelState.value.current = confirmedModel;
+        else {
+          modelState.value.current = confirmedModel = meta.model = r.current;
+          if (r.unverified) ElMessage.warning("已保存模型 ID；BAI 模型列表暂不可用，模型是否可调用尚未验证。");
+        }
+      } finally {
+        modelState.value.saving = false;
+      }
     };
     onMounted(() => loadModels());
     const hint = computed(() => {
@@ -172,21 +198,23 @@ export default defineComponent({
       return "";
     });
 
-    return { view, messages, suggestions, text, file, busy, progress, scroller, samples, empty, hint, modelState, refreshModels, changeModel, send, submit, onKey, onFile, onDrop, quick, useSample, card, question, proposalAccepted, toggleChange, applyProposal, applyRematch, resolve, cardDone, productName, clear, KIND_LABEL, CHANGE_LABEL, meta, jobState };
+    return { view, messages, suggestions, text, file, busy, progress, scroller, samples, empty, hint, modelState, modelGroups, refreshModels, changeModel, send, submit, onKey, onFile, onDrop, quick, useSample, card, question, proposalAccepted, toggleChange, applyProposal, applyRematch, resolve, cardDone, productName, clear, KIND_LABEL, CHANGE_LABEL, meta, jobState };
   },
   template: `
   <div class="chat" @dragover.prevent @drop.prevent="onDrop">
     <div class="chat-head">
       <b>和助手对话</b>
       <span style="flex:1"></span>
-      <el-select v-model="modelState.current" size="small" filterable class="model-select" :loading="modelState.loading"
-        placeholder="选择模型" :disabled="busy" @change="changeModel" @visible-change="(v) => v && refreshModels()" no-data-text="没有可用模型">
-        <el-option-group v-for="g in modelState.groups" :key="g.label" :label="g.label">
+      <el-select v-model="modelState.current" size="small" filterable allow-create class="model-select"
+        placeholder="选择或输入模型 ID" :disabled="busy || modelState.saving" @change="changeModel" @visible-change="(v) => v && refreshModels()" no-data-text="可输入 BAI 模型 ID">
+        <el-option-group v-for="g in modelGroups" :key="g.label" :label="g.label">
           <el-option v-for="m in g.models" :key="m" :label="m" :value="m" />
         </el-option-group>
       </el-select>
+      <el-button link size="small" :loading="modelState.loading" :disabled="modelState.saving" @click="refreshModels(true)">刷新模型</el-button>
       <el-button link size="small" @click="clear" v-if="messages.length">清空</el-button>
     </div>
+    <div v-if="modelState.error" class="model-status" role="status" :title="modelState.error">BAI 模型列表暂不可用，可使用已有选项或输入模型 ID。</div>
 
     <div class="chat-body" ref="scroller">
       <div v-if="empty" class="chat-welcome">

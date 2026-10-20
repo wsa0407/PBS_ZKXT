@@ -1,9 +1,10 @@
 import { reactive } from "vue";
 import { ElMessage } from "element-plus";
 
-export async function api(path, { method = "GET", body } = {}) {
+export async function api(path, { method = "GET", body, signal } = {}) {
   const res = await fetch(`/api${path}`, {
     method,
+    signal,
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });

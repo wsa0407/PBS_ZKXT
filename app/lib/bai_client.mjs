@@ -55,7 +55,20 @@ function config() {
   return { apiKey, baseUrl };
 }
 
-function requestOnce(url, { method, headers, body, proxy }) {
+async function requestOnce(url, { method, headers, body, proxy, timeoutMs }) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await sendRequest(url, { method, headers, body, proxy, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error(`B.AI 请求超时（${timeoutMs / 1000} 秒），请检查服务地址或网络连接`, { cause: error });
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function sendRequest(url, { method, headers, body, proxy, signal }) {
   return new Promise((resolvePromise, reject) => {
     const target = new URL(url);
     const send = (socket) => {
@@ -68,10 +81,12 @@ function requestOnce(url, { method, headers, body, proxy }) {
           servername: target.hostname,
           socket,
           agent: socket ? false : undefined,
+          signal,
         },
         (response) => {
           const chunks = [];
           response.on("data", (chunk) => chunks.push(chunk));
+          response.on("error", reject);
           response.on("end", () => {
             resolvePromise({
               status: response.statusCode || 0,
@@ -96,6 +111,7 @@ function requestOnce(url, { method, headers, body, proxy }) {
       port: gateway.port || 80,
       method: "CONNECT",
       path: `${target.hostname}:443`,
+      signal,
     });
     connectReq.on("connect", (response, socket) => {
       if (response.statusCode !== 200) {
@@ -110,13 +126,14 @@ function requestOnce(url, { method, headers, body, proxy }) {
   });
 }
 
-async function request(method, path, body) {
+async function request(method, path, body, { timeoutMs = 120000 } = {}) {
   const { apiKey, baseUrl } = config();
   const payload = body ? JSON.stringify(body) : undefined;
   const response = await requestOnce(`${baseUrl}${path}`, {
     method,
     proxy: proxyUrl(),
     body: payload,
+    timeoutMs,
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
@@ -129,8 +146,8 @@ async function request(method, path, body) {
   return JSON.parse(response.text);
 }
 
-export async function listModels() {
-  const payload = await request("GET", "/models");
+export async function listModels({ timeoutMs = 8000 } = {}) {
+  const payload = await request("GET", "/models", undefined, { timeoutMs });
   return payload.data.map((item) => item.id);
 }
 

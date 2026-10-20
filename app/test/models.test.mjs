@@ -67,3 +67,43 @@ test("the catalog is grouped, sorted, and keeps embedding models in their own gr
   assert.deepEqual(cat.groups.at(-1).models, ["text-embedding-3-small"]);
   assert.equal(cat.error, null);
 });
+
+test("concurrent catalog requests share one gateway fetch and use the latest selection", async () => {
+  resetDb(":memory:");
+  let complete;
+  let calls = 0;
+  models.setModelSource(() => { calls += 1; return new Promise((resolve) => { complete = resolve; }); });
+  const first = models.modelCatalog();
+  const second = models.modelCatalog({ refresh: true });
+  await Promise.resolve();
+  getDb().prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('chat_model', ?)").run("claude-sonnet-4-6");
+  complete(LISTING);
+  const results = await Promise.all([first, second]);
+  assert.equal(calls, 1);
+  assert.ok(results.every((result) => result.current === "claude-sonnet-4-6"));
+});
+
+test("outages retain cached models, allow manual selection, and recover on explicit refresh", async () => {
+  resetDb(":memory:");
+  let down = false;
+  let calls = 0;
+  models.setModelSource(() => {
+    calls += 1;
+    if (down) throw new Error("network down");
+    return LISTING;
+  });
+  await models.modelCatalog();
+  down = true;
+  const fallback = await models.modelCatalog({ refresh: true });
+  assert.equal(fallback.cached, true);
+  assert.ok(fallback.error);
+  assert.ok(fallback.groups.flatMap((group) => group.models).includes("claude-sonnet-4-6"));
+  const saved = await models.chooseModel("my-private-model");
+  assert.equal(saved.unverified, true);
+  assert.equal(calls, 2, "selection reuses the failure result instead of waiting on another request");
+  down = false;
+  const recovered = await models.modelCatalog({ refresh: true });
+  assert.equal(recovered.error, null);
+  assert.equal(recovered.current, "my-private-model");
+  await assert.rejects(() => models.chooseModel("another-unknown-model"), /列表里没有/);
+});

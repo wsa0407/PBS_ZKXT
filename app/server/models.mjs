@@ -9,13 +9,16 @@ import { badRequest } from "./errors.mjs";
  */
 
 const TTL = 5 * 60 * 1000;
-let cache = { at: 0, ids: [] };
+const FAILURE_TTL = 30 * 1000;
+let cache = { at: 0, ids: [], error: null };
 let fetchModels = listModels;
+let pending = null;
 
 /** Tests inject a fake gateway listing (and clear the cache) so they never touch the network. */
 export function setModelSource(fn) {
   fetchModels = fn ?? listModels;
-  cache = { at: 0, ids: [] };
+  cache = { at: 0, ids: [], error: null };
+  pending = null;
 }
 
 export function selectedModel() {
@@ -40,21 +43,26 @@ export function groupOf(id) {
 }
 
 export async function availableModels({ refresh = false } = {}) {
-  const fresh = Date.now() - cache.at < TTL && cache.ids.length;
-  if (!refresh && fresh) return { ids: cache.ids, cached: true, error: null };
-  try {
-    const ids = [...new Set(await fetchModels())].sort((a, b) => a.localeCompare(b));
-    cache = { at: Date.now(), ids };
-    return { ids, cached: false, error: null };
-  } catch (error) {
-    // Keep serving the last good list; the picker still works with the current model.
-    return { ids: cache.ids, cached: true, error: String(error.message).slice(0, 200) };
-  }
+  const fresh = cache.at && Date.now() - cache.at < (cache.error ? FAILURE_TTL : TTL);
+  if (!refresh && fresh) return { ids: cache.ids, cached: true, error: cache.error };
+  if (pending) return pending;
+  pending = Promise.resolve().then(async () => {
+    try {
+      const ids = [...new Set(await fetchModels())].sort((a, b) => a.localeCompare(b));
+      cache = { at: Date.now(), ids, error: null };
+      return { ids, cached: false, error: null };
+    } catch (error) {
+      // Keep the last good list, and avoid retrying on every selection after an outage.
+      cache = { ...cache, at: Date.now(), error: String(error.message).slice(0, 200) };
+      return { ids: cache.ids, cached: true, error: cache.error };
+    }
+  }).finally(() => { pending = null; });
+  return pending;
 }
 
 export async function modelCatalog(options) {
-  const current = selectedModel();
   const { ids, cached, error } = await availableModels(options);
+  const current = selectedModel();
   const all = ids.includes(current) ? ids : [current, ...ids];
   const groups = new Map();
   for (const id of all) {
@@ -77,7 +85,7 @@ export async function chooseModel(id) {
   if (!model) throw badRequest("请选择模型");
   const { ids, error } = await availableModels();
   // When the gateway list is unavailable we cannot verify; allow it and let the first call report problems.
-  if (ids.length && !ids.includes(model)) throw badRequest(`B.AI 的模型列表里没有「${model}」`);
+  if (!error && ids.length && !ids.includes(model)) throw badRequest(`B.AI 的模型列表里没有「${model}」`);
   getDb().prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('chat_model', ?)").run(model);
   return { current: model, unverified: Boolean(error) };
 }
