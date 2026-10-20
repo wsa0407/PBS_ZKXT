@@ -1,6 +1,7 @@
 import { defineComponent, ref, onMounted } from "vue";
 import { ElMessageBox } from "element-plus";
 import { api, call, fmtTime, meta } from "../api.js";
+import { projectStage } from "../presentation.js";
 
 export default defineComponent({
   setup() {
@@ -16,12 +17,7 @@ export default defineComponent({
     };
     onMounted(load);
 
-    const stageOf = (p) => {
-      if (p.done) return { label: "已完成", type: "success" };
-      if (p.pbs_items) return { label: "PBS 编辑", type: "primary" };
-      if (p.requirements) return { label: "需求审阅", type: "warning" };
-      return { label: "待添加材料", type: "info" };
-    };
+    const stageOf = projectStage;
 
     const create = async () => {
       const p = await call(() => api("/projects", { method: "POST", body: form.value }));
@@ -29,7 +25,7 @@ export default defineComponent({
     };
 
     const remove = async (p) => {
-      await ElMessageBox.confirm(`删除项目「${p.name}」及其所有材料、需求和 PBS？`, "删除项目", { type: "warning", confirmButtonText: "删除" });
+      await ElMessageBox.confirm(`删除项目「${p.name}」及其所有材料、需求、澄清与 PBS？此操作不可恢复。`, "删除项目", { type: "warning", confirmButtonText: "删除" });
       await call(() => api(`/projects/${p.id}`, { method: "DELETE" }), "已删除");
       load();
     };
@@ -40,20 +36,20 @@ export default defineComponent({
   },
   template: `
   <div class="page-head">
-    <div><h1>项目</h1><div class="sub">每个项目从添加材料开始，经过需求审阅、澄清、PBS 编辑，最后导出。</div></div>
+    <div><h1>项目</h1><div class="sub">上传客户材料，理解需求与业务场景，编制 PBS，检查后导出。</div></div>
     <el-button type="primary" @click="form = { name: '', customer: '', industry: '' }; dialog = true">新建项目</el-button>
   </div>
   <el-card shadow="never" body-style="padding:0">
     <el-table :data="projects" v-loading="loading" empty-text="还没有项目，点右上角新建" @row-click="openProject" row-class-name="clickable">
       <el-table-column label="项目" min-width="240">
-        <template #default="{ row }"><b>{{ row.name }}</b><div class="muted">{{ row.customer || '—' }}</div></template>
+        <template #default="{ row }"><button class="text-action" @click.stop="openProject(row)">{{ row.name }}</button><div class="muted">{{ row.customer || '—' }}</div></template>
       </el-table-column>
       <el-table-column prop="industry" label="行业" width="90" />
       <el-table-column label="阶段" width="110">
         <template #default="{ row }"><el-tag :type="stageOf(row).type" size="small">{{ stageOf(row).label }}</el-tag></template>
       </el-table-column>
       <el-table-column label="材料" prop="materials" width="70" align="right" />
-      <el-table-column label="需求（已确认）" width="120" align="right">
+      <el-table-column label="需求（描述已确认）" width="160" align="right">
         <template #default="{ row }">{{ row.requirements }}<span class="muted">（{{ row.confirmed }}）</span></template>
       </el-table-column>
       <el-table-column label="待澄清" prop="open_questions" width="80" align="right" />
@@ -68,7 +64,7 @@ export default defineComponent({
       <el-form-item label="项目名称" required><el-input v-model="form.name" placeholder="例如：某市交警支队道路无人机巡逻" autofocus /></el-form-item>
       <el-form-item label="客户"><el-input v-model="form.customer" placeholder="可选" /></el-form-item>
       <el-form-item label="行业">
-        <el-select v-model="form.industry" placeholder="用于选择行业检查清单" clearable style="width:100%">
+        <el-select v-model="form.industry" placeholder="项目所属行业（可选）" clearable style="width:100%">
           <el-option v-for="i in meta.industries" :key="i" :label="i" :value="i" />
         </el-select>
       </el-form-item>

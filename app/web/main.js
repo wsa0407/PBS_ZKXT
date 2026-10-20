@@ -50,7 +50,7 @@ const Shell = defineComponent({
         <span class="sep">/</span>
         <b class="title">{{ shell.project.name }}</b>
         <span class="muted-light">{{ [shell.project.customer, shell.project.industry].filter(Boolean).join(' · ') }}</span>
-        <el-tag v-if="shell.project.done" type="success" size="small">已完成</el-tag>
+        <el-tag v-if="shell.project.done" type="success" size="small">本轮已完成</el-tag>
         <a href="#" class="rename" @click.prevent="shell.rename && shell.rename()">改名</a>
       </div>
     </header>

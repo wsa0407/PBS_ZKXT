@@ -22,7 +22,7 @@ export default defineComponent({
   <div class="understanding-views" role="tablist" aria-label="需求理解视图">
     <button role="tab" :aria-selected="pane === 'requirements'" :class="{ active: pane === 'requirements' }" @click="open('requirements')"><b>需求条目 <span>{{ view.steps.requirements.total }}</span></b><small>具体要求与原文依据</small></button>
     <button role="tab" :aria-selected="pane === 'scenarios'" :class="{ active: pane === 'scenarios' }" @click="open('scenarios')"><b>业务场景 <span>{{ view.scenarioCoverage.active }}</span></b><small>这些要求支撑什么工作</small></button>
-    <button role="tab" :aria-selected="pane === 'questions'" :class="{ active: pane === 'questions' }" @click="open('questions')"><b>待澄清事项 <span>{{ view.steps.questions.open + view.steps.questions.answered }}</span></b><small>尚未明确或待应用的答复</small></button>
+    <button role="tab" :aria-selected="pane === 'questions'" :class="{ active: pane === 'questions' }" @click="open('questions')"><b>待澄清事项 <span>{{ view.steps.questions.open + view.steps.questions.answered }}</span></b><small>信息缺口与待采纳的答复</small></button>
   </div>
   <Requirements v-if="pane === 'requirements'" />
   <Scenarios v-else-if="pane === 'scenarios'" />

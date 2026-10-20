@@ -1,4 +1,5 @@
 // Excel import/export via exceljs.
+import { exportReview, auditLevelLabel, questionStatusLabel, requirementStatusLabel, impactLabel } from "../web/presentation.js";
 async function excel() {
   try {
     return (await import("exceljs")).default;
@@ -40,7 +41,7 @@ export async function productTemplate(products) {
   [
     "1. 每行一个产品，产品名称必填；按产品名称匹配，已存在的产品会被更新，不存在的会新增。",
     "2. 能力：产品标准功能，每行一条（单元格内 Alt+Enter 换行，也可以用分号分隔）。系统会逐字引用这些条目作为匹配依据。",
-    "3. 限制：产品不包含、不支持或需要定制的内容，每行一条。写得越具体，系统越能准确判断哪些需要外采或自研。",
+    "3. 限制：产品能力边界与使用条件，每行一条。请记录不支持的功能、适配依赖和待验证内容，作为核对选型的依据。",
     "4. 信创适配：操作系统、数据库、芯片等适配情况。系统会用它检查信创类硬性要求。",
     "5. 单位：套、台、架等。软件许可填“套”。",
   ].forEach((line) => help.addRow([line]));
@@ -95,6 +96,16 @@ export async function exportProject(view) {
   const reqByCode = new Map(view.requirements.map((q) => [q.code, q]));
   const segByUid = new Map([...(view.sourceSnapshots ?? []), ...view.segments].map((s) => [s.uid, s]));
 
+  const review = exportReview(view);
+  const check = book.addWorksheet("导出前检查");
+  check.columns = [{ header: "核对事项", key: "label", width: 24 }, { header: "当前情况", key: "text", width: 100 }];
+  check.addRow({ label: "导出版本", text: review.draft ? "当前草稿，仍有待核对内容" : "当前 PBS 版本" });
+  check.addRow({ label: "本轮整理状态", text: view.project.done ? "本轮已完成（人工标记）" : "整理中" });
+  for (const c of review.checks) check.addRow({ label: `${c.count ? "待核对" : "已列示"} · ${c.label}`, text: c.text }).alignment = wrap;
+  check.addRow({ label: "核对口径", text: "需求对应关系、引用文字可定位和本轮完成标记，均不代表产品满足全部要求或客户已验收。具体问题见审核结果。" }).alignment = wrap;
+  if (view.catalog) check.addRow({ label: "方案与 BOM 取值版本", text: view.catalog.snapshot ? "使用已保存版本；与当前项目或目录的差异请核对版本提示。" : "尚未保存版本，使用当前目录与 PBS 计算的预览。" }).alignment = wrap;
+  styleHeader(check);
+
   const pbs = book.addWorksheet("PBS 清单");
   pbs.columns = [
     { header: "编码", key: "code", width: 7 },
@@ -130,9 +141,9 @@ export async function exportProject(view) {
       source: l.source,
       product: l.product_ref ? `${l.product_ref} ${m?.product_name ?? ""}` : "",
       match,
-      qty: l.qty ?? "待估",
+      qty: l.qty ?? "待确认",
       unit: l.unit,
-      qtyBasis,
+      qtyBasis: qtyBasis === "待估" ? "数量依据待确认" : qtyBasis,
       reqs: l.req_ids.map((id) => `${id} ${reqByCode.get(id)?.text ?? ""}`).join("\n"),
       scenes: (l.scenario_ids ?? []).join("、"),
       basis: l.basis_level,
@@ -150,7 +161,7 @@ export async function exportProject(view) {
     { header: "类别", key: "category", width: 8 },
     { header: "优先级", key: "priority", width: 8 },
     { header: "标记", key: "flags", width: 10 },
-    { header: "状态", key: "status", width: 8 },
+    { header: "描述审阅状态", key: "status", width: 16 },
     { header: "承接 PBS", key: "leaves", width: 30 },
   ];
   for (const q of view.requirements.filter((r) => r.status !== "已删除")) {
@@ -163,7 +174,7 @@ export async function exportProject(view) {
       category: q.category,
       priority: q.priority,
       flags: [q.star && "★", q.triangle && "▲", q.inferred && "推断", q.origin !== "系统" && q.origin].filter(Boolean).join(" "),
-      status: q.status,
+      status: requirementStatusLabel(q.status),
       leaves: view.items
         .filter((l) => l.req_ids.includes(q.code))
         .map((l) => `${l.code} ${l.name}`)
@@ -183,7 +194,7 @@ export async function exportProject(view) {
     { header: "未解决问题", key: "questions", width: 50 }, { header: "状态", key: "status", width: 12 }, { header: "版本", key: "revision", width: 8 },
   ];
   for (const s of view.scenarios ?? []) {
-    scenes.addRow({ ...s, actors: s.actors.join("；"), outcomes: s.outcomes.join("；"), boundaries: s.boundaries.join("；"),
+    scenes.addRow({ ...s, status: requirementStatusLabel(s.status), actors: s.actors.join("；"), outcomes: s.outcomes.join("；"), boundaries: s.boundaries.join("；"),
       activities: s.activities.map((a) => a.text + " [" + a.req_ids.join("、") + "]").join("\n"),
       assumptions: s.assumptions.map((a) => a.text + "（" + a.reason + "）").join("\n"),
       requirements: s.links.map((l) => l.req_id + " " + l.role + " " + (reqByCode.get(l.req_id)?.text ?? "")).join("\n"),
@@ -201,13 +212,13 @@ export async function exportProject(view) {
     { header: "问题", key: "question", width: 60 },
     { header: "关联场景", key: "scenario_refs", width: 24 },
     { header: "影响", key: "impact", width: 12 },
-    { header: "状态", key: "status", width: 8 },
+    { header: "处理状态", key: "status", width: 16 },
     { header: "负责人", key: "assignee", width: 10 },
     { header: "客户答复", key: "answer", width: 40 },
     { header: "答复来源", key: "answer_source", width: 10 },
     { header: "待确认建议", key: "suggested_answer", width: 30 },
   ];
-  view.questions.filter((q) => q.status !== "已忽略").forEach((q) => (qs.addRow({ ...q, scenario_refs: (q.scenario_ids ?? []).join("、") }).alignment = wrap));
+  view.questions.filter((q) => q.status !== "已忽略").forEach((q) => (qs.addRow({ ...q, impact: impactLabel(q.impact), status: questionStatusLabel(q.status), scenario_refs: (q.scenario_ids ?? []).join("、") }).alignment = wrap));
   styleHeader(qs);
 
   const params = book.addWorksheet("测算参数");
@@ -226,12 +237,12 @@ export async function exportProject(view) {
     { header: "检查项", key: "type", width: 16 },
     { header: "说明", key: "message", width: 100 },
   ];
-  view.audit.forEach((f) => (risks.addRow(f).alignment = wrap));
+  view.audit.forEach((f) => (risks.addRow({ ...f, level: auditLevelLabel(f.level) }).alignment = wrap));
   styleHeader(risks);
 
   if (view.catalog) {
     const snapshot = view.catalog.snapshot ?? view.catalog.preview;
-    const status = view.catalog.snapshot ? view.catalog.snapshot_stale ? "已存快照待复核" : "已存快照" : "当前展开草稿（未保存快照）";
+    const status = view.catalog.snapshot ? view.catalog.snapshot_stale ? "已保存版本待复核" : "已保存版本" : "当前预览（未保存版本）";
     const solutions = book.addWorksheet("解决方案产品关系");
     solutions.columns = [
       { header: "方案编号", key: "id", width: 18 }, { header: "项目方案", key: "name", width: 32 },

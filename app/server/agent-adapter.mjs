@@ -1,7 +1,7 @@
 import { TOOLS, validateArguments } from "../../agents/pbs/contracts/tools.mjs";
 import { hash } from "../engine/scenario.mjs";
 import { normalize } from "../engine/text.mjs";
-import { unitMatches } from "../engine/extract.mjs";
+import { checkParam } from "../engine/extract.mjs";
 import { getDb, json, now, parse, tx } from "./db.mjs";
 import * as repo from "./repo.mjs";
 import * as svc from "./services.mjs";
@@ -131,8 +131,10 @@ export function localAgentAdapter(projectId, { signal, onProgress = () => {}, ma
         const params = [], rejected = [];
         for (const p of r.params ?? []) {
           const spec = sizing.params[p.name];
-          if (!spec || !normalize(source.text).includes(normalize(p.quote)) || !unitMatches(p.value, spec, p.quote) || spec.keywords?.every((k) => !normalize(source.text).includes(normalize(k)))) rejected.push({ ...p, reason: "参数原文、名称或单位不匹配" });
-          else params.push({ ...p, label: spec.label });
+          const reason = checkParam(p, spec, normalize(source.text));
+          const value = { ...p, label: spec?.label ?? p.name, unit: spec?.unit ?? "" };
+          if (reason) rejected.push({ ...value, reason });
+          else params.push(value);
         }
         const existing = repo.listRequirements(projectId, { includeDeleted: false }).find((v) => v.seg_uid === source.uid && normalize(v.text) === normalize(r.text));
         if (existing) {

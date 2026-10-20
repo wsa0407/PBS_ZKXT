@@ -13,12 +13,12 @@ export function runAudit({ doc, requirements, missedSegments, leaves, template, 
   }
 
   for (const req of findUncovered(requirements, leaves)) {
-    add(req.star || req.triangle ? "阻断" : "警告", "必须需求未覆盖", `${req.id}「${req.text}」没有任何 PBS 项承接`, [req.id]);
+    add(req.star || req.triangle ? "阻断" : "警告", "必须需求尚无 PBS 对应项", `${req.id}「${req.text}」尚未关联 PBS 项，请补充对应交付项或核对需求范围`, [req.id]);
   }
 
   const present = new Set(leaves.map((l) => l.parent));
   for (const group of template.level1.filter((l) => l.required)) {
-    if (!present.has(group.code)) add("警告", "模板必备分类缺失", `一级分类「${group.code} ${group.name}」没有任何项`);
+    if (!present.has(group.code)) add("警告", "PBS 分类待核对", `参考分类「${group.code} ${group.name}」暂无条目，请结合本项目范围判断是否需要补充`);
   }
 
   for (const param of Object.values(resolved)) {
@@ -30,7 +30,7 @@ export function runAudit({ doc, requirements, missedSegments, leaves, template, 
   }
 
   for (const leaf of leaves) {
-    if (leaf.sizing?.error) add("警告", "测算缺参数", `「${leaf.code} ${leaf.name}」${leaf.sizing.error}，数量待估`, [leaf.code]);
+    if (leaf.sizing?.error) add("警告", "测算缺参数", `「${leaf.code} ${leaf.name}」${leaf.sizing.error}，数量待确认，请补充测算依据`, [leaf.code]);
   }
 
   for (const { rule, reason } of missingRules(doc.fullText, resolved, sizing, leaves)) {
@@ -40,12 +40,12 @@ export function runAudit({ doc, requirements, missedSegments, leaves, template, 
   for (const id of missedSegments) add("提示", "片段未抽取", `原文片段 ${id} 没有抽取出任何需求，请人工检查`);
 
   for (const req of requirements.filter((r) => !r.quoteVerified)) {
-    add("提示", "原文引用未通过校验", `${req.id} 的引用在原文片段 ${req.seg_id} 中找不到，可能是模型改写`, [req.id]);
+    add("提示", "原文依据待核对", req.seg_id ? `${req.id} 尚无可在原文片段 ${req.seg_id} 中定位的引用，请核对需求表述与出处` : `${req.id} 暂无可定位的原文引用，请核对人工来源说明及需求表述`, [req.id]);
   }
 
   for (const req of requirements) {
     for (const p of req.rejectedParams) {
-      add("提示", "参数被规则拦截", `模型从 ${req.seg_id} 抽取「${p.label}=${p.value}」（引用：${p.quote ?? "无"}），${p.reason}，未用于测算`, [req.id]);
+      add("提示", "参数未用于数量测算", `${req.id} 的候选参数「${p.label ?? p.name}=${p.value}${p.unit ?? ""}」（引用：${p.quote ?? "无"}）未采用：${p.reason}。需求仍保留；请核对原文或人工指定确认值`, [req.id]);
     }
   }
 
@@ -53,7 +53,7 @@ export function runAudit({ doc, requirements, missedSegments, leaves, template, 
   for (const issue of issues) add("提示", issue.type, issue.message, issue.refs);
 
   for (const leaf of leaves.filter((l) => l.qty === null && !l.sizing?.error)) {
-    add("提示", "数量待估", `「${leaf.code} ${leaf.name}」没有规则或原文数量，需要人工估算`, [leaf.code]);
+    add("提示", "数量待确认", `「${leaf.code} ${leaf.name}」暂无可用的数量依据，请补充原文、确认测算参数或人工指定数量`, [leaf.code]);
   }
 
   const stars = requirements.filter((r) => r.star);
@@ -62,7 +62,7 @@ export function runAudit({ doc, requirements, missedSegments, leaves, template, 
     add("阻断", "★ 条款未抽取", `★ 条款 ${seg.id}「${seg.text.slice(0, 40)}」没有抽取出需求，请人工补充`);
   }
   if (starSegs.length) {
-    add("提示", "废标条款", `共 ${starSegs.length} 条 ★ 条款，任一未响应即无效投标，已全部列入必审`, stars.map((r) => r.id));
+    add("提示", "★ 标注条款", `材料中有 ${starSegs.length} 条 ★ 标注条款，已列为重点核对。标记含义及响应要求请以本招标文件说明为准`, stars.map((r) => r.id));
   }
 
   const order = { 阻断: 0, 警告: 1, 提示: 2 };

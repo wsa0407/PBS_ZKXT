@@ -198,7 +198,8 @@ export function computeState(projectId, { reason = "", persist = true } = {}) {
   const config = catalog.runtimeConfig(projectId);
   const { sizing, template } = config;
   const project = repo.getProject(projectId);
-  const allReqs = repo.listRequirements(projectId);
+  const parameterLabel = (p) => ({ ...p, label: sizing.params[p.name]?.label ?? p.label ?? p.name, unit: sizing.params[p.name]?.unit ?? p.unit ?? "" });
+  const allReqs = repo.listRequirements(projectId).map((r) => ({ ...r, params: r.params.map(parameterLabel), rejected_params: r.rejected_params.map(parameterLabel) }));
   const active = allReqs.filter((r) => r.status !== "已删除");
   const engineReqs = active.map(engineReq);
   const segments = repo.listSegments(projectId);

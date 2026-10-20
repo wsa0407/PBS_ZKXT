@@ -41,7 +41,7 @@ export default defineComponent({
 
     const remove = async (m) => {
       await ElMessageBox.confirm(`移除材料「${m.title}」？已有需求和历史依据会保留，关联内容将提示来源失效、需要复核。`, "移除材料", { type: "warning" });
-      await call(() => api(`/projects/${id}/materials/${m.id}`, { method: "DELETE" }), "已删除");
+      await call(() => api(`/projects/${id}/materials/${m.id}`, { method: "DELETE" }), "材料已移除");
       reload();
     };
 
@@ -63,12 +63,12 @@ export default defineComponent({
       <template #header><b>上传客户材料</b><p class="muted" style="margin:6px 0 0">上传文件或粘贴原文，再补充这份材料的背景和关注点。</p></template>
       <el-form label-position="top">
         <label v-if="!form.file" class="material-upload" @dragover.prevent @drop.prevent="onDrop">
-          <b>点击上传或将文件拖到这里</b><span class="muted">{{ meta.fileTypes.join(' / ') }}</span>
+          <b>点击上传或拖入一个文件</b><span class="muted">{{ meta.fileTypes.join(' / ') }}</span>
           <input type="file" hidden :accept="meta.fileTypes.join(',')" @change="onFile" />
         </label>
         <div v-else class="file-chip">📄 {{ form.file.name }} <el-button link type="danger" @click="form.file = null">移除文件</el-button></div>
         <el-collapse v-if="!form.file" style="margin-bottom:16px"><el-collapse-item title="或粘贴材料原文" name="text">
-          <el-input v-model="form.text" type="textarea" :rows="7" placeholder="粘贴客户原话、会议记录或文件内容……" />
+          <el-input v-model="form.text" type="textarea" :rows="7" placeholder="粘贴客户原话、会议记录或文件内容（至少 20 字）……" />
         </el-collapse-item></el-collapse>
         <el-form-item label="材料标题（可选）"><el-input v-model="form.title" placeholder="上传文件后自动填入，也可以修改" /></el-form-item>
         <el-form-item label="补充说明（可选）"><el-input v-model="form.description" type="textarea" :rows="2" placeholder="例如：这是客户最新补充，重点关注部署要求。" /></el-form-item>
@@ -85,23 +85,23 @@ export default defineComponent({
     <el-card shadow="never">
       <template #header>
         <div class="row"><b>已添加的材料（{{ materials.length }}）</b><span style="flex:1"></span>
-          <el-button v-if="materials.length && !pending" :disabled="view.job?.status === '处理中'" @click="analyze(true)">重新理解</el-button>
+          <el-button v-if="materials.length && !pending" :disabled="view.job?.status === '处理中'" @click="analyze(true)">重新理解全部材料</el-button>
           <el-button type="primary" :disabled="!pending || view.job?.status === '处理中'" @click="analyze(false)">{{ pending ? '理解材料（' + pending + ' 份待处理）' : '没有待处理材料' }}</el-button>
         </div>
       </template>
-      <div v-if="!materials.length" class="empty">先在左边添加材料</div>
+      <div v-if="!materials.length" class="empty">先在上方上传文件或粘贴原文</div>
       <div v-for="m in materials" :key="m.id" class="material">
         <div class="material-head">
           <el-tag size="small" type="info">材料{{ m.no }}</el-tag>
-          <b class="clickable title" :title="m.title" @click="show(m)">{{ m.title }}</b>
+          <button class="text-action title" :title="'查看材料原文：' + m.title" @click="show(m)">{{ m.title }}</button>
           <el-tag size="small" :type="m.extracted_at ? 'success' : 'warning'">{{ m.extracted_at ? '原文已处理' : '待理解' }}</el-tag>
-          <el-button link type="danger" @click="remove(m)">删除</el-button>
+          <el-button link type="danger" @click="remove(m)">移除材料</el-button>
         </div>
         <div class="muted">{{ m.file_name || '粘贴的原文' }} · {{ fmtTime(m.created_at) }}</div>
         <div v-if="m.meta.description" class="material-description">{{ m.meta.description }}</div>
       </div>
       <el-alert v-if="materials.length" type="info" :closable="false" style="margin-top:12px"
-        title="已经人工确认、修改或新增的需求，重新抽取时不会被覆盖。" />
+        title="已经人工确认、修改或新增的需求，重新理解时会保留。" />
     </el-card>
   </div>
 

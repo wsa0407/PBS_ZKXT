@@ -53,7 +53,7 @@ ${JSON.stringify(scenarios.filter((s) => question.scenario_ids?.includes(s.code)
   for (const c of data.changes ?? []) {
     const quoteOk = Boolean(c.quote) && answerText.includes(normalize(c.quote));
     const base = { quote: String(c.quote ?? ""), quoteVerified: quoteOk };
-    if (!quoteOk) { dropped.push("建议引用不在客户答复中，已拦截"); continue; }
+    if (!quoteOk) { dropped.push("引用与客户答复原文不一致，未形成可采纳的变更"); continue; }
     if (c.type === "update_scenario") {
       const scene = scenarios.find((s) => s.code === c.code && question.scenario_ids?.includes(s.code));
       if (!scene || !validFieldPath(c.field_path ?? "") || c.field_path.includes(".") || ["name"].includes(c.field_path)) { dropped.push("场景或变更字段无效"); continue; }

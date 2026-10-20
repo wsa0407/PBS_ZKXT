@@ -84,8 +84,11 @@ main { max-width: 1680px; margin: 0 auto; padding: 18px 24px 40px; }
 .work-body { flex: 1; overflow: auto; padding: 12px 2px 24px; min-height: 0; }
 
 .chat { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.chat-head { height: 41px; padding: 0 14px; border-bottom: 1px solid var(--line); display: flex; gap: 10px; align-items: center; flex: none; }
-.model-select { width: 210px; }
+.chat-head { padding: 8px 14px; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px 12px; align-items: center; flex: none; }
+.chat-head > b { white-space: nowrap; }
+.chat-head > span { display: none; }
+.chat-head .el-button { margin-left: 0; }
+.model-select { grid-column: 1 / -1; grid-row: 2; width: 100%; }
 .model-status { padding: 6px 14px; color: #946200; background: #fff8e6; font-size: 12px; flex: none; }
 .chat-body { flex: 1; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; min-height: 0; background: #fafaf8; }
 .msg { display: flex; gap: 8px; align-items: flex-start; }
@@ -216,6 +219,15 @@ tr.detail td { background: #f4f8fd; padding: 0 10px 12px 28px; }
 .check.ok { color: #067647; }
 .event { padding: 3px 0; font-size: 13px; }
 .draft-item { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
+.param-not-used { color: #925d16; background: #fffaeb; border-radius: 4px; margin-top: 6px; padding: 6px 8px; line-height: 1.5; }
+.export-check { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); padding: 10px 0; color: #925d16; }
+.export-check.ok { color: var(--ink-2); }
+.export-check b { display: block; margin-bottom: 3px; }
+.export-check .el-button { flex-shrink: 0; }
+.evidence-toggle { border: 0; background: transparent; color: var(--muted); padding: 2px; cursor: pointer; }
+.evidence-toggle[aria-expanded="true"] { transform: rotate(90deg); }
+.text-action { border: 0; background: transparent; padding: 0; font: inherit; font-weight: 600; color: inherit; text-align: left; cursor: pointer; }
+.text-action:hover { text-decoration: underline; }
 
 @media (max-width: 900px) {
   .page-head { flex-direction: column; align-items: stretch; }

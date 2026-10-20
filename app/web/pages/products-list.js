@@ -123,17 +123,18 @@ export default defineComponent({
   },
   template: `
   <div class="page-head">
-    <div><h2>产品目录</h2><div class="sub">共 {{ shown.length }} 个当前筛选产品。拆解时系统先从这里和产品手册中检索，再让模型匹配；“能力”和“限制”写得越具体，匹配越准。</div></div>
+    <div><h2>产品目录</h2><div class="sub">共 {{ shown.length }} 个当前筛选产品。拆解时系统先从这里和产品手册中检索，再让模型匹配；请具体记录能力、边界与适配条件，匹配结果仍需结合客户要求核对。</div></div>
     <div class="actions">
       <el-checkbox v-model="includeArchived">显示已归档</el-checkbox>
       <el-input v-model="kw" placeholder="搜索产品" clearable style="width:180px" />
-      <a href="/api/products/template.xlsx"><el-button>下载 Excel 模板</el-button></a>
-      <el-button @click="importExcel">导入 Excel</el-button>
+      <a href="/api/products/template.xlsx"><el-button>导出产品表（可回填）</el-button></a>
+      <el-button title="按产品名称匹配：同名更新、不同名新增；导入后直接生效。请先导出产品表留存。" @click="importExcel">导入产品表</el-button>
       <el-button @click="uploadManual(null)">上传产品手册</el-button>
       <el-button type="primary" @click="edit(null)">新增产品</el-button>
     </div>
   </div>
 
+  <p class="muted">产品表包含当前目录，可编辑后回填；导入按名称更新，同名内容会直接生效。整包变更请使用“数据包维护”的预览导入。</p>
   <el-alert v-if="pendingDocs.length" type="warning" :closable="false" show-icon style="margin-bottom:12px" title="有手册等待确认入库">
     <div v-for="d in pendingDocs" :key="d.id">《{{ d.name }}》{{ d.status }} <el-button v-if="d.status === '待确认'" link type="primary" @click="openDraft(d.id)">查看模型整理的草稿</el-button><el-button link type="danger" @click="removeDoc(d)">删除</el-button></div>
   </el-alert>
@@ -146,7 +147,7 @@ export default defineComponent({
       <el-table-column label="能力（匹配依据）" min-width="260">
         <template #default="{ row }"><el-tag v-for="c in row.capabilities" :key="c" type="success" size="small" class="wrap">{{ c }}</el-tag></template>
       </el-table-column>
-      <el-table-column label="限制（拆出外采/自研的依据）" min-width="260">
+      <el-table-column label="能力边界与使用条件" min-width="260">
         <template #default="{ row }"><el-tag v-for="c in row.limits" :key="c" type="warning" size="small" class="wrap">{{ c }}</el-tag><span v-if="!row.limits.length" class="muted">—</span></template>
       </el-table-column>
       <el-table-column label="产品属性" width="180"><template #default="{ row }"><el-tag size="small">{{ row.metadata?.delivery_source || '自有产品' }}</el-tag><div>{{ row.metadata?.kind || '未分类' }} · {{ row.metadata?.availability || '待核实' }}</div><div class="muted">{{ row.metadata?.data_kind }}</div><el-tag v-if="row.metadata?.active === false" type="info" size="small">已归档</el-tag></template></el-table-column>
@@ -163,8 +164,8 @@ export default defineComponent({
     </el-table>
   </el-card>
 
-  <el-card shadow="never" style="margin-top:16px">
-    <template #header><b>检索测试</b><span class="muted" style="margin-left:8px">输入一句需求，看系统会检索到哪些产品资料</span></template>
+  <el-collapse style="margin-top:16px"><el-collapse-item title="核对产品资料检索（目录维护用）" name="search">
+    <p class="muted">输入一条客户要求，查看可用的产品资料；检索命中不代表产品已满足要求。</p>
     <div class="row"><el-input v-model="probe.query" placeholder="例如：夜间能发现路面上的事故和违停" @keyup.enter="search" /><el-button type="primary" :loading="probe.busy" :disabled="!probe.query.trim()" @click="search">检索</el-button></div>
     <el-alert v-if="probe.result && probe.result.mode.kind !== 'hybrid'" type="info" :closable="false" style="margin-top:10px" :title="'当前为关键词检索：' + probe.result.mode.reason" />
     <div v-if="probe.result" style="margin-top:10px">
@@ -175,7 +176,7 @@ export default defineComponent({
       </div>
       <div v-if="!probe.result.hits.length" class="muted">没有检索到相关资料</div>
     </div>
-  </el-card>
+  </el-collapse-item></el-collapse>
 
   <el-dialog :model-value="!!editing" @close="editing = null" :title="editing?.id ? '编辑产品 ' + editing.id : '新增产品'" width="720px">
     <el-form v-if="editing" label-position="top">
@@ -183,7 +184,7 @@ export default defineComponent({
       <el-form-item label="简介"><el-input v-model="editing.summary" /></el-form-item>
       <div class="grid-2">
         <el-form-item label="能力（每行一条）"><el-input v-model="editing.capabilities" type="textarea" :rows="8" /></el-form-item>
-        <el-form-item label="限制（每行一条：不包含、不支持、需定制或外购的内容）"><el-input v-model="editing.limits" type="textarea" :rows="8" /></el-form-item>
+        <el-form-item label="能力边界与使用条件（每行一条）"><el-input v-model="editing.limits" type="textarea" :rows="8" /></el-form-item>
       </div>
       <div class="grid-2">
         <el-form-item label="产品类型"><el-select v-model="editing.metadata.kind" allow-create filterable><el-option v-for="k in ['软件','硬件','载荷','组合硬件','定制开发','基础设施','服务']" :key="k" :value="k" :label="k" /></el-select></el-form-item>
@@ -191,8 +192,8 @@ export default defineComponent({
         <el-form-item label="供给状态"><el-input v-model="editing.metadata.availability" placeholder="现有 / 需采购 / 待研发 / 待验证" /></el-form-item>
         <el-form-item label="数据性质"><el-input v-model="editing.metadata.data_kind" /></el-form-item>
         <el-form-item label="数量口径"><el-select v-model="editing.metadata.quantity_policy"><el-option value="unknown" label="按原文、规则或人工确认" /><el-option v-if="editing.metadata.kind === '软件'" value="single_license" label="明确按一套软件许可计量" /></el-select></el-form-item>
-        <el-form-item label="交付前需专项验证"><el-switch v-model="editing.metadata.requires_validation" /></el-form-item>
-        <el-form-item label="启用匹配"><el-switch v-model="editing.metadata.active" /></el-form-item>
+        <el-form-item label="标记待专项验证（不自动执行）"><el-switch v-model="editing.metadata.requires_validation" /></el-form-item>
+        <el-form-item label="启用产品匹配（关闭即归档）"><el-switch v-model="editing.metadata.active" /></el-form-item>
       </div>
       <el-form-item label="适配条件（每行一条）"><el-input v-model="editing.compatibilityText" type="textarea" :rows="3" /></el-form-item>
       <el-form-item label="交付物（每行一条）"><el-input v-model="editing.deliverablesText" type="textarea" :rows="3" /></el-form-item>
@@ -219,20 +220,20 @@ export default defineComponent({
           <div>
             <b>能力（{{ draft.form.capabilities.length }}）</b>
             <div v-for="(c, i) in draft.form.capabilities" :key="'c' + i" class="draft-item">
-              <el-checkbox v-model="c.keep" /><el-input v-model="c.text" size="small" /><el-tooltip :content="c.verified ? '引用已在手册中核实' : '手册中找不到这段引用'"><span>{{ c.verified ? '✓' : '⚠' }}</span></el-tooltip>
+              <el-checkbox v-model="c.keep" /><el-input v-model="c.text" size="small" /><el-tooltip :content="c.verified ? '引用文字可在手册定位，能力是否满足需求仍需核对' : '手册中找不到这段引用'"><span>{{ c.verified ? '✓' : '⚠' }}</span></el-tooltip>
             </div>
           </div>
           <div>
             <b>限制（{{ draft.form.limits.length }}）</b>
             <div v-for="(c, i) in draft.form.limits" :key="'l' + i" class="draft-item">
-              <el-checkbox v-model="c.keep" /><el-input v-model="c.text" size="small" /><el-tooltip :content="c.verified ? '引用已在手册中核实' : '手册中找不到这段引用'"><span>{{ c.verified ? '✓' : '⚠' }}</span></el-tooltip>
+              <el-checkbox v-model="c.keep" /><el-input v-model="c.text" size="small" /><el-tooltip :content="c.verified ? '引用文字可在手册定位，能力是否满足需求仍需核对' : '手册中找不到这段引用'"><span>{{ c.verified ? '✓' : '⚠' }}</span></el-tooltip>
             </div>
-            <div v-if="!draft.form.limits.length" class="muted">手册中没有写明限制。建议补充，否则系统无法判断哪些需求要外采或自研。</div>
+            <div v-if="!draft.form.limits.length" class="muted">未整理出能力边界，不代表产品无限制。请补充不支持的功能、适配条件及需验证的内容。</div>
           </div>
         </div>
         <div v-if="draft.doc.draft.truncated" class="muted">手册较长，模型只阅读了前 24000 字。</div>
       </el-form>
     </template>
-    <template #footer><el-button @click="draft = null">稍后确认</el-button><el-button type="primary" :disabled="!draft?.form.name.trim()" @click="confirmDraft">确认入库</el-button></template>
+    <template #footer><el-button @click="draft = null">稍后确认</el-button><el-button type="primary" :disabled="!draft?.form.name.trim()" @click="confirmDraft">采纳所选并入库</el-button></template>
   </el-dialog>`,
 });

@@ -56,7 +56,9 @@ export function unitMatches(value, spec, quote) {
   );
 }
 
-function checkParam(p, spec, segText) {
+export function checkParam(p, spec, segText) {
+  if (!spec) return "参数名称不在当前测算参数表中";
+  if (!Number.isFinite(Number(p.value))) return "参数值不是有效数字";
   if (!p.quote || !segText.includes(normalize(p.quote))) return "参数引用不在原文中";
   if (!unitMatches(Number(p.value), spec, p.quote)) return `原文中 ${p.value} 后面不是单位「${(spec.units ?? [spec.unit]).join("/")}」`;
   if (spec.keywords && !spec.keywords.some((k) => segText.includes(normalize(k)))) {

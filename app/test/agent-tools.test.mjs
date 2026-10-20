@@ -75,6 +75,8 @@ test("cancellation prevents later business writes", async () => {
 test("model-supplied parameters with fabricated units are rejected independently of the requirement", async () => {
   const out = await submit([req({ params: [{ name: "road_km", value: 12, quote: "12公里" }] })]);
   assert.equal(out.data.accepted[0].rejected_params.length, 1);
+  assert.equal(out.data.accepted[0].rejected_params[0].label, svc.projectView(id).params.find((p) => p.name === "road_km").label);
+  assert.equal(out.data.accepted[0].rejected_params[0].reason, "参数引用不在原文中");
   assert.deepEqual(repo.listRequirements(id)[0].params, []);
 });
 

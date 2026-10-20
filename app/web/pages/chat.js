@@ -1,6 +1,7 @@
 import { computed, defineComponent, inject, nextTick, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { api, call, fileToBase64, jobState, meta } from "../api.js";
+import { scenarioFieldLabel, scenarioValue } from "../ui.js";
 
 const KIND_LABEL = { tender: "招标文件", minutes: "会议纪要", oral: "用户描述", other: "其他材料" };
 const CHANGE_LABEL = { set_param: "设定参数", update_requirement: "修改需求", add_requirement: "新增需求", remove_requirement: "删除需求", update_scenario: "修改场景" };
@@ -135,6 +136,7 @@ export default defineComponent({
     const applyProposal = async (m, i) => {
       const c = card(m, i);
       if (question(c)?.proposal?.changes.some((change) => change.conflict)) return props.open("questions");
+      if (!proposalAccepted(m, i).length) await ElMessageBox.confirm("本次不更新需求、场景或参数，并将该澄清记为已处理。", "记录不变更", { confirmButtonText: "记录并结束处理", cancelButtonText: "返回审阅" });
       const res = await call(() => api(`/projects/${id}/questions/${c.question_id}/apply`, { method: "POST", body: { accepted: proposalAccepted(m, i) } }));
       if (res) {
         await resolve(m, i, "accept");
@@ -152,9 +154,9 @@ export default defineComponent({
 
     const productName = (ref) => meta.products?.[ref] ?? view.value.items.find((x) => x.product_ref === ref)?.match?.product_name ?? ref;
     const describeChange = (a) => {
-      if (a.type === "set_param") return `${meta.params?.find((p) => p.name === a.name)?.label ?? a.name} → ${a.value ?? "按材料取值"}`;
+      if (a.type === "set_param") return `${meta.params?.find((p) => p.name === a.name)?.label ?? a.name} → ${a.value ?? "取消指定，按来源重新取值"}`;
       const fields = [["对象", a.code ?? (a.id ? view.value.items.find((i) => i.id === a.id)?.name : null)], ["内容", a.text], ["名称", a.name], ["数量", a.qty], ["来源", a.source], ["优先级", a.priority], ["类别", a.category], ["原因", a.reason]];
-      if (a.scope) fields.push(["范围", a.scope === "all" ? "全部" : "可批量确认的需求"]);
+      if (a.scope) fields.push(["范围", a.scope === "all" ? "全部" : "当前规则列为常规核对的待审需求"]);
       if (a.codes?.length) fields.push(["需求/场景", a.codes.join("、")]);
       if (a.ids?.length) fields.push(["PBS项", a.ids.map((id) => view.value.items.find((i) => i.id === id)?.name ?? id).join("、")]);
       return fields.filter(([, v]) => v !== undefined && v !== null).map(([label, v]) => `${label}：${v}`).join("；") || "请核对后应用此项变更";
@@ -218,7 +220,7 @@ export default defineComponent({
       return "";
     });
 
-    return { view, messages, suggestions, text, file, busy, progress, stopping, stop, scroller, samples, empty, hint, modelState, modelGroups, refreshModels, changeModel, send, submit, onKey, onFile, onDrop, quick, useSample, card, question, proposalAccepted, toggleChange, applyProposal, applyRematch, resolve, cardDone, productName, describeChange, clear, KIND_LABEL, CHANGE_LABEL, meta, jobState };
+    return { view, messages, suggestions, text, file, busy, progress, stopping, stop, scroller, samples, empty, hint, modelState, modelGroups, refreshModels, changeModel, send, submit, onKey, onFile, onDrop, quick, useSample, card, question, proposalAccepted, toggleChange, applyProposal, applyRematch, resolve, cardDone, productName, describeChange, clear, KIND_LABEL, CHANGE_LABEL, meta, jobState, scenarioFieldLabel, scenarioValue };
   },
   template: `
   <div class="chat" @dragover.prevent @drop.prevent="onDrop">
@@ -226,13 +228,13 @@ export default defineComponent({
       <b>和助手对话</b>
       <span style="flex:1"></span>
       <el-select v-model="modelState.current" size="small" filterable allow-create class="model-select"
-        placeholder="选择或输入模型 ID" :disabled="busy || modelState.saving" @change="changeModel" @visible-change="(v) => v && refreshModels()" no-data-text="可输入 BAI 模型 ID">
+        title="全局默认模型，后续处理任务将使用此模型" placeholder="选择或输入模型 ID" :disabled="busy || modelState.saving" @change="changeModel" @visible-change="(v) => v && refreshModels()" no-data-text="可输入 BAI 模型 ID">
         <el-option-group v-for="g in modelGroups" :key="g.label" :label="g.label">
           <el-option v-for="m in g.models" :key="m" :label="m" :value="m" />
         </el-option-group>
       </el-select>
-      <el-button link size="small" :loading="modelState.loading" :disabled="modelState.saving" @click="refreshModels(true)">刷新模型</el-button>
-      <el-button link size="small" @click="clear" v-if="messages.length">清空</el-button>
+      <el-button link size="small" :loading="modelState.loading" :disabled="modelState.saving" @click="refreshModels(true)">刷新模型列表</el-button>
+      <el-button link size="small" @click="clear" v-if="messages.length">清空对话</el-button>
     </div>
     <div v-if="modelState.error" class="model-status" role="status" :title="modelState.error">BAI 模型列表暂不可用，可使用已有选项或输入模型 ID。</div>
 
@@ -262,8 +264,8 @@ export default defineComponent({
               <div class="mc-title">{{ c.text }}</div>
               <div class="content">{{ describeChange(c.action) }}</div>
               <div class="mc-actions" v-if="!cardDone(c)">
-                <el-button size="small" type="primary" @click="resolve(m, i, 'accept')">应用变更</el-button>
-                <el-button size="small" @click="resolve(m, i, 'dismiss')">先不应用</el-button>
+                <el-button size="small" type="primary" @click="resolve(m, i, 'accept')">采纳并更新</el-button>
+                <el-button size="small" @click="resolve(m, i, 'dismiss')">不采纳此建议</el-button>
               </div>
               <div v-else class="muted">{{ c.note }}</div>
             </div>
@@ -271,27 +273,28 @@ export default defineComponent({
             <div v-else-if="c.kind === 'proposal' && question(c)" class="mini-card">
               <div class="mc-title">客户答复带来的变更 <span class="muted">Q{{ c.question_id }}</span></div>
               <div class="muted">{{ question(c).proposal?.summary }}</div>
-              <div v-if="!(question(c).proposal?.changes || []).length" class="muted">只是确认现有内容，没有需要变更的地方。</div>
+              <div v-if="!(question(c).proposal?.changes || []).length" class="muted">未形成可直接采纳的变更建议，请核对答复内容。</div>
               <div v-for="(ch, k) in (question(c).proposal?.changes || [])" :key="k" class="change">
-                <el-checkbox v-if="!cardDone(c)" :model-value="proposalAccepted(m, i).includes(k)" @change="(v) => toggleChange(m, i, k, v)" />
+                <el-checkbox v-if="!cardDone(c)" :disabled="!ch.quoteVerified" :model-value="proposalAccepted(m, i).includes(k)" @change="(v) => toggleChange(m, i, k, v)" />
                 <div style="flex:1">
                   <el-tag size="small">{{ CHANGE_LABEL[ch.type] }}</el-tag>
                   <template v-if="ch.type === 'set_param'"> {{ ch.label }}：{{ ch.before ?? '未知' }} → <b>{{ ch.value }}{{ ch.unit }}</b></template>
                   <template v-else-if="ch.type === 'update_requirement'"> {{ ch.code }}<div class="diff"><s>{{ ch.before }}</s><br />{{ ch.text }}</div></template>
+                  <template v-else-if="ch.type === 'update_scenario'"> {{ ch.code }} · {{ scenarioFieldLabel(ch.field_path) }}<div class="diff"><s>{{ scenarioValue(ch.before) }}</s><br />{{ scenarioValue(ch.value) }}</div></template>
                   <template v-else-if="ch.type === 'add_requirement'"> <div class="diff">{{ ch.text }}</div></template>
                   <template v-else> {{ ch.code }}<div class="diff"><s>{{ ch.before }}</s></div></template>
                 </div>
               </div>
               <div class="mc-actions" v-if="!cardDone(c)">
-                <el-button size="small" type="primary" @click="applyProposal(m, i)">应用所选（{{ proposalAccepted(m, i).length }}）</el-button>
-                <el-button size="small" @click="resolve(m, i, 'dismiss')">先不应用</el-button>
+                <el-button size="small" type="primary" @click="applyProposal(m, i)">{{ proposalAccepted(m, i).length ? '采纳所选并更新（' + proposalAccepted(m, i).length + '）' : '记录不变更并结束处理' }}</el-button>
+                <el-button size="small" @click="resolve(m, i, 'dismiss')">不采纳此建议</el-button>
               </div>
               <div v-else class="muted">{{ c.note }}</div>
             </div>
 
             <!-- 重新匹配建议 -->
             <div v-else-if="c.kind === 'rematch'" class="mini-card">
-              <div class="mc-title">重新匹配建议</div>
+              <div class="mc-title">产品重新匹配建议</div><div class="muted">可能更新名称、规格、分类、产品与数量规则；人工数量保留，自动数量重新计算。</div>
               <div class="compare">
                 <div><div class="muted">原来</div>{{ c.before.name }}<br /><span class="muted">{{ c.before.source }} {{ c.before.product_ref ? productName(c.before.product_ref) : '' }}</span></div>
                 <div class="arrow">→</div>
@@ -301,8 +304,9 @@ export default defineComponent({
               <div v-if="c.suggestion.blocked_by" class="caps"><el-tag size="small" type="warning">✕ {{ c.suggestion.blocked_by.product_name }}：{{ c.suggestion.blocked_by.limit }}</el-tag></div>
               <div class="muted">{{ c.suggestion.basis }}</div>
               <div v-for="n in c.notes" :key="n" class="muted">· {{ n }}</div>
+              <el-collapse><el-collapse-item title="展开查看完整选型建议"><div>名称：{{ c.suggestion.name }}</div><div>规格：{{ c.suggestion.spec }}</div><div>交付方式：{{ c.suggestion.source }}</div><div>产品：{{ productName(c.suggestion.product_ref) || '未关联' }}</div><div>分类：{{ view.groups.find((g) => g.code === String(c.suggestion.parent))?.name || c.suggestion.parent }}</div><div>数量规则：{{ meta.rules.find((r) => r.id === c.suggestion.sizing_rule)?.name || '未指定' }} · 单位：{{ c.suggestion.unit }}</div></el-collapse-item></el-collapse>
               <div class="mc-actions" v-if="!cardDone(c)">
-                <el-button size="small" type="primary" @click="applyRematch(m, i)">采纳</el-button>
+                <el-button size="small" type="primary" @click="applyRematch(m, i)">采纳并更新本项</el-button>
                 <el-button size="small" @click="resolve(m, i, 'dismiss')">保持原样</el-button>
               </div>
               <div v-else class="muted">{{ c.note }}</div>

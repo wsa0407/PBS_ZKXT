@@ -195,7 +195,7 @@ del("/api/projects/:id/materials/:mid", ({ id, mid }) => {
 
 // requirements
 post("/api/projects/:id/analyze", ({ id }, body) =>
-  job(startJob({ projectId: id, kind: "analyze", steps: ["Agent理解与执行"], run: (ctx) => runAgent(id, agentGoal({ type: "analyze" }) + (body.all ? "回查全部材料，保持人工成果。" : ""), ctx) })),
+  job(startJob({ projectId: id, kind: "analyze", steps: ["整理并核对业务成果"], run: (ctx) => runAgent(id, agentGoal({ type: "analyze" }) + (body.all ? "回查全部材料，保持人工成果。" : ""), ctx) })),
 );
 post("/api/projects/:id/requirements", ({ id }, body) => ({ code: svc.addRequirement(id, body) }));
 put("/api/projects/:id/requirements/:code", ({ id, code }, body) => (svc.editRequirement(id, code, body), { ok: true }));
@@ -203,7 +203,7 @@ post("/api/projects/:id/requirements/confirm", ({ id }, body) => (svc.confirmReq
 put("/api/projects/:id/params/:name", ({ id, name }, body) => (svc.setParam(id, name, body), { ok: true }));
 
 // Scenario requirements: every mutation uses the same versioned service as chat.
-post("/api/projects/:id/scenarios/generate", ({ id }) => job(startJob({ projectId: id, kind: "scenarios", steps: ["Agent理解与执行"], run: (ctx) => runAgent(id, agentGoal({ type: "generate_scenarios" }), ctx) })));
+post("/api/projects/:id/scenarios/generate", ({ id }) => job(startJob({ projectId: id, kind: "scenarios", steps: ["整理并核对业务成果"], run: (ctx) => runAgent(id, agentGoal({ type: "generate_scenarios" }), ctx) })));
 post("/api/projects/:id/scenarios", ({ id }, body) => scenarios.addScenario(id, body));
 get("/api/projects/:id/scenarios/:code", ({ id, code }) => ({ scenario: scenarios.getScenario(id, code), revisions: scenarios.revisions(id, code) }));
 put("/api/projects/:id/scenarios/:code", ({ id, code }, body) => scenarios.editScenario(id, code, body));
@@ -214,7 +214,7 @@ put("/api/projects/:id/requirements/:code/disposition", ({ id, code }, body) => 
 
 // business capabilities
 post("/api/projects/:id/capabilities/generate", ({ id }) =>
-  job(startJob({ projectId: id, kind: "capability", steps: ["Agent理解与执行"], run: (ctx) => runAgent(id, agentGoal({ type: "generate_capabilities" }), ctx) })),
+  job(startJob({ projectId: id, kind: "capability", steps: ["整理并核对业务成果"], run: (ctx) => runAgent(id, agentGoal({ type: "generate_capabilities" }), ctx) })),
 );
 post("/api/projects/:id/capabilities", ({ id }, body) => ({ code: svc.addCapability(id, body) }));
 put("/api/projects/:id/capabilities/:code", ({ id, code }, body) => (svc.editCapability(id, code, body), { ok: true }));
@@ -248,7 +248,7 @@ del("/api/projects/:id/chat", ({ id }) => (repo.clearChat(id), { ok: true }));
 
 // PBS
 post("/api/projects/:id/pbs/generate", ({ id }) =>
-  job(startJob({ projectId: id, kind: "pbs", steps: ["Agent理解与执行"], run: (ctx) => runAgent(id, agentGoal({ type: "generate_pbs" }), ctx) })),
+  job(startJob({ projectId: id, kind: "pbs", steps: ["整理并核对业务成果"], run: (ctx) => runAgent(id, agentGoal({ type: "generate_pbs" }), ctx) })),
 );
 post("/api/projects/:id/pbs", ({ id }, body) => ({ id: svc.saveItem(id, null, body) }));
 put("/api/projects/:id/pbs/:iid", ({ id, iid }, body) => ({ id: svc.saveItem(id, Number(iid), body) }));

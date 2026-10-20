@@ -26,7 +26,7 @@ const SYSTEM = `你是 PBS 拆解助手，和售前、方案人员对话，帮�
 你可以做的事（actions）。只能用下面这些，不要发明新的：
 - add_material {kind: tender|minutes|oral|other, title}：用户这条消息本身（或随消息上传的文件）是一份客户材料。材料内容由系统取用户原文，你不要复述。
 - analyze {all?}：从未处理的材料中抽取需求（all=true 表示全部重新抽取）。
-- confirm_requirements {codes?: ["R001"], scope?: "batchable"|"all"}：确认需求。scope=batchable 只确认低风险的“批量确认”级。
+- confirm_requirements {codes?: ["R001"], scope?: "batchable"|"all"}：确认需求。scope=batchable 仅选取当前规则列为常规核对的待审项，不代表已审核正确；必须由用户明确要求确认。
 - edit_requirement {code, text?, priority?, category?}：修改需求。priority 取 必须/重要/一般。
 - delete_requirement {code, reason}：删除需求（可恢复）。
 - add_requirement {text, category?, priority?}：新增需求。
@@ -44,7 +44,7 @@ const SYSTEM = `你是 PBS 拆解助手，和售前、方案人员对话，帮�
 - delete_item {id}：删除 PBS 项。
 - rematch_item {id, instruction?}：让系统重新判断某一项该用哪个产品或外采、自研。
 - confirm_items {ids?: [..], scope?: "all"}：确认 PBS 项。
-- finish {}：标记项目完成。
+- finish {}：标记本轮整理完成，不表示客户验收或检查通过。
 - show {view: requirements|scenarios|questions|pbs|materials|export}：让右侧工作区切到某个页面。
 
 规则：
@@ -66,7 +66,7 @@ function context(projectId, view) {
   const lines = [];
   lines.push(`项目：${view.project.name}（客户：${view.project.customer || "未填"}，行业：${view.project.industry || "未填"}）`);
   lines.push(
-    `进度：材料 ${s.materials.count} 份（未处理 ${s.materials.pending}）；需求 ${s.requirements.total} 条（待确认 ${s.requirements.pending}，必审未处理 ${s.requirements.mustReview}）；澄清问题待处理 ${s.questions.open}，已答复待应用 ${s.questions.answered}；PBS ${s.pbs.items} 项（未覆盖 ${s.pbs.uncovered}，待复核 ${s.pbs.stale}，数量待估 ${s.pbs.pendingQty}，约束冲突 ${s.pbs.conflicts}）`,
+    `进度：材料 ${s.materials.count} 份（未处理 ${s.materials.pending}）；需求 ${s.requirements.total} 条（待确认 ${s.requirements.pending}，重点核对待处理 ${s.requirements.mustReview}）；澄清问题待处理 ${s.questions.open}，答复待采纳 ${s.questions.answered}；PBS ${s.pbs.items} 项（未覆盖 ${s.pbs.uncovered}，待复核 ${s.pbs.stale}，数量待确认 ${s.pbs.pendingQty}，约束冲突 ${s.pbs.conflicts}）`,
   );
 
   lines.push("\n测算参数字典（name：含义 = 当前值，来源）：");
@@ -170,7 +170,7 @@ function plan(action, view, ctx) {
       if (a.scope === "all") codes = view.requirements.filter((r) => r.status === "待确认").map((r) => r.code);
       codes = codes.filter((c) => reqs.get(c)?.status === "待确认");
       if (!codes.length) throw new Error("没有可确认的需求");
-      return { label: "确认需求", steps: [], run: () => (svc.confirmRequirements(ctx.projectId, codes), { text: `已确认 ${codes.length} 条需求`, open: "requirements" }) };
+      return { label: "确认需求", steps: [], run: () => (svc.confirmRequirements(ctx.projectId, codes), { text: `已确认 ${codes.length} 条需求描述，澄清事项仍保留`, open: "requirements" }) };
     }
     case "edit_requirement": {
       const r = needReq();
@@ -309,7 +309,7 @@ function plan(action, view, ctx) {
       return { label: "确认 PBS 项", steps: [], run: () => (svc.confirmItems(ctx.projectId, ids), { text: `已确认 ${ids.length} 项`, open: "pbs" }) };
     }
     case "finish":
-      return { label: "标记完成", steps: [], run: () => (repo.updateProject(ctx.projectId, { done: true }), repo.logEvent(ctx.projectId, "项目", "标记完成"), { text: "项目已标记为完成，可以导出了", open: "finish" }) };
+      return { label: "标记完成", steps: [], run: () => (repo.updateProject(ctx.projectId, { done: true }), repo.logEvent(ctx.projectId, "项目", "标记完成"), { text: "本轮整理已标记完成，检查结果与导出见右侧", open: "finish" }) };
     case "show": {
       const views = ["requirements", "scenarios", "capabilities", "questions", "pbs", "materials", "export"];
       if (!views.includes(a.view)) throw new Error("不认识的页面");
@@ -327,20 +327,18 @@ export function suggestions(view) {
   const out = [];
   if (!s.materials.count) return [{ label: "用示例试试", ui: "samples" }];
   if (s.materials.pending) out.push({ label: `理解 ${s.materials.pending} 份待处理材料`, actions: [{ type: "analyze" }] });
-  const batchable = view.requirements.filter((r) => r.status === "待确认" && r.review === "批量确认").length;
-  if (batchable) out.push({ label: `确认 ${batchable} 条低风险需求`, actions: [{ type: "confirm_requirements", scope: "batchable" }] });
-  if (s.requirements.mustReview) out.push({ label: `看 ${s.requirements.mustReview} 条必审需求`, ui: "open:requirements" });
-  if (s.questions.answered) out.push({ label: `应用 ${s.questions.answered} 条已答复`, ui: "open:questions" });
+  if (s.requirements.pending) out.push({ label: `审阅 ${s.requirements.pending} 条需求描述`, ui: "open:requirements" });
+  if (s.requirements.mustReview) out.push({ label: `看 ${s.requirements.mustReview} 条重点核对需求`, ui: "open:requirements" });
+  if (s.questions.answered) out.push({ label: `审阅 ${s.questions.answered} 项客户答复`, ui: "open:questions" });
   if (!s.materials.pending && s.requirements.total && !s.scenarios.active) out.push({ label: "继续需求理解", actions: [{ type: "analyze" }] });
   if (s.scenarios.pending) out.push({ label: `审阅 ${s.scenarios.pending} 个业务场景`, ui: "open:scenarios" });
   if (s.questions.open) out.push({ label: `${s.questions.open} 项待澄清`, ui: "open:questions" });
-  if (s.requirements.total && !s.pbs.items) out.push({ label: "生成 PBS", actions: [{ type: "generate_pbs" }] });
+  if (s.requirements.total && !s.pbs.items) out.push({ label: "生成 PBS 草稿", actions: [{ type: "generate_pbs" }] });
   if (s.pbs.items) {
     if (s.pbs.stale) out.push({ label: `复核 ${s.pbs.stale} 项变化`, ui: "open:pbs" });
     if (s.pbs.conflicts) out.push({ label: `看 ${s.pbs.conflicts} 个约束冲突`, ui: "open:pbs" });
-    if (s.pbs.pendingQty) out.push({ label: `${s.pbs.pendingQty} 项数量待估`, ui: "open:pbs" });
-    out.push({ label: "导出 Excel", ui: "export" });
-    if (!view.project.done && !s.pbs.blockers && !s.pbs.uncovered) out.push({ label: "标记完成", actions: [{ type: "finish" }] });
+    if (s.pbs.pendingQty) out.push({ label: `${s.pbs.pendingQty} 项数量待确认`, ui: "open:pbs" });
+    out.push({ label: "导出前检查", ui: "export" });
   }
   return out.slice(0, 5);
 }

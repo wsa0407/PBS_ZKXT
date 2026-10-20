@@ -83,8 +83,8 @@ export default defineComponent({
       if (!s) return {};
       const b = (n, tip) => (n ? { n, tip } : null);
       return {
-        materials: b(s.materials.pending, "份新材料未处理"),
-        pbs: b(s.pbs.uncovered + s.pbs.stale + s.pbs.conflicts, `项待处理：未覆盖 ${s.pbs.uncovered}，待复核 ${s.pbs.stale}，冲突 ${s.pbs.conflicts}`),
+        materials: b(s.materials.pending, "份材料仍有原文待处理"),
+        pbs: b(s.pbs.uncovered + s.pbs.stale + s.pbs.conflicts, `个检查提醒（可能重叠）：必须需求无对应项 ${s.pbs.uncovered}，待复核 ${s.pbs.stale}，选型冲突 ${s.pbs.conflicts}`),
       };
     });
 
