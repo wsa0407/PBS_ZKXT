@@ -1,0 +1,265 @@
+{
+  "id": "pbs-specialist-skills-v1",
+  "description": "合成只读行为验收。expected_review 仅供评估者使用，不发送给模型。不调用生产写入工具，不代表覆盖全部技能场景。",
+  "cases": [
+    {
+      "id": "material-quality",
+      "role": "materials",
+      "goal": "请检查这组材料能否完整拆解，以及已有需求条目是否准确。指出最影响后续拆解的问题、依据和处理建议。只读审阅，详细回答，不保存或确认业务成果。",
+      "documents": [
+        {
+          "id": "material:1",
+          "title": "采购文件",
+          "text": "第五章技术要求：平台应支持不少于10路并发视频；异常告警应快速推送客户已有工单系统。无人机采购数量详见附件二设备清单。\n评分说明：本文件的★仅表示重点说明项，不作为本文件的否决项标识。"
+        },
+        {
+          "id": "material:2",
+          "title": "最终版补充.txt",
+          "text": "平台应支持不少于20路并发视频。"
+        }
+      ],
+      "requirements": [
+        {
+          "code": "R001",
+          "text": "采购10台无人机",
+          "quote": "平台应支持不少于10路并发视频",
+          "document_id": "material:1",
+          "status": "待确认"
+        },
+        {
+          "code": "R002",
+          "text": "配置10架无人机",
+          "quote": "平台应支持不少于10路并发视频",
+          "document_id": "material:1",
+          "status": "待确认"
+        },
+        {
+          "code": "R003",
+          "text": "告警应在1秒内推送",
+          "quote": "异常告警应快速推送客户已有工单系统",
+          "document_id": "material:1",
+          "status": "待确认"
+        }
+      ],
+      "expected_review": {
+        "skills": [
+          "pbs-document-map",
+          "pbs-requirement-quality"
+        ],
+        "checks": [
+          "附件二缺失，不能宣称全文材料齐全",
+          "并发路数不是无人机采购数",
+          "1秒为无依据阈值",
+          "同义条目需核对，不直接删除合并",
+          "补充命名不能证明替代关系",
+          "不能仅凭★判否决或强制采购",
+          "已读当前片段不等于原始文件和所有附件无解析缺损",
+          "同一口径不少于10路与不少于20路可以同时成立，不应仅因数字不同判互斥",
+          "原文包含quote与改写语义是否获支持应分别判断"
+        ]
+      }
+    },
+    {
+      "id": "boundary-change",
+      "role": "understanding",
+      "goal": "请核对新增客户补充对原先已确认场景的影响，并说明对接责任和验收还缺哪些条件。详细列出需要重新审阅的边界和已有依据。只做影响分析，不改成果，不替客户确认。",
+      "documents": [
+        {
+          "id": "material:1",
+          "title": "原确认依据",
+          "text": "系统应新建事件处置流程，支持告警派单、处理与关闭；平台应支持10路并发视频。"
+        },
+        {
+          "id": "material:2",
+          "title": "本次用户转述",
+          "text": "客户已有工单系统，我们只负责把异常推送过去，不再建设派单、处理和关闭功能。对接文档还没拿到。视频的分辨率、连续运行时长尚未明确。"
+        }
+      ],
+      "requirements": [
+        {
+          "code": "R001",
+          "text": "新建事件处置流程，支持派单、处理与关闭",
+          "status": "已确认",
+          "document_id": "material:1"
+        },
+        {
+          "code": "R002",
+          "text": "10路并发视频",
+          "status": "已确认",
+          "document_id": "material:1"
+        }
+      ],
+      "scenarios": [
+        {
+          "code": "SC001",
+          "name": "事件闭环",
+          "goal": "告警到关闭",
+          "boundaries": [
+            "我方建设派单、处理和关闭"
+          ],
+          "links": [
+            {
+              "req_id": "R001",
+              "role": "核心要求"
+            }
+          ]
+        }
+      ],
+      "pbs": [
+        {
+          "id": 1,
+          "code": "P001",
+          "name": "事件闭环平台",
+          "req_ids": [
+            "R001"
+          ],
+          "scenario_ids": [
+            "SC001"
+          ],
+          "confirmed": true
+        }
+      ],
+      "expected_review": {
+        "skills": [
+          "pbs-interface-boundaries",
+          "pbs-acceptance",
+          "pbs-change-impact"
+        ],
+        "checks": [
+          "新增补充与已确认范围不同，需要人工审阅差异",
+          "我方推送与客户后续处置分开",
+          "接口未取到不代表已联调或接口数量为1",
+          "10路验收工况缺失不自动补4K或时延",
+          "不能声称已修改确认包或PBS",
+          "遵守项目确认方式，不自动给所有变更增加书面回函门槛"
+        ]
+      }
+    },
+    {
+      "id": "pbs-capacity-options",
+      "role": "pbs",
+      "goal": "请只读复核现有PBS的数量、方案选型和来源对应，并检查本项目低空交付边界有没有遗漏。需要给出录像数据量的条件计算，以及候选方案比较；未知采购数量不要补数。详细说明依据，不保存或确认成果。",
+      "documents": [
+        {
+          "id": "material:1",
+          "title": "已确认需求材料",
+          "text": "项目做园区无人机巡查，飞机和机库点位数量待勘察确认。视频录制为10路，每路持续8 Mbit/s，全天录制30天；副本和冗余策略未确定。平台部署在客户提供的服务器，运行网络不能连接公网。异常推送客户已有工单系统，不新建工单平台。"
+        }
+      ],
+      "requirements": [
+        {
+          "code": "R001",
+          "text": "10路每路8 Mbit/s，全天录制30天",
+          "status": "已确认",
+          "document_id": "material:1"
+        },
+        {
+          "code": "R002",
+          "text": "客户服务器部署，不能连接公网",
+          "status": "已确认",
+          "document_id": "material:1"
+        },
+        {
+          "code": "R003",
+          "text": "推送现有工单系统",
+          "status": "已确认",
+          "document_id": "material:1"
+        }
+      ],
+      "scenarios": [
+        {
+          "code": "SC001",
+          "name": "园区巡查告警",
+          "goal": "巡查发现异常后推送已有系统",
+          "links": [
+            {
+              "req_id": "R001",
+              "role": "支撑要求"
+            },
+            {
+              "req_id": "R002",
+              "role": "适用约束"
+            },
+            {
+              "req_id": "R003",
+              "role": "核心要求"
+            }
+          ]
+        }
+      ],
+      "pbs": [
+        {
+          "id": 1,
+          "code": "P001",
+          "name": "无人机",
+          "qty": 10,
+          "req_ids": [
+            "R001"
+          ],
+          "scenario_ids": [
+            "SC001"
+          ]
+        },
+        {
+          "id": 2,
+          "code": "P002",
+          "name": "云平台A",
+          "qty": 1,
+          "product_ref": "candidate-a",
+          "req_ids": [
+            "R002"
+          ],
+          "scenario_ids": [
+            "SC001"
+          ]
+        },
+        {
+          "id": 3,
+          "code": "P003",
+          "name": "LED大屏",
+          "qty": 1,
+          "req_ids": [],
+          "scenario_ids": []
+        }
+      ],
+      "products": [
+        {
+          "id": "candidate-a",
+          "name": "云平台A",
+          "summary": "仅云端服务，必须连接公网；不提供客户服务器部署。",
+          "metadata": {
+            "synthetic": true
+          }
+        },
+        {
+          "id": "candidate-b",
+          "name": "本地平台B",
+          "summary": "支持客户服务器离线部署及10路录制；与客户工单系统对接需接口资料及集成，报价交期未提供，客户服务器容量尚未核实。",
+          "metadata": {
+            "synthetic": true
+          }
+        }
+      ],
+      "expected_review": {
+        "skills": [
+          "pbs-capacity-sizing",
+          "pbs-option-analysis",
+          "pbs-traceability",
+          "pbs-low-altitude"
+        ],
+        "checks": [
+          "录像纯数据量为十进制25.92TB，不代表硬盘采购数量",
+          "飞机机库数量待确认，不能由10路推为10台",
+          "A不满足已确认的离线部署限制",
+          "B是有条件候选，不伪造成本交期或完全适配",
+          "LED无需求依据，应提出复核建议",
+          "不复制全套低空平台采购清单",
+          "保留已知的只推送边界，不重新声称派单到关闭是否在范围内未知",
+          "产品B已声明10路录制，未核实的是码率工况和实际适用性",
+          "材料提到机库不等于本轮确认采购，先核对范围而非直接补采购项",
+          "额外副本策略未给时不自行选数；1主加1额外完整副本为总共2份"
+        ]
+      }
+    }
+  ]
+}

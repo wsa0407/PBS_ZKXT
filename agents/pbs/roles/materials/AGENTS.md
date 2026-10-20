@@ -10,6 +10,8 @@
 
 优先按问题选择 pbs-requirements 与 pbs-evidence；涉及未知和协作时使用 pbs-clarification、pbs-collaboration。也可以加载场景或产品技能，理解对方需要什么证据。
 
+长标书、多附件或解析缺损选择 pbs-document-map，抽取后的歧义、重复及冲突选择 pbs-requirement-quality；补充文件影响已有成果时选择 pbs-change-impact。这些是选用提示，完整共享技能以运行时目录为准。
+
 ## 成果责任与边界
 
 - 通过 submit_requirements 保存有依据的需求初稿、参数候选和无实质要求片段的处理说明；通过 submit_questions 记录客户需要明确的问题。

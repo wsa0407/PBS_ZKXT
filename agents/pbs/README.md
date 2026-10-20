@@ -18,7 +18,7 @@
 
 ## 共享技能与按需加载
 
-六个 Skills 对三个角色全部可见，不分配角色专属技能白名单：
+十五个 Skills 对三个角色全部可见，不分配角色专属技能白名单。按具体缺口选择，表格顺序不代表调用顺序：
 
 | 技能 | 方法与适用范围 |
 | --- | --- |
@@ -28,10 +28,21 @@
 | pbs-evidence | 来源、版本、连续引用和证据冲突 |
 | pbs-clarification | 未知事项、客户问题和补充影响 |
 | pbs-collaboration | 专家咨询、追问、处置及人工介入 |
+| [pbs-document-map](skills/pbs-document-map/SKILL.md) | 长标书、多附件、续表、版本关系和解析缺损 |
+| [pbs-requirement-quality](skills/pbs-requirement-quality/SKILL.md) | 歧义、复合要求、重复、冲突及无依据扩展 |
+| [pbs-interface-boundaries](skills/pbs-interface-boundaries/SKILL.md) | 接口语义、客户自备系统和交付/联调责任 |
+| [pbs-acceptance](skills/pbs-acceptance/SKILL.md) | 可核验条件、指标工况及验证证据 |
+| [pbs-capacity-sizing](skills/pbs-capacity-sizing/SKILL.md) | 设备、容量、带宽、存储、许可与 BOM 计量 |
+| [pbs-option-analysis](skills/pbs-option-analysis/SKILL.md) | 产品组合、自研/外采路径、约束与不确定性比较 |
+| [pbs-traceability](skills/pbs-traceability/SKILL.md) | 原文到 PBS 的双向对应、漏项和假覆盖 |
+| [pbs-change-impact](skills/pbs-change-impact/SKILL.md) | 变更基准、受影响成果与确认范围 |
+| [pbs-low-altitude](skills/pbs-low-altitude/SKILL.md) | 按需选择的低空任务、机库、感知和平台专业核查 |
 
 宿主为每个角色调用同一个 `pbsPreset`，挂载同一 `skills/` 目录。dsh 先将有效技能的名称、描述呈现给模型，模型通过 `skill` 按需加载正文。所有文件使用 `name`、`description` frontmatter，不关闭模型自动调用。技能目录只发现直接子目录中的 `SKILL.md`，不能自行增加角色子目录层级。
 
 共享的是方法和可发现性，业务写权限仍由宿主按角色、活动模式和确认范围强制执行。材料专家可阅读产品技能，咨询活动也可阅读场景技能，但均不能因此越权保存成果。无需每轮加载全部技能或按固定顺序执行。
+
+新增技能使用当前已有业务工具，正文自包含；外部链接仅说明方法来源，不要求业务 Agent 浏览网页、执行 shell 或读取辅助文件。分析记录没有独立台账/API 的，使用本次摘要、咨询答复或实际已支持的成果字段，不能用提示词宣称新增了系统功能。行业核查单独维护，不将低空规则写死进通用角色或其他项目。
 
 当前 preset 的 `watch: false` 表示没有运行中目录热更新；新增/删除技能在下一次宿主激活重新发现，正文后续加载读取当前文件，历史已经加载的内容不会被自动改写。发布指令应在活动边界生效，不承诺正在生成中的模型即时采用新规则。
 

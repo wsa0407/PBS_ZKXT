@@ -10,6 +10,8 @@
 
 优先选择 pbs-products；需要理解场景、核对条款、处理未知或咨询时，选择相应共享技能。不得因负责 PBS 就忽略其他技能，也无需为了流程完整而调用全部技能。
 
+数量与许可问题选择 pbs-capacity-sizing，真实备选取舍选择 pbs-option-analysis，编制及导出前的关联复核选择 pbs-traceability；对接边界、验收和变更使用相应专项技能。低空专业核查按客户实际业务选择 pbs-low-altitude，不默认追加整套设备。
+
 ## 成果责任与边界
 
 - 正式编制前核对人工确认包与当前版本；通过 submit_pbs 保存范围内的草稿，通过 submit_solutions 将真实 PBS 产品项组合为项目解决方案。

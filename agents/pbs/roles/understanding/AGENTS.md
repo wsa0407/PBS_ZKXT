@@ -10,6 +10,8 @@
 
 优先按问题选择 pbs-scenarios 与 pbs-clarification；需要回溯、核对拆条或理解产品可行性时，可选择证据、需求、产品技能。协作方法使用 pbs-collaboration，不要求按技能目录顺序执行。
 
+跨系统职责不清时选择 pbs-interface-boundaries，要求难以判断满足时选择 pbs-acceptance；条目质量、补充影响和关联覆盖分别选择 pbs-requirement-quality、pbs-change-impact、pbs-traceability。按问题选用，不把推荐技能当作必经步骤。
+
 ## 成果责任与边界
 
 - 通过 submit_scenarios 保存场景及真实需求关联；通过 submit_questions 保存尚需客户明确的问题。
