@@ -10,6 +10,7 @@ export default defineComponent({
     const form = ref({ title: "", description: "", text: "", file: null });
     const preview = ref(null);
     const evidence = ref(null);
+    const saving = ref(false), starting = ref(false);
     onMounted(async () => (samples.value = (await call(() => api("/samples"))) ?? []));
 
     const materials = computed(() => view.value.materials);
@@ -30,14 +31,18 @@ export default defineComponent({
     const onDrop = (e) => chooseFile(e.dataTransfer.files[0]);
 
     const add = async () => {
-      const body = { title: form.value.title, description: form.value.description };
-      if (form.value.file) body.file = { name: form.value.file.name, base64: await fileToBase64(form.value.file) };
-      else body.text = form.value.text;
-      const ok = await call(() => api(`/projects/${id}/materials`, { method: "POST", body }), "材料已添加");
-      if (ok) {
-        form.value = { title: "", description: "", text: "", file: null };
-        reload();
-      }
+      if (saving.value) return;
+      saving.value = true;
+      try {
+        const body = { title: form.value.title, description: form.value.description };
+        if (form.value.file) body.file = { name: form.value.file.name, base64: await fileToBase64(form.value.file) };
+        else body.text = form.value.text;
+        const ok = await call(() => api(`/projects/${id}/materials`, { method: "POST", body }), "材料已添加");
+        if (ok) {
+          form.value = { title: "", description: "", text: "", file: null };
+          await reload();
+        }
+      } finally { saving.value = false; }
     };
 
     const remove = async (m) => {
@@ -48,20 +53,25 @@ export default defineComponent({
 
     const show = async (m) => { evidence.value = null; preview.value = await call(() => api(`/projects/${id}/materials/${m.id}`)); };
     watch(() => focus.value, async (value) => {
-      const source = view.value.segments.find((s) => s.uid === value);
+      const source = [...view.value.segments, ...view.value.sourceSnapshots].find((s) => s.uid === value);
       const material = view.value.materials.find((m) => m.id === (source?.material_id ?? value));
       if (material) { await show(material); evidence.value = source ?? null; }
+      else if (source) { preview.value = { title: `${source.material_title || '材料'} · 历史原文`, text: source.text, meta: {} }; evidence.value = source; }
     }, { immediate: true });
 
     const analyze = async (all = false) => {
-      const result = await call(() => api(`/projects/${id}/analyze`, { method: "POST", body: { all } }));
-      if (result) {
-        await reload();
-        open("understanding");
-      }
+      if (starting.value || view.value.job?.status === "处理中") return;
+      starting.value = true;
+      try {
+        const result = await call(() => api(`/projects/${id}/analyze`, { method: "POST", body: { all } }));
+        if (result) {
+          await reload();
+          open("understanding");
+        }
+      } finally { starting.value = false; }
     };
 
-    return { view, materials, pending, samples, form, preview, evidence, meta, useSample, onFile, onDrop, add, remove, show, analyze, fmtTime };
+    return { view, materials, pending, samples, form, preview, evidence, saving, starting, meta, useSample, onFile, onDrop, add, remove, show, analyze, fmtTime };
   },
   template: `
   <div class="materials-stack">
@@ -83,7 +93,7 @@ export default defineComponent({
             <el-button>填入示例</el-button>
             <template #dropdown><el-dropdown-menu><el-dropdown-item v-for="s in samples" :key="s.id" :command="s">{{ s.label }}</el-dropdown-item></el-dropdown-menu></template>
           </el-dropdown>
-          <el-button type="primary" style="margin-left:auto" :disabled="!form.file && form.text.trim().length < 20" @click="add">保存材料</el-button>
+          <el-button type="primary" style="margin-left:auto" :loading="saving" :disabled="!form.file && form.text.trim().length < 20" @click="add">保存材料</el-button>
         </div>
       </el-form>
     </el-card>
@@ -91,8 +101,8 @@ export default defineComponent({
     <el-card shadow="never">
       <template #header>
         <div class="row"><b>已添加的材料（{{ materials.length }}）</b><span style="flex:1"></span>
-          <el-button v-if="materials.length && !pending" :disabled="view.job?.status === '处理中'" @click="analyze(true)">重新理解全部材料</el-button>
-          <el-button type="primary" :disabled="!pending || view.job?.status === '处理中'" @click="analyze(false)">{{ pending ? '理解材料（' + pending + ' 份待处理）' : '没有待处理材料' }}</el-button>
+          <el-button v-if="materials.length && !pending" :loading="starting" :disabled="view.job?.status === '处理中'" @click="analyze(true)">重新理解全部材料</el-button>
+          <el-button v-if="pending" type="primary" :loading="starting" :disabled="view.job?.status === '处理中'" @click="analyze(false)">理解材料（{{ pending }} 份待处理）</el-button>
         </div>
       </template>
       <div v-if="!materials.length" class="empty">先在上方上传文件或粘贴原文</div>

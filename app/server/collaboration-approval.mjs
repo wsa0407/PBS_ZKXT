@@ -5,6 +5,7 @@ import * as scenes from "./scenarios.mjs";
 import * as svc from "./services.mjs";
 import { HttpError } from "./errors.mjs";
 import { uid } from "./collaboration-store.mjs";
+import { questionPending } from "../web/understanding.js";
 
 export function understandingFacts(projectId) {
   return {
@@ -19,7 +20,7 @@ export function understandingFacts(projectId) {
 export const understandingVersion = (projectId) => hash(understandingFacts(projectId));
 export function approvalPreview(projectId) {
   const facts = understandingFacts(projectId);
-  return { ...facts, version: hash(facts), questions: repo.listQuestions(projectId).filter((q) => !["已处理", "已忽略"].includes(q.status)),
+  return { ...facts, version: hash(facts), questions: repo.listQuestions(projectId).filter(questionPending),
     defaults: { requirements: facts.requirements.filter((r) => r.status === "已确认").map((r) => r.code), scenarios: facts.scenarios.filter((s) => s.status === "已确认").map((s) => s.code) } };
 }
 export function approveUnderstanding(projectId, body) {

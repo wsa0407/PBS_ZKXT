@@ -214,8 +214,7 @@ main { max-width: 1680px; margin: 0 auto; padding: 18px 24px 40px; }
 .requirement-state { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
 .requirement-review { flex: none; padding: 1px 6px; border: 1px solid #cdd5df; border-radius: 4px; color: #445163; background: #f3f5f8; font-size: 12px; line-height: 20px; }
 .requirement-review.confirmed { border-color: #b8d9c9; color: #176447; background: #edf7f1; }
-.requirement-questions { border-left: 2px solid #e0ad57; padding-left: 8px; margin-top: 8px; }
-.requirement-questions .el-button { height: auto; text-align: left; white-space: normal; line-height: 1.6; }
+.requirement-focus { background: #fff3cd; border-radius: 3px; }
 .question-focus { border-color: var(--accent); background: #f5f9ff; }
 .q-card { margin-bottom: 10px; }
 .q-text { font-size: 15px; margin: 6px 0; }

@@ -2,11 +2,22 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { extractRequirements, collectParams } from "../engine/extract.mjs";
 import { runAudit } from "../engine/audit.mjs";
-import { exportReview } from "../web/presentation.js";
+import { exportReview, findingTarget } from "../web/presentation.js";
 import { resetDb } from "../server/db.mjs";
 import * as repo from "../server/repo.mjs";
 import * as svc from "../server/services.mjs";
 import { exportProject } from "../server/xlsx.mjs";
+
+test("review links navigate to existing requirements, scenes, questions and evidence rather than defaulting to PBS", () => {
+  const view = { items: [{ id: 1, code: "1.1" }], requirements: [{ code: "R001" }], scenarios: [{ code: "SC001" }], questions: [{ id: 7 }], sourceSnapshots: [{ uid: "M1:2.1" }] };
+  for (const [ref, tab, focus] of [["1.1", "pbs", 1], ["R001", "requirements", "R001"], ["SC001", "scenarios", "SC001"], ["Q7", "questions", 7], ["M1:2.1", "materials", "M1:2.1"]]) {
+    const target = findingTarget(view, { refs: ["missing", ref] });
+    assert.equal(target.tab, tab);
+    assert.equal(target.focus, focus);
+  }
+  assert.equal(findingTarget(view, { type: "★ 条款未抽取", refs: [] }).tab, "materials");
+  assert.equal(findingTarget(view, { type: "检查提示", refs: ["missing"] }), null);
+});
 
 test("a rejected quantity parameter leaves the requirement intact and explains why the value was not used", async () => {
   const text = "★ 投标人应具有不少于2个无人机项目经验。";

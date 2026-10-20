@@ -75,7 +75,7 @@ export function confirmAndStart(projectId, body) {
     if (previous.fingerprint !== hash(body)) throw new HttpError(409, "确认请求已用于另一范围，请重新打开范围卡片");
     return previous.result;
   }
-  if (activeJob(projectId)) throw new HttpError(409, "请先暂停当前任务，再确认本轮范围");
+  if (activeJob(projectId)) throw new HttpError(409, "当前任务仍在处理，请完成后再确认本轮范围；补充或纠正可直接在对话中发送");
   if (!body.requestId || body.requestId.length > 160) throw new HttpError(400, "请携带确认请求编号");
   return tx(() => {
     const previousTask = store.latestTask(projectId);

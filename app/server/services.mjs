@@ -443,7 +443,11 @@ function editRequirementContent(projectId, code, body) {
 }
 
 export function confirmRequirements(projectId, codes) {
-  tx(() => codes.forEach((code) => repo.updateRequirement(projectId, code, { status: "已确认" })));
+  tx(() => {
+    const requirements = codes.map(code => repo.getRequirement(projectId, code));
+    if (requirements.some(r => r.status === "已删除")) throw badRequest("所选需求已删除，请刷新列表；需要保留时先恢复再确认");
+    requirements.forEach(r => repo.updateRequirement(projectId, r.code, { status: "已确认" }));
+  });
   repo.logEvent(projectId, "需求", `批量确认 ${codes.length} 条需求`);
   repo.touchProject(projectId);
 }
@@ -491,6 +495,8 @@ export function editQuestion(projectId, id, body) {
     if (q.status === "待处理" && fields.assignee) fields.status = "待答复";
   }
   if (body.status && ["待处理", "待答复", "已忽略"].includes(body.status)) fields.status = body.status;
+  if (q.status === "已应用" && fields.status) throw badRequest("该问题已处理；如有新的疑问，请新增待澄清事项");
+  if (q.status === "已忽略" && fields.status === "待处理") fields.status = q.answer && q.proposal ? "已答复" : q.assignee ? "待答复" : "待处理";
   if (body.impact) fields.impact = body.impact;
   if (["scenario_ids", "req_ids", "field_paths"].some((k) => body[k] !== undefined)) Object.assign(fields, scenarios.validateQuestionLinks(projectId, { ...q, ...body }));
   repo.updateQuestion(projectId, id, fields);

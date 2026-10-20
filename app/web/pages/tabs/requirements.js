@@ -1,12 +1,10 @@
-import { computed, defineComponent, inject, ref, watch } from "vue";
+import { computed, defineComponent, inject, nextTick, ref, watch } from "vue";
 import { ElMessageBox } from "element-plus";
 import { api, call, meta } from "../../api.js";
 import { highlight, TIER_TYPE, REVIEW_HELP, reviewLabel, requirementStatusLabel } from "../../ui.js";
-import Questions from "./questions.js";
 import { questionPending, questionsForRequirement } from "../../understanding.js";
 
 export default defineComponent({
-  components: { Questions },
   setup() {
     const { id, view, reload } = inject("project");
     const { open, focus } = inject("workspace");
@@ -16,10 +14,9 @@ export default defineComponent({
     const editing = ref(null);
     const adding = ref(null);
     const paramEdit = ref(null);
-    const clarifying = ref(null);
-    const clarifiedRequirement = computed(() => view.value.requirements.find((r) => r.code === clarifying.value));
     const relatedQuestions = computed(() => new Map(view.value.requirements.map((r) => [r.code, questionsForRequirement(r, view.value.questions)])));
     const pendingQuestions = (r) => (relatedQuestions.value.get(r.code) ?? []).filter(questionPending);
+    const openQuestions = r => open("questions", { requirementCode: r.code });
 
     const segByUid = computed(() => new Map([...view.value.sourceSnapshots, ...view.value.segments].map((s) => [s.uid, s])));
     const rows = computed(() =>
@@ -34,6 +31,7 @@ export default defineComponent({
         return true;
       }),
     );
+    const selectedCodes = computed(() => rows.value.filter(r => r.status === "待确认" && selected.value.some(s => s.code === r.code)).map(r => r.code));
     const counts = computed(() => {
       const c = { 待确认: 0, 已确认: 0, 已删除: 0 };
       view.value.requirements.forEach((r) => (c[r.status] = (c[r.status] ?? 0) + 1));
@@ -52,20 +50,20 @@ export default defineComponent({
       const s = segByUid.value.get(r.seg_uid);
       if (!s) return;
       const siblings = [...view.value.sourceSnapshots].filter((x) => x.material_no === s.material_no);
-      const i = siblings.indexOf(s);
-      source.value = { req: r, seg: s, context: siblings.slice(Math.max(0, i - 2), i + 3) };
+      const i = siblings.findIndex(x => x.uid === s.uid);
+      source.value = { req: r, seg: s, context: i < 0 ? [s] : siblings.slice(Math.max(0, i - 2), i + 3) };
     };
-    watch(() => focus.value, (code) => {
+    watch(() => focus.value, async (code) => {
       const r = view.value.requirements.find((r) => r.code === code);
       if (!r) return;
       filter.value = { status: r.status === "已删除" ? "已删除" : "", tier: "", category: "", kw: "", needsClarification: false };
-      if (r.seg_uid) openSource(r);
-      else clarifying.value = r.code;
+      await nextTick();
+      document.getElementById(`requirement-${r.code}`)?.scrollIntoView({ block: "nearest" });
     }, { immediate: true });
 
     const confirm = async (codes) => {
       if (!codes.length) return;
-      await call(() => api(`/projects/${id}/requirements/confirm`, { method: "POST", body: { codes } }), `已确认 ${codes.length} 条需求描述，澄清事项仍单独保留`);
+      await call(() => api(`/projects/${id}/requirements/confirm`, { method: "POST", body: { codes } }), `已确认 ${codes.length} 条需求描述`);
       selected.value = [];
       reload();
     };
@@ -94,7 +92,7 @@ export default defineComponent({
       if (await call(() => api(`/projects/${id}/params/${paramEdit.value.name}`, { method: "PUT", body: { value } }), "已更新取值方式，相关自动数量已重新计算")) { paramEdit.value = null; reload(); }
     };
 
-    return { view, filter, rows, counts, selected, source, editing, adding, paramEdit, usedParams, meta, open, clarifying, clarifiedRequirement, pendingQuestions, segLabel, openSource, confirm, save, remove, restore, add, saveParam, highlight, TIER_TYPE, REVIEW_HELP, reviewLabel, requirementStatusLabel };
+    return { view, filter, rows, counts, selected, selectedCodes, source, editing, adding, paramEdit, usedParams, meta, open, focus, openQuestions, pendingQuestions, segByUid, segLabel, openSource, confirm, save, remove, restore, add, saveParam, highlight, TIER_TYPE, REVIEW_HELP, reviewLabel, requirementStatusLabel };
   },
   template: `
   <div v-if="!view.requirements.length" class="empty">
@@ -126,9 +124,9 @@ export default defineComponent({
         <el-option v-for="c in meta.categories" :key="c" :value="c" :label="c" />
       </el-select>
       <el-input v-model="filter.kw" placeholder="搜索" clearable size="small" style="width:160px" />
-      <el-checkbox v-model="filter.needsClarification">只看仍需澄清</el-checkbox>
+      <el-checkbox v-model="filter.needsClarification">有关联待处理问题</el-checkbox>
       <span style="flex:1"></span>
-      <el-button size="small" :disabled="!selected.length" @click="confirm(selected.map((r) => r.code))">确认所选描述（{{ selected.length }}）</el-button>
+      <el-button size="small" :disabled="!selectedCodes.length" @click="confirm(selectedCodes)">确认所选描述（{{ selectedCodes.length }}）</el-button>
       <el-button size="small" @click="adding = { text: '', category: '功能', priority: '重要', source_note: '' }">新增需求</el-button>
     </div>
 
@@ -138,15 +136,10 @@ export default defineComponent({
         <el-table-column label="编号" prop="code" width="66" />
         <el-table-column label="需求" min-width="320">
           <template #default="{ row }">
-            <span :class="{ deleted: row.status === '已删除' }">{{ row.text }}</span>
+            <span :id="'requirement-' + row.code" :class="{ deleted: row.status === '已删除', 'requirement-focus': focus === row.code }">{{ row.text }}</span>
             <div v-if="row.status !== '已删除'" class="requirement-state">
               <span class="requirement-review" :class="{ confirmed: row.status === '已确认' }">{{ row.status === '已确认' ? '描述已确认' : '描述待审阅' }}</span>
-              <el-button v-if="pendingQuestions(row).length" link type="warning" @click="clarifying = row.code">仍有 {{ pendingQuestions(row).length }} 项待澄清</el-button>
-              <span v-else class="muted">暂无待澄清事项</span>
-            </div>
-            <div v-if="pendingQuestions(row).length" class="requirement-questions">
-              <div v-for="q in pendingQuestions(row).slice(0, 2)" :key="q.id"><el-button link type="primary" @click="clarifying = row.code">Q{{ q.id }} · {{ q.question }}</el-button></div>
-              <el-button link type="primary" @click="clarifying = row.code">录入答复 / 处理澄清</el-button>
+              <el-button v-if="pendingQuestions(row).length" link type="warning" @click="openQuestions(row)">查看关联问题（{{ pendingQuestions(row).length }}）</el-button>
             </div>
             <el-tooltip v-if="row.star || row.triangle" content="材料中的重点标记，具体含义及响应要求以该招标文件说明为准。"><el-tag :type="row.star ? 'danger' : 'warning'" size="small" effect="plain">{{ row.star ? '★' : '▲' }} 标注条款</el-tag></el-tooltip>
             <el-tag v-if="row.inferred" type="warning" size="small">推断</el-tag>
@@ -161,7 +154,7 @@ export default defineComponent({
         </el-table-column>
         <el-table-column label="来源" width="150">
           <template #default="{ row }">
-            <el-button v-if="row.seg_uid" link type="primary" @click="openSource(row)">{{ segLabel(row) }}</el-button>
+            <el-button v-if="segByUid.has(row.seg_uid)" link type="primary" @click="openSource(row)">{{ segLabel(row) }}</el-button>
             <span v-else class="muted">{{ segLabel(row) }}</span>
             <div v-if="row.seg_uid && !row.quote_verified" class="muted" style="color:#b42318">原文引用待核对</div>
           </template>
@@ -178,14 +171,13 @@ export default defineComponent({
             <span v-if="!row.leaves.length && view.items.length && row.deliverable && row.status !== '已删除'" class="muted">尚未关联</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="190" fixed="right">
+        <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <div class="ops">
               <el-button v-if="row.status === '已删除'" link type="primary" @click="restore(row)">恢复</el-button>
               <template v-else>
                 <el-button v-if="row.status === '待确认'" link type="success" @click="confirm([row.code])">确认描述</el-button>
                 <el-button link type="primary" @click="editing = { ...row }">修改</el-button>
-                <el-button link type="primary" @click="clarifying = row.code">澄清</el-button>
                 <el-button link type="danger" @click="remove(row)">删除</el-button>
               </template>
             </div>
@@ -194,14 +186,6 @@ export default defineComponent({
       </el-table>
     </el-card>
   </template>
-
-  <el-drawer :model-value="!!clarifiedRequirement" @close="clarifying = null" :title="clarifying + ' · 需求与澄清'" size="85%">
-    <template v-if="clarifiedRequirement">
-      <p><b>{{ clarifiedRequirement.text }}</b></p>
-      <div class="toolbar"><el-tag :type="clarifiedRequirement.status === '已确认' ? 'success' : 'info'">{{ clarifiedRequirement.status === '已确认' ? '描述已确认' : '描述待审阅' }}</el-tag><span class="muted">描述审核与澄清处理分别记录</span><el-button v-if="clarifiedRequirement.seg_uid" link type="primary" @click="openSource(clarifiedRequirement)">查看原文依据</el-button></div>
-      <Questions :requirement-code="clarifying" embedded />
-    </template>
-  </el-drawer>
 
   <el-drawer :model-value="!!source" @close="source = null" title="原文" size="45%">
     <template v-if="source">
@@ -222,7 +206,7 @@ export default defineComponent({
       <el-form-item label="优先级"><el-radio-group v-model="editing.priority"><el-radio-button v-for="p in ['必须', '重要', '一般']" :key="p" :value="p">{{ p }}</el-radio-button></el-radio-group></el-form-item>
     </el-form>
     <div class="muted">修改内容后需重新确认描述。人工修改会保留，相关 PBS 项会提示复核。</div>
-    <template #footer><el-button @click="editing = null">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
+    <template #footer><el-button @click="editing = null">取消</el-button><el-button type="primary" :disabled="!editing?.text.trim()" @click="save">保存</el-button></template>
   </el-dialog>
 
   <el-dialog :model-value="!!adding" @close="adding = null" title="新增需求" width="560px">

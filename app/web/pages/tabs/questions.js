@@ -1,8 +1,8 @@
 import { computed, defineComponent, inject, nextTick, ref, watch } from "vue";
 import { ElMessageBox } from "element-plus";
 import { api, call, meta, runJob } from "../../api.js";
-import { scenarioFieldLabel, scenarioValue, IMPACT_TYPE, Q_STATUS_TYPE, questionStatusLabel, originLabel, impactLabel } from "../../ui.js";
-import { questionPending, questionUnlinked, questionsForRequirement } from "../../understanding.js";
+import { SCENARIO_FIELD_LABELS, scenarioFieldLabel, scenarioValue, IMPACT_TYPE, Q_STATUS_TYPE, questionStatusLabel, originLabel, impactLabel } from "../../ui.js";
+import { questionPending, questionUnlinked, questionsForRequirement, questionActions } from "../../understanding.js";
 
 const CHANGE_LABEL = { set_param: "设定参数", update_requirement: "修改需求", add_requirement: "新增需求", remove_requirement: "删除需求", update_scenario: "修改场景" };
 const CHANGE_TYPE = { set_param: "primary", update_requirement: "warning", add_requirement: "success", remove_requirement: "danger", update_scenario: "warning" };
@@ -17,7 +17,9 @@ export default defineComponent({
     const review = ref(null);
     const adding = ref(null);
 
-    const related = computed(() => props.requirementCode ? questionsForRequirement(view.value.requirements.find((r) => r.code === props.requirementCode) ?? { code: props.requirementCode }, view.value.questions) : view.value.questions);
+    const relatedRequirementCode = computed(() => props.requirementCode || focus.value?.requirementCode);
+    const related = computed(() => relatedRequirementCode.value ? questionsForRequirement(view.value.requirements.find((r) => r.code === relatedRequirementCode.value) ?? { code: relatedRequirementCode.value }, view.value.questions) : view.value.questions);
+    const needsResolution = computed(() => review.value?.q.proposal?.changes.some((c, i) => review.value.accepted.includes(i) && c.conflict));
     const questions = computed(() => {
       const all = related.value;
       if (filter.value === "open") return all.filter((q) => ["待处理", "待答复", "已答复"].includes(q.status));
@@ -28,8 +30,9 @@ export default defineComponent({
     });
     const count = (pred) => related.value.filter(pred).length;
     const reqByCode = computed(() => new Map(view.value.requirements.map((r) => [r.code, r])));
-    const newQuestion = () => { adding.value = { question: "", impact: "影响方案", reason: "", req_ids: props.requirementCode ? [props.requirementCode] : [], scenario_ids: [] }; };
+    const newQuestion = () => { adding.value = { question: "", impact: "影响方案", reason: "", req_ids: relatedRequirementCode.value ? [relatedRequirementCode.value] : [], scenario_ids: [], field_paths: [] }; };
     watch(() => focus.value, async (qid) => {
+      if (qid?.requirementCode) { filter.value = "open"; return; }
       if (props.embedded || typeof qid !== "number" || !related.value.some((q) => q.id === qid)) return;
       filter.value = "all";
       await nextTick();
@@ -65,6 +68,7 @@ export default defineComponent({
     };
 
     const openReview = (q) => {
+      if (!q || !questionActions(q).review) return;
       const changes = q.proposal?.changes ?? [];
       review.value = { q, accepted: changes.map((c, i) => !c.conflict && c.quoteVerified ? i : null).filter((i) => i !== null), resolution_note: "" };
     };
@@ -90,12 +94,13 @@ export default defineComponent({
       }
     };
 
-    return { scenarioFieldLabel, scenarioValue, view, filter, related, questions, count, reqByCode, answering, review, adding, meta, open, focus, newQuestion, questionPending, questionUnlinked, assign, ignore, restore, remove, startAnswer, submitAnswer, openReview, apply, toggle, addQuestion, CHANGE_LABEL, CHANGE_TYPE, IMPACT_TYPE, Q_STATUS_TYPE, questionStatusLabel, originLabel, impactLabel };
+    return { SCENARIO_FIELD_LABELS, scenarioFieldLabel, scenarioValue, view, filter, related, relatedRequirementCode, needsResolution, questions, count, reqByCode, answering, review, adding, meta, open, focus, newQuestion, questionPending, questionUnlinked, questionActions, assign, ignore, restore, remove, startAnswer, submitAnswer, openReview, apply, toggle, addQuestion, CHANGE_LABEL, CHANGE_TYPE, IMPACT_TYPE, Q_STATUS_TYPE, questionStatusLabel, originLabel, impactLabel };
   },
   template: `
+  <div v-if="relatedRequirementCode && !embedded" class="toolbar"><span>关联需求：{{ relatedRequirementCode }}</span><el-button link type="primary" @click="open('questions')">查看全部问题</el-button></div>
   <div v-if="!related.length" class="empty">
-    {{ embedded ? '这条需求暂无澄清记录。' : '暂无澄清事项。理解材料时发现的信息缺口会保留在这里。' }}
-    <el-button link type="primary" @click="newQuestion">提出澄清</el-button>
+    {{ relatedRequirementCode ? '这条需求暂无关联问题。' : '暂无澄清事项。理解材料时发现的信息缺口会保留在这里。' }}
+    <el-button link type="primary" @click="newQuestion">新增待澄清事项</el-button>
   </div>
   <template v-else>
     <el-alert v-if="!embedded" type="info" :closable="false" style="margin-bottom:12px"
@@ -103,13 +108,13 @@ export default defineComponent({
     <div class="toolbar">
       <el-radio-group v-model="filter" size="small">
         <el-radio-button value="open">待处理 {{ count((q) => ['待处理', '待答复', '已答复'].includes(q.status)) }}</el-radio-button>
-        <el-radio-button v-if="!embedded" value="unlinked">待判断 {{ count((q) => questionUnlinked(q) && questionPending(q)) }}</el-radio-button>
+        <el-radio-button v-if="!embedded && !relatedRequirementCode" value="unlinked">待判断 {{ count((q) => questionUnlinked(q) && questionPending(q)) }}</el-radio-button>
         <el-radio-button value="done">已处理 {{ count((q) => q.status === '已应用') }}</el-radio-button>
         <el-radio-button value="ignored">暂不处理 {{ count((q) => q.status === '已忽略') }}</el-radio-button>
         <el-radio-button value="all">全部</el-radio-button>
       </el-radio-group>
       <span style="flex:1"></span>
-      <el-button size="small" @click="newQuestion">提出澄清</el-button>
+      <el-button size="small" @click="newQuestion">新增待澄清事项</el-button>
     </div>
 
     <div v-if="!questions.length" class="empty">这一类没有问题</div>
@@ -122,11 +127,11 @@ export default defineComponent({
         <el-tag v-if="questionUnlinked(q) && questionPending(q)" size="small" type="warning">待判断事项</el-tag>
         <span v-if="q.assignee" class="muted">负责人：{{ q.assignee }}</span>
         <span style="flex:1"></span>
-        <el-button link @click="assign(q)">{{ q.assignee ? '修改负责人' : '指定负责人' }}</el-button>
-        <el-button v-if="q.status !== '已忽略' && q.status !== '已应用'" link type="primary" @click="startAnswer(q)">{{ q.answer ? '修改答复' : '录入答复' }}</el-button>
-        <el-button v-if="q.status === '已答复'" link type="success" @click="openReview(q)">审阅答复建议</el-button>
-        <el-button v-if="q.status === '已忽略'" link @click="restore(q)">恢复为待处理</el-button>
-        <el-button v-else-if="q.status !== '已应用'" link title="不纳入本轮待办与导出清单，可在暂不处理中恢复" @click="ignore(q)">暂不处理</el-button>
+        <el-button v-if="questionActions(q).assign" link @click="assign(q)">{{ q.assignee ? '修改负责人' : '指定负责人' }}</el-button>
+        <el-button v-if="questionActions(q).answer" link type="primary" :disabled="view.job?.status === '处理中'" @click="startAnswer(q)">{{ q.answer ? '修改答复' : '录入答复' }}</el-button>
+        <el-button v-if="questionActions(q).review" link type="success" @click="openReview(q)">审阅答复建议</el-button>
+        <el-button v-if="questionActions(q).restore" link @click="restore(q)">{{ q.answer && q.proposal ? '恢复答复审阅' : '恢复为待处理' }}</el-button>
+        <el-button v-if="questionActions(q).defer" link title="不纳入本轮待办与导出清单，可在暂不处理中恢复" @click="ignore(q)">暂不处理</el-button>
         <el-button link type="danger" @click="remove(q)">删除</el-button>
       </div>
       <div class="q-text">{{ q.question }}</div>
@@ -152,7 +157,7 @@ export default defineComponent({
       </el-form>
       <div class="muted">提交会保存客户答复，并分析对需求、场景和测算参数的影响；你采纳后才更新相关内容。</div>
     </template>
-    <template #footer><el-button @click="answering = null">取消</el-button><el-button type="primary" :disabled="!answering?.answer.trim()" @click="submitAnswer">提交并分析</el-button></template>
+    <template #footer><el-button @click="answering = null">取消</el-button><el-button type="primary" :disabled="!answering?.answer.trim() || view.job?.status === '处理中'" @click="submitAnswer">提交并分析</el-button></template>
   </el-dialog>
 
   <el-dialog :model-value="!!review" @close="review = null" title="答复带来的变更建议" width="720px">
@@ -174,13 +179,13 @@ export default defineComponent({
           <div class="muted">依据：“{{ c.quote }}” <el-tag v-if="!c.quoteVerified" size="small" type="warning">引用未定位，不能直接采纳</el-tag></div>
         </div>
       </div>
-      <el-form-item v-if="review.q.proposal.changes.some((c, i) => review.accepted.includes(i) && c.conflict)" label="冲突处理依据"><el-input v-model="review.resolution_note" type="textarea" placeholder="记录采用答复的依据及如何处理与正式条款的冲突" /></el-form-item>
+      <el-form-item v-if="needsResolution" label="冲突处理依据" required><el-input v-model="review.resolution_note" type="textarea" placeholder="记录采用答复的依据及如何处理与正式条款的冲突" /></el-form-item>
       <el-alert v-for="d in review.q.proposal.dropped" :key="d" type="warning" :closable="false" :title="'未采用的建议：' + d" style="margin-top:8px" />
       <div class="muted" style="margin-top:12px">采纳后更新所选内容，相关 PBS 可能重算数量或提示复核。未勾选的建议不执行；这项澄清会记为已处理。</div>
     </template>
     <template #footer>
       <el-button @click="review = null">稍后处理</el-button>
-      <el-button type="primary" @click="apply">{{ review?.accepted.length ? '采纳所选并更新（' + review.accepted.length + '）' : '记录不变更并结束处理' }}</el-button>
+      <el-button type="primary" :disabled="needsResolution && !review?.resolution_note.trim()" @click="apply">{{ review?.accepted.length ? '采纳所选并更新（' + review.accepted.length + '）' : '记录不变更并结束处理' }}</el-button>
     </template>
   </el-dialog>
 
@@ -191,6 +196,7 @@ export default defineComponent({
       <el-form-item label="原因"><el-input v-model="adding.reason" /></el-form-item>
       <el-form-item label="关联需求（可选）"><el-select v-model="adding.req_ids" multiple filterable style="width:100%" placeholder="尚不明确时可留空"><el-option v-for="r in view.requirements.filter((r) => r.status !== '已删除')" :key="r.code" :value="r.code" :label="r.code + ' ' + r.text" /></el-select></el-form-item>
       <el-form-item label="关联场景"><el-select v-model="adding.scenario_ids" multiple filterable style="width:100%"><el-option v-for="s in view.scenarios.filter((s) => s.status !== '已归档')" :key="s.code" :value="s.code" :label="s.code + ' ' + s.name" /></el-select></el-form-item>
+      <el-form-item v-if="adding.scenario_ids.length" label="涉及场景字段"><el-select v-model="adding.field_paths" multiple style="width:100%"><el-option v-for="(label, field) in SCENARIO_FIELD_LABELS" :key="field" :value="field" :label="label" /></el-select></el-form-item>
     </el-form>
     <template #footer><el-button @click="adding = null">取消</el-button><el-button type="primary" :disabled="!adding?.question.trim()" @click="addQuestion">添加</el-button></template>
   </el-dialog>`,

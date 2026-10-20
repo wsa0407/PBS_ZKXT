@@ -14,6 +14,7 @@ export default defineComponent({
     const editing = ref(null);
     const products = ref([]);
     const rematch = ref(null);
+    const starting = ref(false);
 
     const reqByCode = computed(() => new Map(view.value.requirements.map((r) => [r.code, r])));
     const segByUid = computed(() => new Map([...view.value.sourceSnapshots, ...view.value.segments].map((s) => [s.uid, s])));
@@ -26,6 +27,7 @@ export default defineComponent({
       () => focus.value,
       (v) => {
         if (!v) return;
+        filter.value = { source: "", state: "", kw: "" };
         if (typeof v === "string") v = items.value.find((i) => i.code === v)?.id ?? v;
         expanded.value = new Set([...expanded.value, v]);
         setTimeout(() => document.getElementById(`item-${v}`)?.scrollIntoView({ block: "center", behavior: "smooth" }), 80);
@@ -59,11 +61,15 @@ export default defineComponent({
     };
 
     const generate = async () => {
-      if (items.value.length) {
-        await ElMessageBox.confirm("助手会补充 PBS，并可调整尚未人工审阅的草稿。人工修改、已确认或已审阅的项保留；本次不会自动删除原有项。", "完善 PBS 草稿", { confirmButtonText: "开始完善", cancelButtonText: "取消" });
-      }
-      const r = await call(() => api(`/projects/${id}/pbs/generate`, { method: "POST" }));
-      if (r) reload();
+      if (starting.value || view.value.job?.status === "处理中" || !view.value.steps.requirements.total) return;
+      starting.value = true;
+      try {
+        if (items.value.length) {
+          await ElMessageBox.confirm("助手会补充 PBS，并可调整尚未人工审阅的草稿。人工修改、已确认或已审阅的项保留；本次不会自动删除原有项。", "完善 PBS 草稿", { confirmButtonText: "开始完善", cancelButtonText: "取消" });
+        }
+        const r = await call(() => api(`/projects/${id}/pbs/generate`, { method: "POST" }));
+        if (r) await reload();
+      } finally { starting.value = false; }
     };
 
     const loadProducts = async () => {
@@ -141,13 +147,13 @@ export default defineComponent({
         return { label, before: text(before[key]), after: text(after[key]) };
       });
     });
-    return { view, s, items, pendingItems, filter, focus, visibleGroups, missingRequired, expanded, toggle, generate, edit, editing, save, confirmItem, confirmAll, remove, rematch, rematchChanges, startRematch, runRematch, acceptRematch, products, productOptions, editProduct, blockerProduct, rulesFor, reqOptions, reqByCode, segByUid, chunkOf, qtyText, stateOf, highlight, SOURCES, SOURCE_CLASS, LEVEL_TYPE, meta, open };
+    return { view, s, items, pendingItems, filter, focus, visibleGroups, missingRequired, expanded, toggle, generate, starting, edit, editing, save, confirmItem, confirmAll, remove, rematch, rematchChanges, startRematch, runRematch, acceptRematch, products, productOptions, editProduct, blockerProduct, rulesFor, reqOptions, reqByCode, segByUid, chunkOf, qtyText, stateOf, highlight, SOURCES, SOURCE_CLASS, LEVEL_TYPE, meta, open };
   },
   template: `
   <ProjectCatalog />
   <div v-if="!items.length" class="empty">
     <template v-if="view.steps.requirements.total">
-      需求条目 {{ view.steps.requirements.total }} 条，业务场景 {{ view.scenarioCoverage.active }} 个。<el-button v-if="!view.scenarioCoverage.active" link type="primary" @click="open('scenarios')">整理业务场景</el-button><el-button type="primary" @click="generate">生成 PBS 草稿</el-button>
+      需求条目 {{ view.steps.requirements.total }} 条，业务场景 {{ view.scenarioCoverage.active }} 个。<el-button v-if="!view.scenarioCoverage.active" link type="primary" @click="open('scenarios')">查看业务场景</el-button><el-button type="primary" :loading="starting" :disabled="view.job?.status === '处理中'" @click="generate">请专家编制 PBS</el-button>
       <div class="muted" style="margin-top:8px">也可以直接在左边对我说“生成 PBS”。系统会先从产品库和手册里检索相关产品，再让模型匹配。</div>
     </template>
     <template v-else>还没有需求，先在左边把客户的需求发给我，或者<el-button link type="primary" @click="open('materials')">去添加材料</el-button>。</template>
@@ -182,7 +188,7 @@ export default defineComponent({
       <span style="flex:1"></span>
       <el-button size="small" @click="edit(null)">新增一项</el-button>
       <el-button size="small" :disabled="!pendingItems.length" @click="confirmAll">确认全部待审项（{{ pendingItems.length }}）</el-button>
-      <el-button size="small" @click="generate">完善 PBS 草稿</el-button>
+      <el-button size="small" :loading="starting" :disabled="!view.steps.requirements.total || view.job?.status === '处理中'" @click="generate">请专家完善 PBS</el-button>
       <el-button size="small" type="primary" @click="open('finish')">导出前检查 →</el-button>
     </div>
 
@@ -218,7 +224,7 @@ export default defineComponent({
                   <div class="ops">
                     <el-button v-if="!i.confirmed || i.stale" link type="success" size="small" title="确认本项内容；未知数量与未处理澄清仍单独保留" @click="confirmItem(i)">确认本项</el-button>
                     <el-button link type="primary" size="small" @click="edit(i)">编辑</el-button>
-                    <el-button link size="small" @click="startRematch(i)">重新匹配</el-button>
+                    <el-button link size="small" :disabled="view.job?.status === '处理中'" @click="startRematch(i)">重新匹配</el-button>
                     <el-button link type="danger" size="small" @click="remove(i)">删除</el-button>
                   </div>
                 </td>
@@ -356,7 +362,7 @@ export default defineComponent({
     </template>
     <template #footer>
       <el-button @click="rematch = null">取消</el-button>
-      <el-button v-if="!rematch?.result" type="primary" @click="runRematch">获取匹配建议</el-button>
+      <el-button v-if="!rematch?.result" type="primary" :disabled="view.job?.status === '处理中'" @click="runRematch">获取匹配建议</el-button>
       <template v-else><el-button @click="rematch.result = null">重新提出建议</el-button><el-button type="primary" @click="acceptRematch">采纳并更新本项</el-button></template>
     </template>
   </el-dialog>`,

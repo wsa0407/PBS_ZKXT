@@ -21,6 +21,23 @@ export function projectStage(project) {
   return { label: "待添加材料", type: "info" };
 }
 
+/** A navigation button must resolve to existing data or a relevant workspace. */
+export function findingTarget(view, finding) {
+  for (const ref of finding.refs ?? []) {
+    const item = view.items.find(i => i.code === ref || `pbs:${i.id}` === ref);
+    if (item) return { tab: "pbs", focus: item.id, label: "查看 PBS 项" };
+    if (view.requirements.some(r => r.code === ref)) return { tab: "requirements", focus: ref, label: "查看需求" };
+    if (view.scenarios?.some(s => s.code === ref)) return { tab: "scenarios", focus: ref, label: "查看场景" };
+    const question = view.questions?.find(q => `Q${q.id}` === ref);
+    if (question) return { tab: "questions", focus: question.id, label: "查看问题记录" };
+    if ([...(view.segments ?? []), ...(view.sourceSnapshots ?? [])].some(s => s.uid === ref)) return { tab: "materials", focus: ref, label: "查看原文" };
+  }
+  if (/条款|片段/.test(finding.type)) return { tab: "materials", label: "核对材料" };
+  if (/参数/.test(finding.type)) return { tab: "requirements", label: "核对测算参数" };
+  if (/PBS|漏项/.test(finding.type)) return { tab: "pbs", label: "核对 PBS" };
+  return null;
+}
+
 /** A review checklist, not a claim of compliance or customer acceptance. */
 export function exportReview(view) {
   const s = view.steps;

@@ -30,6 +30,7 @@ export default defineComponent({
     const composer = ref(null), mention = ref(null), mentionIndex = ref(0);
     const recipients = computed(() => parseMentions(text.value).targets);
     const sending = ref(false);
+    const resuming = ref(false);
     const expanded = ref({});
     const unread = ref(0);
     let draftReviewId, drafting = false;
@@ -61,7 +62,12 @@ export default defineComponent({
         scrollDown();
       } finally { loading = false; if (loadAgain && !disposed) { loadAgain = false; load().catch(() => {}); } }
     };
-    const resume = async () => { if (await call(() => api(`/projects/${id}/collaboration/resume`, { method: "POST" }))) await load(); };
+    const resume = async () => {
+      if (resuming.value || busy.value || !["paused", "failed"].includes(collaboration.value.task?.status)) return;
+      resuming.value = true;
+      try { if (await call(() => api(`/projects/${id}/collaboration/resume`, { method: "POST" }))) await load(); }
+      finally { resuming.value = false; }
+    };
     watch(view, () => { load().catch(() => {}); });
     onMounted(async () => {
       await call(load);
@@ -212,7 +218,7 @@ export default defineComponent({
       return "";
     });
 
-    return { id, collaboration, composer, mention, mentionIndex, recipients, updateMention, chooseMention, sending, expanded, unread, onScroll, showLatest, resume, expertLabels, view, messages, suggestions, text, file, busy, progress, currentStep, scroller, samples, empty, hint, modelState, modelGroups, refreshModels, changeModel, send, submit, onKey, onFile, onDrop, quick, useSample, question, cardDone, productName, describeChange, clear, KIND_LABEL, CHANGE_LABEL, meta, jobState, scenarioFieldLabel, scenarioValue };
+    return { id, collaboration, composer, mention, mentionIndex, recipients, updateMention, chooseMention, sending, resuming, expanded, unread, onScroll, showLatest, resume, expertLabels, view, messages, suggestions, text, file, busy, progress, currentStep, scroller, samples, empty, hint, modelState, modelGroups, refreshModels, changeModel, send, submit, onKey, onFile, onDrop, quick, useSample, question, cardDone, productName, describeChange, clear, KIND_LABEL, CHANGE_LABEL, meta, jobState, scenarioFieldLabel, scenarioValue };
   },
   template: `
   <div class="chat" @dragover.prevent @drop.prevent="onDrop">
@@ -253,7 +259,6 @@ export default defineComponent({
           <div v-if="m.payload.attachment" class="muted">📄 {{ m.payload.attachment.name }}</div>
 
           <div v-for="(r, k) in (m.payload.results || [])" :key="'r' + k" class="result" :class="{ bad: !r.ok }">{{ r.ok ? '✓' : '✗' }} {{ r.text }}</div>
-          <el-button v-for="s in (m.payload.suggestions || []).filter((s) => s.actions?.some((a) => a.type === 'resume_agent'))" :key="s.label" size="small" :disabled="busy" @click="quick(s)">{{ s.label }}</el-button>
 
           <template v-for="(c, i) in (m.payload.cards || [])" :key="'c' + i">
             <div v-if="c.kind === 'agent_change'" class="mini-card">
@@ -306,7 +311,7 @@ export default defineComponent({
             </div>
           </template>
 
-          <ExpertDetails v-if="m.payload.collaboration" :message="m" :open="$props.open" @resume="resume" />
+          <ExpertDetails v-if="m.payload.collaboration" :message="m" :open="$props.open" />
           <div v-if="m.payload.open" class="open-link"><el-button link type="primary" size="small" @click="$props.open(m.payload.open.tab, m.payload.open.focus)">在右侧查看 →</el-button></div>
         </div>
       </div>
@@ -316,7 +321,7 @@ export default defineComponent({
     <button v-if="unread" class="new-messages" @click="showLatest">{{ unread }} 条新消息 ↓</button>
     <div class="chat-foot">
       <div v-if="progress" class="chat-activity" role="status" aria-live="polite"><i class="spin"></i><span>{{ currentStep?.name || '正在处理' }}<template v-if="currentStep?.detail"> · {{ currentStep.detail }}</template>…</span></div>
-      <div v-if="['paused','failed'].includes(collaboration.task?.status)" class="task-resume"><span>{{ collaboration.task.status === 'paused' ? '任务已暂停，补充会先保存' : '协作尚未完成，已有成果保留' }}</span><el-button size="small" @click="resume">继续处理</el-button></div>
+      <div v-if="!busy && ['paused','failed'].includes(collaboration.task?.status)" class="task-resume"><span>{{ collaboration.task.status === 'paused' ? '任务已暂停，补充会先保存' : '协作尚未完成，已有成果保留' }}</span><el-button size="small" :loading="resuming" @click="resume">继续处理</el-button></div>
       <div class="composer-hint">{{ recipients.length ? '已 @ ' + recipients.map(r => expertLabels[r]).join('、') : '发到专家群，由相关专家认领；输入 @ 可指定专家' }}</div>
       <div class="quick" v-if="suggestions.length && !busy">
         <button v-for="s in suggestions.filter((x) => x.ui !== 'samples')" :key="s.label" @click="quick(s)">{{ s.label }}</button>

@@ -1,7 +1,7 @@
 import { computed, defineComponent, inject, onMounted, ref } from "vue";
 import { ElMessageBox } from "element-plus";
 import { api, call, fmtTime } from "../../api.js";
-import { exportReview } from "../../presentation.js";
+import { exportReview, findingTarget } from "../../presentation.js";
 
 export default defineComponent({
   setup() {
@@ -10,16 +10,13 @@ export default defineComponent({
     const log = ref({ events: [], llm: [] });
     onMounted(async () => (log.value = (await call(() => api(`/projects/${id}/events`))) ?? log.value));
     const review = computed(() => exportReview(view.value));
-    const blockers = computed(() => view.value.audit.filter((a) => a.level === "阻断"));
-    const warnings = computed(() => view.value.audit.filter((a) => a.level === "警告"));
-    const notes = computed(() => view.value.audit.filter((a) => a.level === "提示"));
+    const findings = computed(() => view.value.audit.map(a => ({ ...a, target: findingTarget(view.value, a) })));
+    const blockers = computed(() => findings.value.filter((a) => a.level === "阻断"));
+    const warnings = computed(() => findings.value.filter((a) => a.level === "警告"));
+    const notes = computed(() => findings.value.filter((a) => a.level === "提示"));
     const llmSummary = computed(() => ({ calls: log.value.llm.length, tokens: log.value.llm.reduce((a, r) => a + r.prompt_tokens + r.completion_tokens, 0) }));
     const inspect = (finding) => {
-      const ref = finding.refs?.find((code) => typeof code === "string");
-      const item = view.value.items.find((i) => i.code === ref);
-      if (item) return open("pbs", item.id);
-      if (view.value.requirements.some((r) => r.code === ref)) return open("requirements", ref);
-      open("pbs");
+      if (finding.target) open(finding.target.tab, finding.target.focus);
     };
     const finish = async (done) => {
       if (done) await ElMessageBox.confirm(review.value.draft
@@ -41,11 +38,11 @@ export default defineComponent({
       <el-divider />
       <b>优先处理（{{ blockers.length }}）</b>
       <p class="muted">包括重点条款缺失、明确选型冲突等问题；请核对原文和产品资料后处理。</p>
-      <div v-for="(b, k) in blockers" :key="k" class="risk-line"><el-tag size="small" type="danger">{{ b.type }}</el-tag> {{ b.message }} <el-button link type="primary" @click="inspect(b)">查看关联内容</el-button></div>
+      <div v-for="(b, k) in blockers" :key="k" class="risk-line"><el-tag size="small" type="danger">{{ b.type }}</el-tag> {{ b.message }} <el-button v-if="b.target" link type="primary" @click="inspect(b)">{{ b.target.label }}</el-button></div>
       <div v-if="!blockers.length" class="muted">当前检查未发现此类问题。</div>
       <el-collapse style="margin-top:12px">
-        <el-collapse-item :title="'需要核对（' + warnings.length + '）'" name="warnings"><div v-for="(w, k) in warnings" :key="k" class="risk-line"><el-tag size="small" type="warning">{{ w.type }}</el-tag> {{ w.message }} <el-button link type="primary" @click="inspect(w)">查看关联内容</el-button></div><span v-if="!warnings.length" class="muted">暂无</span></el-collapse-item>
-        <el-collapse-item :title="'其他核对提示（' + notes.length + '）'" name="notes"><div v-for="(n, k) in notes" :key="k" class="risk-line"><el-tag size="small" type="info">{{ n.type }}</el-tag> {{ n.message }} <el-button link type="primary" @click="inspect(n)">查看关联内容</el-button></div><span v-if="!notes.length" class="muted">暂无</span></el-collapse-item>
+        <el-collapse-item :title="'需要核对（' + warnings.length + '）'" name="warnings"><div v-for="(w, k) in warnings" :key="k" class="risk-line"><el-tag size="small" type="warning">{{ w.type }}</el-tag> {{ w.message }} <el-button v-if="w.target" link type="primary" @click="inspect(w)">{{ w.target.label }}</el-button></div><span v-if="!warnings.length" class="muted">暂无</span></el-collapse-item>
+        <el-collapse-item :title="'其他核对提示（' + notes.length + '）'" name="notes"><div v-for="(n, k) in notes" :key="k" class="risk-line"><el-tag size="small" type="info">{{ n.type }}</el-tag> {{ n.message }} <el-button v-if="n.target" link type="primary" @click="inspect(n)">{{ n.target.label }}</el-button></div><span v-if="!notes.length" class="muted">暂无</span></el-collapse-item>
       </el-collapse>
     </el-card>
     <el-card shadow="never" style="margin-top:12px">

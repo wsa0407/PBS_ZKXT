@@ -1,9 +1,10 @@
-import { defineComponent, inject, ref } from "vue";
+import { computed, defineComponent, inject, ref } from "vue";
 import { api, call } from "../../api.js";
 import { ApprovalDialog } from "../../collaboration-ui.js";
 import Requirements from "./requirements.js";
 import Scenarios from "./scenarios.js";
 import Questions from "./questions.js";
+import { understandingAction } from "../../understanding.js";
 
 export default defineComponent({
   components: { Requirements, Scenarios, Questions, ApprovalDialog },
@@ -11,17 +12,22 @@ export default defineComponent({
     const { id, view, reload } = inject("project");
     const { understandingPane: pane, open } = inject("workspace");
     const approvalVisible = ref(false);
+    const action = computed(() => understandingAction(view.value));
+    const starting = ref(false);
     const analyze = async () => {
-      if (await call(() => api(`/projects/${id}/analyze`, { method: "POST", body: {} }))) await reload();
+      if (starting.value || !action.value || view.value.job?.status === "处理中") return;
+      starting.value = true;
+      try { if (await call(() => api(`/projects/${id}/${action.value.path}`, { method: "POST", body: action.value.body }))) await reload(); }
+      finally { starting.value = false; }
     };
     const started = async () => { await reload(); open("pbs"); };
-    return { id, view, pane, open, analyze, approvalVisible, started };
+    return { id, view, pane, open, analyze, action, starting, approvalVisible, started };
   },
   template: `
   <div class="understanding-header">
     <div><b>需求理解</b><p class="muted">逐条核对客户要求，按业务场景组织，并持续补全未明确的内容。</p></div>
-    <el-button v-if="view.requirements.length" :disabled="view.job?.status === '处理中'" @click="approvalVisible = true">确认范围并交给 PBS</el-button>
-    <el-button type="primary" :disabled="!view.materials.length || view.job?.status === '处理中'" @click="analyze">{{ view.job?.status === '处理中' ? '正在处理材料…' : view.steps.materials.pending ? '理解待处理材料（' + view.steps.materials.pending + '）' : view.requirements.length ? '继续理解与完善' : '开始理解材料' }}</el-button>
+    <el-button v-if="view.steps.requirements.total" :disabled="starting || view.job?.status === '处理中'" @click="approvalVisible = true">审阅本轮 PBS 输入范围</el-button>
+    <el-button v-if="action" type="primary" :loading="starting" :disabled="view.job?.status === '处理中'" @click="analyze">{{ action.label }}</el-button>
   </div>
   <div class="understanding-views" role="tablist" aria-label="需求理解视图">
     <button role="tab" :aria-selected="pane === 'requirements'" :class="{ active: pane === 'requirements' }" @click="open('requirements')"><b>需求条目 <span>{{ view.steps.requirements.total }}</span></b><small>具体要求与原文依据</small></button>

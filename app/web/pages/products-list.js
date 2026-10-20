@@ -42,6 +42,9 @@ export default defineComponent({
       await call(() => api(`/products/${p.id}`, { method: "DELETE" }), "已归档");
       load();
     };
+    const restore = async (p) => {
+      if (await call(() => api(`/products/${p.id}`, { method: "PUT", body: { ...p, metadata: { ...p.metadata, active: true } } }), "产品已恢复，可参与后续匹配")) await load();
+    };
 
     const importExcel = async () => {
       const f = await pickFile(".xlsx");
@@ -114,12 +117,13 @@ export default defineComponent({
     };
 
     const search = async () => {
+      if (probe.value.busy || !probe.value.query.trim()) return;
       probe.value.busy = true;
       probe.value.result = await call(() => api("/products/search", { method: "POST", body: { query: probe.value.query } }));
       probe.value.busy = false;
     };
 
-    return { includeArchived, products, docs, loading, kw, shown, docsOf, pendingDocs, editing, draft, probe, meta, edit, save, remove, importExcel, uploadManual, openDraft, useExisting, confirmDraft, removeDoc, search, fmtTime };
+    return { includeArchived, products, docs, loading, kw, shown, docsOf, pendingDocs, editing, draft, probe, meta, edit, save, remove, restore, importExcel, uploadManual, openDraft, useExisting, confirmDraft, removeDoc, search, fmtTime };
   },
   template: `
   <div class="page-head">
@@ -155,11 +159,11 @@ export default defineComponent({
       <el-table-column label="手册" width="110">
         <template #default="{ row }">
           <div v-for="d in docsOf(row.id)" :key="d.id" class="muted" :title="d.name">📄 {{ d.name.slice(0, 8) }}</div>
-          <el-button link size="small" @click="uploadManual(row.id)">上传</el-button>
+          <el-button v-if="row.metadata?.active !== false" link size="small" @click="uploadManual(row.id)">上传手册</el-button>
         </template>
       </el-table-column>
       <el-table-column label="操作" width="110" fixed="right">
-        <template #default="{ row }"><div class="ops"><el-button link type="primary" @click="edit(row)">编辑</el-button><el-button link type="danger" @click="remove(row)">归档</el-button></div></template>
+        <template #default="{ row }"><div class="ops"><el-button link type="primary" @click="edit(row)">编辑</el-button><el-button v-if="row.metadata?.active === false" link type="success" @click="restore(row)">恢复匹配</el-button><el-button v-else link type="danger" @click="remove(row)">归档</el-button></div></template>
       </el-table-column>
     </el-table>
   </el-card>
