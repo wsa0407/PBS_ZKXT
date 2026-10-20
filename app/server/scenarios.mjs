@@ -246,6 +246,18 @@ export async function generateScenarios(projectId, { llm, progress, requestId = 
   });
 }
 
+/** Agent tool boundary: deterministic validation and persistence, with no model call. */
+export function submitAgentScenario(projectId, raw) {
+  const result = validateScenario(raw, { requirements: repo.listRequirements(projectId), sources: repo.listSourceSnapshots(projectId) });
+  if (result.errors.length) throw badRequest(result.errors.join("；"));
+  const same = listScenarios(projectId).find((s) => live(s) && s.name === result.data.name);
+  if (same) return { code: same.code, kept: true, reason: "已存在同名场景，保留当前版本；修改需显式审阅" };
+  const code = nextCode(projectId);
+  write(projectId, { ...result.data, code, revision: 1, status: "待确认", origin: "系统", edited: false }, "Agent提交场景草稿");
+  repo.touchProject(projectId);
+  return { code, revision: 1 };
+}
+
 /** Restructuring keeps an explicit replacement graph and never silently drops a requirement. */
 export function restructure(projectId, body) {
   if (!Array.isArray(body.originals) || !body.originals.length || !Array.isArray(body.replacements) || !body.replacements.length) throw badRequest("请提供原场景与替代场景");

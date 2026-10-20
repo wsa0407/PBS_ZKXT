@@ -46,7 +46,12 @@ export function pickFile(accept) {
 
 // ---------- background jobs (every model call runs as a job) ----------
 
-export const jobState = reactive({ visible: false, title: "", job: null });
+export const jobState = reactive({ visible: false, title: "", job: null, stopping: false });
+export async function stopJob() {
+  if (!jobState.job?.id || jobState.stopping) return;
+  const result = await call(() => api(`/jobs/${jobState.job.id}/cancel`, { method: "POST" }));
+  if (result) jobState.stopping = true;
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -61,6 +66,7 @@ export async function runJob(title, start) {
   }
   jobState.title = title;
   jobState.job = null;
+  jobState.stopping = false;
   jobState.visible = true;
   try {
     for (;;) {
@@ -70,7 +76,7 @@ export async function runJob(title, start) {
         jobState.visible = false;
         return job.result ?? {};
       }
-      if (job.status === "失败") return null;
+      if (["失败", "已取消"].includes(job.status)) return null;
       await sleep(1000);
     }
   } catch (error) {

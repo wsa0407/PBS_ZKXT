@@ -163,7 +163,7 @@ main { max-width: 1680px; margin: 0 auto; padding: 18px 24px 40px; }
 .dot-own { background: var(--src-own); } .dot-buy { background: var(--src-buy); } .dot-dev { background: var(--src-dev); } .dot-svc { background: var(--src-svc); }
 
 /* pbs table */
-.pbs-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.pbs-table { width: 100%; min-width: 1040px; border-collapse: collapse; table-layout: fixed; }
 .pbs-table td .el-tag { vertical-align: top; }
 .pbs-table .ops { min-height: 22px; }
 .pbs-table th, .pbs-table td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }

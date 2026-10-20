@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { createLlm } from "../engine/llm.mjs";
+import { createHarnessLlm } from "./agent-runner.mjs";
 import { getDb, json, now, parse } from "./db.mjs";
 import { HttpError } from "./errors.mjs";
 import { selectedModel } from "./models.mjs";
 
 const active = new Map();
-let llmFactory = (options) => createLlm({ model: selectedModel(), ...options });
+const cancellations = new Map();
+let llmFactory = (options) => createHarnessLlm({ model: selectedModel(), ...options });
 
 /** Tests swap in a scripted model. Production always uses the real one. */
 export function setLlmFactory(factory) {
@@ -32,6 +33,8 @@ export function startJob({ projectId = null, kind, steps, run, lock: lockKey }) 
   const lock = lockKey ?? projectId ?? `global:${kind}`;
   if (active.has(lock)) throw new HttpError(409, "已有任务正在处理，请等它完成");
   const id = randomUUID().replace(/-/g, "").slice(0, 12);
+  const controller = new AbortController();
+  cancellations.set(id, controller);
   const state = steps.map((name) => ({ name, state: "pending", detail: "" }));
   getDb()
     .prepare("INSERT INTO jobs (id, project_id, kind, status, steps, created_at) VALUES (?, ?, ?, '处理中', ?, ?)")
@@ -58,11 +61,13 @@ export function startJob({ projectId = null, kind, steps, run, lock: lockKey }) 
     },
   };
 
-  const llm = llmFactory({ onCall: (call) => logCall(projectId, id, call) });
+  const onCall = (call) => logCall(projectId, id, call);
+  const llm = llmFactory({ onCall, signal: controller.signal, projectId });
   active.set(lock, id);
   const promise = Promise.resolve()
-    .then(() => run({ llm, progress, jobId: id }))
+    .then(() => run({ llm, progress, jobId: id, signal: controller.signal, onCall }))
     .then((result) => {
+      controller.signal.throwIfAborted();
       state.forEach((s) => (s.state = "done"));
       getDb()
         .prepare("UPDATE jobs SET status = '已完成', steps = ?, result = ?, finished_at = ? WHERE id = ?")
@@ -70,13 +75,13 @@ export function startJob({ projectId = null, kind, steps, run, lock: lockKey }) 
       return result;
     })
     .catch((error) => {
-      console.error(`[job ${kind} ${id}]`, error);
+      if (!controller.signal.aborted) console.error(`[job ${kind} ${id}]`, error);
       if (current >= 0) state[current].state = "failed";
       getDb()
-        .prepare("UPDATE jobs SET status = '失败', steps = ?, error = ?, finished_at = ? WHERE id = ?")
-        .run(json(state), String(error.message ?? error).slice(0, 600), now(), id);
+        .prepare("UPDATE jobs SET status = ?, steps = ?, error = ?, finished_at = ? WHERE id = ?")
+        .run(controller.signal.aborted ? "已取消" : "失败", json(state), controller.signal.aborted ? "任务已停止，已保存的草稿保留" : String(error.message ?? error).slice(0, 600), now(), id);
     })
-    .finally(() => active.delete(lock));
+    .finally(() => { active.delete(lock); cancellations.delete(id); });
   return { id, promise };
 }
 
@@ -93,6 +98,14 @@ export function activeJob(projectId) {
 
 export function failInterruptedJobs() {
   getDb().prepare("UPDATE jobs SET status = '失败', error = '服务重启，任务中断，请重新执行', finished_at = ? WHERE status = '处理中'").run(now());
+  getDb().prepare("UPDATE agent_runs SET status='interrupted',error='服务重启，可继续已保存会话与草稿',finished_at=? WHERE status='running'").run(now());
+}
+
+export function cancelJob(id) {
+  const controller = cancellations.get(id);
+  if (!controller) throw new HttpError(409, "任务已结束或不在当前服务中");
+  controller.abort(new Error("用户停止任务"));
+  return { stopping: true };
 }
 
 export function llmCalls(projectId) {

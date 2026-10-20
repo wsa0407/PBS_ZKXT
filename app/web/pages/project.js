@@ -1,5 +1,5 @@
-import { computed, defineComponent, onBeforeUnmount, onMounted, provide, ref } from "vue";
-import { api, call, shell } from "../api.js";
+import { computed, defineComponent, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
+import { api, call, shell, jobState } from "../api.js";
 import { router } from "../router.js";
 import Chat from "./chat.js";
 import Materials from "./tabs/materials.js";
@@ -38,6 +38,7 @@ export default defineComponent({
       }
     };
     provide("project", { id, view, reload });
+    watch(() => jobState.visible, (visible) => { if (!visible) reload(); });
 
     const rename = async () => {
       const name = prompt("项目名称", view.value.project.name);

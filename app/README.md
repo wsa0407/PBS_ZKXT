@@ -12,7 +12,9 @@ npm test        # 离线测试，不调用模型
 npm run check   # 提交前执行：ESLint + 前端模板编译检查 + 测试
 ```
 
-要求 Node ≥ 22.13（使用内置 `node:sqlite`）。模型配置读仓库根目录 `.env`，从 `.env.example` 复制后填写：`BAI_API_KEY`、`BAI_BASE_URL`；`APP_MODEL` 指定对话和拆解用的模型（默认 `gpt-5.4-mini`）；`EMBED_MODEL` 指定向量模型（默认 `text-embedding-3-small`）。
+要求 Node ≥ 22.19（使用内置 `node:sqlite` 与官方 dsh）。先在仓库根目录运行 `npm ci --prefix runtime`，再安装/启动 app。模型配置读仓库根目录 `.env`，从 `.env.example` 复制后填写：`BAI_API_KEY`、`BAI_BASE_URL`；`APP_MODEL` 指定对话和拆解用的模型（默认 `gpt-5.4-mini`）；`EMBED_MODEL` 指定向量模型（默认 `text-embedding-3-small`）。
+
+对话、需求抽取、场景与 PBS 的执行由官方 DeepSeek Harness 驱动，模型根据工具结果继续查询或修正草稿。Agent 包位于 `../agents/pbs/`，本地运行时与部署说明见 `../runtime/README.md`。产品手册、澄清答复与重匹配使用同一 dsh 运行时的类型化分析接口，不再直接调用旧模型客户端。
 
 如果 B.AI 直连超时，而本机已有可用的 HTTP 代理，可在 `.env` 中设置 `HTTPS_PROXY=http://127.0.0.1:<代理端口>`，然后重启服务。客户端读取 `HTTPS_PROXY` / `HTTP_PROXY`；macOS 的系统代理设置不会自动传入 Node.js 进程。该配置应按运行机器维护，不要把本机代理地址硬编码到业务代码中。
 

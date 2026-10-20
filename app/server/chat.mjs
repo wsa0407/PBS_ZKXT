@@ -3,6 +3,15 @@ import { runtimeConfig } from "./catalog.mjs";
 import * as repo from "./repo.mjs";
 import * as svc from "./services.mjs";
 import * as scenarios from "./scenarios.mjs";
+import { hash } from "../engine/scenario.mjs";
+
+const AGENT_CHANGE_TYPES = new Set(["set_param", "edit_requirement", "add_requirement", "delete_requirement", "edit_scenario", "confirm_scenarios", "confirm_requirements", "edit_item", "confirm_items", "delete_item", "finish", "show"]);
+const changeVersion = (id) => hash({ requirements: repo.listRequirements(id), items: repo.listItems(id), params: repo.listOverrides(id), scenarios: scenarios.listScenarios(id), project: repo.getProject(id) });
+export function proposeAgentChange(projectId, action) {
+  if (!AGENT_CHANGE_TYPES.has(action.type)) throw new Error("该操作不能作为人工变更提案");
+  const planned = plan(action, svc.projectView(projectId), { projectId });
+  return { kind: "agent_change", state: "pending", text: planned.confirm?.text ?? planned.label, action, input_version: changeVersion(projectId) };
+}
 
 /**
  * Conversational control layer. The user talks; the model turns the message into a list of
@@ -423,6 +432,15 @@ export function resolveCard(projectId, messageId, cardIndex, decision) {
   const card = msg.payload.cards?.[cardIndex];
   if (!card || card.state !== "pending") throw new Error("这张卡片已经处理过了");
   let note = decision === "accept" ? "已采纳" : "已取消";
+  if (decision === "accept" && card.kind === "agent_change") {
+    if (card.input_version !== changeVersion(projectId)) throw new Error("业务内容已变化，请重新提出变更建议");
+    if (!AGENT_CHANGE_TYPES.has(card.action.type)) throw new Error("变更类型无效");
+    const view = svc.projectView(projectId);
+    if (card.action.type === "finish" && view.steps.pbs.blockers) throw new Error("PBS仍有未完成事项，请先处理");
+    const change = plan(card.action, view, { projectId });
+    const out = change.run();
+    note = typeof out === "string" ? out : out.text || "已应用";
+  }
   if (decision === "accept" && card.kind === "delete_item") {
     svc.deleteItem(projectId, card.item_id);
     note = "已删除";

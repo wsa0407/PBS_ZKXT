@@ -6,11 +6,13 @@ import { INPUT_TYPES, CATEGORIES } from "../engine/extract.mjs";
 import { fileToText, SUPPORTED } from "../engine/ingest.mjs";
 import * as catalog from "./catalog.mjs";
 import * as projectSolutions from "./project-solutions.mjs";
-import { openDb } from "./db.mjs";
+import { openDb, getDb, parse } from "./db.mjs";
 import * as chat from "./chat.mjs";
 import * as models from "./models.mjs";
 import { badRequest, HttpError } from "./errors.mjs";
-import { activeJob, failInterruptedJobs, getJob, llmCalls, startJob } from "./jobs.mjs";
+import { activeJob, cancelJob, failInterruptedJobs, getJob, llmCalls, startJob } from "./jobs.mjs";
+import { runAgent } from "./agent-runner.mjs";
+import { agentChatTurn, agentGoal } from "./agent-chat.mjs";
 import * as rag from "./rag.mjs";
 import * as repo from "./repo.mjs";
 import * as svc from "./services.mjs";
@@ -80,6 +82,7 @@ get("/api/meta", () => {
   const { template, sizing, checklists } = catalog.runtimeConfig();
   return {
     model: models.selectedModel(),
+    execution: "deepseek-harness",
     retrieval: rag.retrievalMode(),
     materialKinds: Object.entries(svc.MATERIAL_KINDS).map(([id, label]) => ({ id, label })),
     inputTypes: Object.keys(INPUT_TYPES),
@@ -98,6 +101,7 @@ get("/api/samples", () => {
 });
 
 get("/api/jobs/:id", ({ id }) => getJob(id) ?? Promise.reject(new HttpError(404, "任务不存在")));
+post("/api/jobs/:id/cancel", ({ id }) => cancelJob(id));
 
 // ---------- chat model ----------
 
@@ -165,6 +169,11 @@ get("/api/projects/:id", ({ id }) => ({ ...svc.projectView(id), job: activeJob(i
 put("/api/projects/:id", ({ id }, body) => repo.updateProject(id, body));
 del("/api/projects/:id", ({ id }) => (repo.deleteProject(id), { ok: true }));
 get("/api/projects/:id/events", ({ id }) => ({ events: repo.listEvents(id), llm: llmCalls(id) }));
+get("/api/projects/:id/agent-runs", ({ id }) => {
+  repo.getProject(id);
+  return getDb().prepare("SELECT id,session_id,goal,status,result,error,stats,created_at,finished_at FROM agent_runs WHERE project_id=? ORDER BY created_at DESC LIMIT 30").all(id)
+    .map((r) => ({ ...r, result: parse(r.result, null), stats: parse(r.stats, {}) }));
+});
 get("/api/projects/:id/export.xlsx", ({ id }) => {
   const view = svc.projectView(id);
   if (!view.items.length) throw badRequest("还没有 PBS，无法导出");
@@ -186,7 +195,7 @@ del("/api/projects/:id/materials/:mid", ({ id, mid }) => {
 
 // requirements
 post("/api/projects/:id/analyze", ({ id }, body) =>
-  job(startJob({ projectId: id, kind: "analyze", steps: ["模型抽取需求", "保存与校验", "生成澄清问题"], run: (ctx) => svc.analyzeMaterials(id, { all: Boolean(body.all), ...ctx }) })),
+  job(startJob({ projectId: id, kind: "analyze", steps: ["Agent理解与执行"], run: (ctx) => runAgent(id, agentGoal({ type: "analyze" }) + (body.all ? "回查全部材料，保持人工成果。" : ""), ctx) })),
 );
 post("/api/projects/:id/requirements", ({ id }, body) => ({ code: svc.addRequirement(id, body) }));
 put("/api/projects/:id/requirements/:code", ({ id, code }, body) => (svc.editRequirement(id, code, body), { ok: true }));
@@ -194,7 +203,7 @@ post("/api/projects/:id/requirements/confirm", ({ id }, body) => (svc.confirmReq
 put("/api/projects/:id/params/:name", ({ id, name }, body) => (svc.setParam(id, name, body), { ok: true }));
 
 // Scenario requirements: every mutation uses the same versioned service as chat.
-post("/api/projects/:id/scenarios/generate", ({ id }, body) => job(startJob({ projectId: id, kind: "scenarios", steps: ["归纳场景与待确认事项", "校验来源并保存草稿"], run: (ctx) => scenarios.generateScenarios(id, { ...ctx, requestId: body.request_id }) })));
+post("/api/projects/:id/scenarios/generate", ({ id }) => job(startJob({ projectId: id, kind: "scenarios", steps: ["Agent理解与执行"], run: (ctx) => runAgent(id, agentGoal({ type: "generate_scenarios" }), ctx) })));
 post("/api/projects/:id/scenarios", ({ id }, body) => scenarios.addScenario(id, body));
 get("/api/projects/:id/scenarios/:code", ({ id, code }) => ({ scenario: scenarios.getScenario(id, code), revisions: scenarios.revisions(id, code) }));
 put("/api/projects/:id/scenarios/:code", ({ id, code }, body) => scenarios.editScenario(id, code, body));
@@ -205,7 +214,7 @@ put("/api/projects/:id/requirements/:code/disposition", ({ id, code }, body) => 
 
 // business capabilities
 post("/api/projects/:id/capabilities/generate", ({ id }) =>
-  job(startJob({ projectId: id, kind: "capability", steps: ["模型推演业务场景并归纳能力", "校验与保存"], run: (ctx) => svc.generateCapabilities(id, ctx) })),
+  job(startJob({ projectId: id, kind: "capability", steps: ["Agent理解与执行"], run: (ctx) => runAgent(id, agentGoal({ type: "generate_capabilities" }), ctx) })),
 );
 post("/api/projects/:id/capabilities", ({ id }, body) => ({ code: svc.addCapability(id, body) }));
 put("/api/projects/:id/capabilities/:code", ({ id, code }, body) => (svc.editCapability(id, code, body), { ok: true }));
@@ -230,7 +239,7 @@ post("/api/projects/:id/chat", async ({ id }, body) => {
       projectId: id,
       kind: "chat",
       steps: ["理解你的意思"],
-      run: (ctx) => chat.chatTurn(id, { text: body.text, attachment, actions: body.actions, label: body.label }, ctx),
+      run: (ctx) => agentChatTurn(id, { text: body.text, attachment, actions: body.actions, label: body.label }, ctx),
     }),
   );
 });
@@ -239,7 +248,7 @@ del("/api/projects/:id/chat", ({ id }) => (repo.clearChat(id), { ok: true }));
 
 // PBS
 post("/api/projects/:id/pbs/generate", ({ id }) =>
-  job(startJob({ projectId: id, kind: "pbs", steps: ["检索产品库与手册", "模型生成 PBS 并匹配产品", "校验匹配与补漏", "规则测算与审核"], run: (ctx) => svc.generateProjectPbs(id, ctx) })),
+  job(startJob({ projectId: id, kind: "pbs", steps: ["Agent理解与执行"], run: (ctx) => runAgent(id, agentGoal({ type: "generate_pbs" }), ctx) })),
 );
 post("/api/projects/:id/pbs", ({ id }, body) => ({ id: svc.saveItem(id, null, body) }));
 put("/api/projects/:id/pbs/:iid", ({ id, iid }, body) => ({ id: svc.saveItem(id, Number(iid), body) }));

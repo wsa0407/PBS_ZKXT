@@ -178,7 +178,7 @@ export default defineComponent({
       <el-button size="small" type="primary" @click="open('finish')">下一步：导出 →</el-button>
     </div>
 
-    <el-card shadow="never" body-style="padding:0">
+    <el-card shadow="never" body-style="padding:0;overflow-x:auto">
       <table class="pbs-table">
         <thead><tr><th style="width:60px">编码</th><th>名称</th><th style="width:84px">来源</th><th style="width:150px">匹配产品</th><th style="width:96px">数量</th><th style="width:76px">状态</th><th style="width:170px">操作</th></tr></thead>
         <tbody>

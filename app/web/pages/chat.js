@@ -15,10 +15,24 @@ export default defineComponent({
     const file = ref(null);
     const busy = ref(false);
     const progress = ref(null);
+    const stopping = ref(false);
     const scroller = ref(null);
     const samples = ref([]);
 
     const scrollDown = () => nextTick(() => scroller.value && (scroller.value.scrollTop = scroller.value.scrollHeight));
+    const stop = async () => {
+      if (!progress.value?.id || stopping.value) return;
+      if (await call(() => api(`/jobs/${progress.value.id}/cancel`, { method: "POST" }))) stopping.value = true;
+    };
+    const monitor = async (jobId) => {
+      for (;;) {
+        const job = await api(`/jobs/${jobId}`);
+        progress.value = job;
+        scrollDown();
+        if (["已完成", "失败", "已取消"].includes(job.status)) return job;
+        await new Promise((r) => setTimeout(r, 900));
+      }
+    };
 
     const load = async () => {
       const data = await call(() => api(`/projects/${id}/chat`));
@@ -36,27 +50,25 @@ export default defineComponent({
     onMounted(async () => {
       await load();
       samples.value = (await call(() => api("/samples"))) ?? [];
+      if (view.value.job?.status === "处理中") {
+        busy.value = true;
+        try { await monitor(view.value.job.id); } finally { busy.value = false; progress.value = null; await reload(); await load(); }
+      }
     });
 
     // Pending text shown immediately; the real message arrives with the job result.
     const send = async (body, label) => {
       if (busy.value) return;
       busy.value = true;
+      stopping.value = false;
       messages.value.push({ id: `tmp${Date.now()}`, role: "user", content: label || body.text || (body.file ? `（上传了文件 ${body.file.name}）` : ""), payload: {} });
       progress.value = { steps: [{ name: "理解你的意思", state: "running" }] };
       scrollDown();
       try {
         const { jobId } = await api(`/projects/${id}/chat`, { method: "POST", body: { ...body, label } });
-        for (;;) {
-          const job = await api(`/jobs/${jobId}`);
-          progress.value = job;
-          scrollDown();
-          if (job.status === "已完成") break;
-          if (job.status === "失败") {
+        const job = await monitor(jobId);
+        if (job.status === "失败") {
             messages.value.push({ id: `err${Date.now()}`, role: "assistant", content: `这一步没成功：${job.error}`, payload: { error: true } });
-            break;
-          }
-          await new Promise((r) => setTimeout(r, 900));
         }
       } catch (error) {
         messages.value.push({ id: `err${Date.now()}`, role: "assistant", content: `出错了：${error.message}`, payload: { error: true } });
@@ -139,6 +151,14 @@ export default defineComponent({
     };
 
     const productName = (ref) => meta.products?.[ref] ?? view.value.items.find((x) => x.product_ref === ref)?.match?.product_name ?? ref;
+    const describeChange = (a) => {
+      if (a.type === "set_param") return `${meta.params?.find((p) => p.name === a.name)?.label ?? a.name} → ${a.value ?? "按材料取值"}`;
+      const fields = [["对象", a.code ?? (a.id ? view.value.items.find((i) => i.id === a.id)?.name : null)], ["内容", a.text], ["名称", a.name], ["数量", a.qty], ["来源", a.source], ["优先级", a.priority], ["类别", a.category], ["原因", a.reason]];
+      if (a.scope) fields.push(["范围", a.scope === "all" ? "全部" : "可批量确认的需求"]);
+      if (a.codes?.length) fields.push(["需求/场景", a.codes.join("、")]);
+      if (a.ids?.length) fields.push(["PBS项", a.ids.map((id) => view.value.items.find((i) => i.id === id)?.name ?? id).join("、")]);
+      return fields.filter(([, v]) => v !== undefined && v !== null).map(([label, v]) => `${label}：${v}`).join("；") || "请核对后应用此项变更";
+    };
     const cardDone = (c) => c.state !== "pending";
 
     const clear = async () => {
@@ -198,7 +218,7 @@ export default defineComponent({
       return "";
     });
 
-    return { view, messages, suggestions, text, file, busy, progress, scroller, samples, empty, hint, modelState, modelGroups, refreshModels, changeModel, send, submit, onKey, onFile, onDrop, quick, useSample, card, question, proposalAccepted, toggleChange, applyProposal, applyRematch, resolve, cardDone, productName, clear, KIND_LABEL, CHANGE_LABEL, meta, jobState };
+    return { view, messages, suggestions, text, file, busy, progress, stopping, stop, scroller, samples, empty, hint, modelState, modelGroups, refreshModels, changeModel, send, submit, onKey, onFile, onDrop, quick, useSample, card, question, proposalAccepted, toggleChange, applyProposal, applyRematch, resolve, cardDone, productName, describeChange, clear, KIND_LABEL, CHANGE_LABEL, meta, jobState };
   },
   template: `
   <div class="chat" @dragover.prevent @drop.prevent="onDrop">
@@ -235,10 +255,20 @@ export default defineComponent({
           <div v-if="m.payload.attachment" class="muted">📄 {{ m.payload.attachment.name }}</div>
 
           <div v-for="(r, k) in (m.payload.results || [])" :key="'r' + k" class="result" :class="{ bad: !r.ok }">{{ r.ok ? '✓' : '✗' }} {{ r.text }}</div>
+          <el-button v-for="s in (m.payload.suggestions || []).filter((s) => s.actions?.some((a) => a.type === 'resume_agent'))" :key="s.label" size="small" :disabled="busy" @click="quick(s)">{{ s.label }}</el-button>
 
           <template v-for="(c, i) in (m.payload.cards || [])" :key="'c' + i">
+            <div v-if="c.kind === 'agent_change'" class="mini-card">
+              <div class="mc-title">{{ c.text }}</div>
+              <div class="content">{{ describeChange(c.action) }}</div>
+              <div class="mc-actions" v-if="!cardDone(c)">
+                <el-button size="small" type="primary" @click="resolve(m, i, 'accept')">应用变更</el-button>
+                <el-button size="small" @click="resolve(m, i, 'dismiss')">先不应用</el-button>
+              </div>
+              <div v-else class="muted">{{ c.note }}</div>
+            </div>
             <!-- 客户答复 → 变更建议 -->
-            <div v-if="c.kind === 'proposal' && question(c)" class="mini-card">
+            <div v-else-if="c.kind === 'proposal' && question(c)" class="mini-card">
               <div class="mc-title">客户答复带来的变更 <span class="muted">Q{{ c.question_id }}</span></div>
               <div class="muted">{{ question(c).proposal?.summary }}</div>
               <div v-if="!(question(c).proposal?.changes || []).length" class="muted">只是确认现有内容，没有需要变更的地方。</div>
@@ -300,6 +330,7 @@ export default defineComponent({
             <span class="ic"><template v-if="s.state === 'done'">✓</template><template v-else-if="s.state === 'running'"><i class="spin"></i></template></span>
             <span>{{ s.name }}</span><span class="muted" v-if="s.detail">{{ s.detail }}</span>
           </div>
+          <el-button size="small" :disabled="!progress.id || stopping" @click="stop">{{ stopping ? '正在停止…' : '停止处理' }}</el-button>
         </div>
       </div>
     </div>

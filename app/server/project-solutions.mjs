@@ -31,7 +31,7 @@ export function saveProjectSolutions(projectId, designs, inputHash) {
   return clean;
 }
 
-export const projectInputHash = (projectId) => digest({ designs: repo.getProject(projectId).pbs_meta.solution_designs ?? [], items: repo.listItems(projectId), scenarios: getDb().prepare("SELECT code,revision,status FROM scenarios WHERE project_id=? ORDER BY code").all(projectId), requirements: repo.listRequirements(projectId) });
+export const projectInputHash = (projectId) => digest({ designs: repo.getProject(projectId).pbs_meta.solution_designs ?? [], items: repo.listItems(projectId), scenarios: getDb().prepare("SELECT code,revision,status FROM scenarios WHERE project_id=? ORDER BY code").all(projectId), requirements: repo.listRequirements(projectId), products: repo.listProducts(), parameters: repo.listOverrides(projectId) });
 
 export function buildProjectBom(projectId) {
   const current = readCatalog();

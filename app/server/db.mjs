@@ -4,12 +4,28 @@ import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
 const seedDir = new URL("../seed/", import.meta.url);
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS agent_runs (
+  id TEXT PRIMARY KEY, project_id TEXT, session_id TEXT, goal TEXT NOT NULL,
+  status TEXT NOT NULL, result TEXT, error TEXT, stats TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL, finished_at TEXT
+);
+CREATE TABLE IF NOT EXISTS agent_operations (
+  project_id TEXT NOT NULL, operation_id TEXT NOT NULL, tool TEXT NOT NULL,
+  input_hash TEXT NOT NULL, result TEXT NOT NULL, created_at TEXT NOT NULL,
+  PRIMARY KEY(project_id, operation_id)
+);
+CREATE TABLE IF NOT EXISTS agent_coverage (
+  project_id TEXT NOT NULL, evidence_id TEXT NOT NULL, document_version TEXT NOT NULL,
+  status TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY(project_id, evidence_id, document_version)
+);
 
 CREATE TABLE IF NOT EXISTS catalog_revisions (
   revision INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT NOT NULL,

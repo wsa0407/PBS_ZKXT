@@ -188,7 +188,7 @@ const PARAM_SOURCE_LABEL = { 客户答复: "客户答复", 人工: "人工设定
  * Builds the full project view: parameters, quantities, coverage, conflicts, audit, review tiers.
  * With `reason`, quantities that changed are written back and the lines are flagged for review.
  */
-export function computeState(projectId, { reason = "" } = {}) {
+export function computeState(projectId, { reason = "", persist = true } = {}) {
   const config = catalog.runtimeConfig(projectId);
   const { sizing, template } = config;
   const project = repo.getProject(projectId);
@@ -218,7 +218,7 @@ export function computeState(projectId, { reason = "" } = {}) {
 
   // Persist rule-computed quantities; when a change was caused by an edit or an answer, flag the line.
   const changed = leaves.filter((l) => !l.manual_qty && l.sizing_rule && before.get(l.id) !== l.qty);
-  if (changed.length) {
+  if (changed.length && persist) {
     const byId = new Map(items.map((i) => [i.id, i]));
     const rows = changed.map((l) => {
       const from = before.get(l.id);
@@ -843,6 +843,52 @@ export async function generateProjectPbs(projectId, { llm, progress }) {
 }
 
 const ITEM_EDITABLE = ["name", "spec", "source", "product_ref", "matched_capabilities", "blocked_by", "req_ids", "capability_ids", "parent", "basis", "unit", "sizing_rule"];
+
+/** Agent planning uses the same deterministic product/quantity rules as manual PBS operations. */
+export function submitAgentPbs(projectId, { expected_version, items: rawItems }) {
+  if (expected_version !== projectSolutions.projectInputHash(projectId)) throw new HttpError(409, "项目已变化，请重新读取project_state的pbs_version");
+  const { template, sizing, history } = catalog.runtimeConfig(projectId);
+  const state = computeState(projectId);
+  if (!state.engineReqs.length) throw badRequest("请先保存原始需求");
+  const current = repo.listItems(projectId);
+  const kept = current.filter((i) => i.edited || i.confirmed || i.reviewed).map(leafFromItem);
+  const sceneList = scenarios.listScenarios(projectId).filter((s) => s.status !== "已归档");
+  const chunks = rag.getChunks([...new Set(rawItems.flatMap((i) => i.evidence_chunks ?? []))].filter(Number.isInteger));
+  const ctx = createContext({ requirements: state.engineReqs.filter((r) => !NON_DELIVERABLE.has(r.category)), segments: engineSegments(repo.listSegments(projectId)), template, products: repo.listProducts(), sizing, history, chunks, scenarios: sceneList });
+  const submittedNames = new Set();
+  for (const raw of rawItems) {
+    if (!raw || typeof raw.name !== "string" || !raw.name.trim() || !ctx.level1.has(String(raw.parent))) throw badRequest("PBS名称和分组无效");
+    if (submittedNames.has(normalize(raw.name))) throw badRequest("同一批PBS不能提交重复名称");
+    submittedNames.add(normalize(raw.name));
+    if (!Array.isArray(raw.req_ids) || !raw.req_ids.length || raw.req_ids.some((id) => !ctx.reqById.has(id))) throw badRequest("PBS必须关联真实的可交付需求");
+    if (raw.product_ref && (!ctx.productById.has(raw.product_ref) || ctx.productById.get(raw.product_ref).metadata.active === false)) throw badRequest("产品不存在或已归档");
+    if (raw.source === "自有产品" && !raw.product_ref) throw badRequest("自有产品必须引用真实product_ref");
+    if (raw.product_ref && raw.blocked_by?.product_ref === raw.product_ref) throw badRequest("blocked_by不能与交付产品相同；自身使用条件请写入spec或basis，保留product_ref并移除blocked_by");
+    if (raw.product_ref && !raw.matched_capabilities?.length) throw badRequest("目录产品至少提供一条从真实能力清单引用的matched_capabilities");
+    if (!DELIVERY_SOURCES.includes(raw.source)) throw badRequest("PBS产品来源无效");
+    if (raw.qty !== undefined && raw.qty !== null && (!Number.isFinite(raw.qty) || raw.qty < 0)) throw badRequest("PBS数量应为非负数或null");
+  }
+  const fresh = rawItems.map((raw) => {
+    const existing = current.find((i) => !kept.some((k) => k.id === i.id) && normalize(i.name) === normalize(raw.name));
+    return normalizeLeaf({ ...raw, id: existing?.id ?? null, code: existing?.code ?? "", edited: false, confirmed: false, manual_qty: false, origin: "model" }, ctx);
+  })
+    .filter((leaf) => !kept.some((k) => normalize(k.name) === normalize(leaf.name) || (k.product_ref && k.product_ref === leaf.product_ref)));
+  const untouched = current.filter((i) => !kept.some((k) => k.id === i.id) && !fresh.some((f) => f.id === i.id)).map(leafFromItem);
+  const leaves = [...kept, ...untouched, ...fresh];
+  assignCodes(leaves);
+  enforceLeaves(leaves, ctx, state.fullText);
+  const conflicts = checkConflicts([], leaves, ctx);
+  for (const leaf of fresh) {
+    if (leaf.scenario_ids.some((id) => sceneList.find((s) => s.code === id)?.status !== "已确认")) leaf.stale = "关联场景尚待人工审阅";
+  }
+  tx(() => {
+    repo.saveItems(projectId, leaves.map((l) => ({ ...l, qty_basis: l.qtyBasis ?? "待估", stale: l.stale || "" })));
+    const project = repo.getProject(projectId);
+    repo.updateProject(projectId, { pbs_meta: { ...project.pbs_meta, generatedAt: new Date().toISOString(), conflicts, issues: ctx.issues, execution: "deepseek-harness" } });
+    repo.logEvent(projectId, "PBS", `Agent保存 ${leaves.length} 项PBS草稿，保留 ${kept.length} 项人工成果`);
+  });
+  return { items: leaves.length, kept: kept.length, saved_items: repo.listItems(projectId).map(({ id, code, name, product_ref, req_ids, qty, unit }) => ({ id, code, name, product_ref, req_ids, qty, unit })), issues: ctx.issues, conflicts, uncovered: findUncovered(state.engineReqs, leaves).map((r) => r.id), pbs_version: projectSolutions.projectInputHash(projectId) };
+}
 
 function nextItemCode(items, parent, exceptId) {
   const used = items.filter((i) => i.parent === parent && i.id !== exceptId).map((i) => Number(String(i.code).split(".")[1]) || 0);
