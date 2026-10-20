@@ -14,7 +14,7 @@ export default defineComponent({
     const rematch = ref(null);
 
     const reqByCode = computed(() => new Map(view.value.requirements.map((r) => [r.code, r])));
-    const segByUid = computed(() => new Map(view.value.segments.map((s) => [s.uid, s])));
+    const segByUid = computed(() => new Map([...view.value.sourceSnapshots, ...view.value.segments].map((s) => [s.uid, s])));
     const productById = computed(() => new Map(products.value.map((p) => [p.id, p])));
     const items = computed(() => view.value.items);
     const s = computed(() => view.value.steps.pbs);
@@ -135,7 +135,7 @@ export default defineComponent({
   template: `
   <div v-if="!items.length" class="empty">
     <template v-if="view.steps.requirements.total">
-      需求已经就绪（{{ view.steps.requirements.total }} 条）。<el-button type="primary" @click="generate">生成 PBS</el-button>
+      原始需求 {{ view.steps.requirements.total }} 条，场景需求 {{ view.scenarioCoverage.active }} 条。<el-button v-if="!view.scenarioCoverage.active" link type="primary" @click="open('scenarios')">先拆分场景需求</el-button><el-button type="primary" @click="generate">生成 PBS</el-button>
       <div class="muted" style="margin-top:8px">也可以直接在左边对我说“生成 PBS”。系统会先从产品库和手册里检索相关产品，再让模型匹配。</div>
     </template>
     <template v-else>还没有需求，先在左边把客户的需求发给我，或者<el-button link type="primary" @click="open('materials')">去添加材料</el-button>。</template>
@@ -217,6 +217,7 @@ export default defineComponent({
                 <div class="evidence">
                   <div class="ev">
                     <h4><span class="step">1</span>为什么要有这一项</h4>
+                    <div v-if="i.scenario_ids.length" class="muted">场景依据：<el-button v-for="code in i.scenario_ids" :key="code" link type="primary" @click="open('scenarios', code)">{{ code }} {{ view.scenarios.find((s) => s.code === code)?.name }}</el-button></div>
                     <div v-for="c in i.req_ids" :key="c" class="req">
                       <div><el-tag size="small" type="info">{{ c }}</el-tag> {{ reqByCode.get(c)?.text }}</div>
                       <div class="quote" v-if="segByUid.get(reqByCode.get(c)?.seg_uid)" v-html="highlight(segByUid.get(reqByCode.get(c).seg_uid).text, reqByCode.get(c).quote_verified ? reqByCode.get(c).quote : '')"></div>
@@ -239,7 +240,7 @@ export default defineComponent({
                     </template>
                     <div v-else class="muted">产品库中没有相关产品，按「{{ i.source }}」处理</div>
                     <template v-for="cid in i.evidence_chunks" :key="cid"><div class="chunk" v-if="chunkOf(cid)">
-                      <div class="muted">检索到的资料 K{{ cid }}{{ chunkOf(cid).doc_name ? '（' + chunkOf(cid).doc_name + '）' : '' }}</div>{{ chunkOf(cid).text }}
+                      <div class="muted">检索到的资料 K{{ cid }}{{ chunkOf(cid).doc_name ? '（' + chunkOf(cid).doc_name + '）' : '' }}</div>{{ chunkOf(cid).text }}<el-tag v-if="!chunkOf(cid).active" size="small" type="warning">历史依据，当前资料已变更</el-tag>
                     </div></template>
                     <div v-for="c in view.conflicts.filter((x) => x.product_ref === i.product_ref && i.product_ref)" :key="c.req_id" class="conflict">⚠ 不满足 {{ c.req_id }}：{{ c.evidence }}<br />{{ c.reason }}</div>
                   </div>

@@ -30,6 +30,7 @@ export default defineComponent({
     <el-card shadow="never">
       <template #header><b>交付前检查</b></template>
       <div class="check" :class="{ ok: !s.requirements.pending }">{{ s.requirements.pending ? '⚠' : '✓' }} 需求：{{ s.requirements.confirmed }} / {{ s.requirements.total }} 条已确认<span v-if="s.requirements.pending">，还有 {{ s.requirements.pending }} 条待确认（其中必审 {{ s.requirements.mustReview }}）</span></div>
+      <div class="check" :class="{ ok: s.scenarios.active && !s.scenarios.pending && !s.scenarios.unmapped.length }">场景：{{ s.scenarios.confirmed }} / {{ s.scenarios.active }} 条已确认；{{ s.scenarios.unmapped.length }} 条原始需求待归类</div>
       <div class="check" :class="{ ok: !s.questions.open && !s.questions.answered }">{{ s.questions.open || s.questions.answered ? '⚠' : '✓' }} 澄清：{{ s.questions.applied }} 个已应用<span v-if="s.questions.open || s.questions.answered">，{{ s.questions.open }} 个待处理，{{ s.questions.answered }} 个已答复未应用</span></div>
       <div class="check" :class="{ ok: !s.pbs.uncovered }">{{ s.pbs.uncovered ? '✗' : '✓' }} 覆盖：{{ s.pbs.uncovered ? s.pbs.uncovered + ' 条必须需求没有被 PBS 承接' : '所有必须需求都有 PBS 项承接' }}</div>
       <div class="check" :class="{ ok: !s.pbs.stale }">{{ s.pbs.stale ? '⚠' : '✓' }} 复核：{{ s.pbs.stale ? s.pbs.stale + ' 项因需求或参数变化待复核' : '没有待复核的项' }}</div>
@@ -43,7 +44,7 @@ export default defineComponent({
     <el-card shadow="never" style="margin-top:12px">
       <div class="row">
         <a :href="'/api/projects/' + id + '/export.xlsx'"><el-button type="primary" size="large">导出 Excel</el-button></a>
-        <span class="muted">包含 PBS 清单、需求对应表、澄清问题、测算参数、审核结果</span>
+        <span class="muted">包含 PBS 清单、场景需求、需求对应表、需求去向、澄清问题、测算参数、审核结果</span>
         <span style="flex:1"></span>
         <el-button v-if="!view.project.done" :type="ready ? 'success' : 'default'" @click="finish(true)">标记项目完成</el-button>
         <el-button v-else @click="finish(false)">重新打开</el-button>

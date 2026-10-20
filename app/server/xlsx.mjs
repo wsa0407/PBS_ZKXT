@@ -93,7 +93,7 @@ export async function exportProject(view) {
   const book = new ExcelJS.Workbook();
   const groupName = new Map(view.groups.map((g) => [g.code, g.name]));
   const reqByCode = new Map(view.requirements.map((q) => [q.code, q]));
-  const segByUid = new Map(view.segments.map((s) => [s.uid, s]));
+  const segByUid = new Map([...(view.sourceSnapshots ?? []), ...view.segments].map((s) => [s.uid, s]));
 
   const pbs = book.addWorksheet("PBS 清单");
   pbs.columns = [
@@ -108,6 +108,7 @@ export async function exportProject(view) {
     { header: "单位", key: "unit", width: 6 },
     { header: "数量依据", key: "qtyBasis", width: 36 },
     { header: "关联需求", key: "reqs", width: 40 },
+    { header: "关联场景", key: "scenes", width: 24 },
     { header: "依据等级", key: "basis", width: 10 },
     { header: "状态", key: "state", width: 10 },
   ];
@@ -133,8 +134,9 @@ export async function exportProject(view) {
       unit: l.unit,
       qtyBasis,
       reqs: l.req_ids.map((id) => `${id} ${reqByCode.get(id)?.text ?? ""}`).join("\n"),
+      scenes: (l.scenario_ids ?? []).join("、"),
       basis: l.basis_level,
-      state: l.confirmed ? "已确认" : l.stale ? "待复核" : "待确认",
+      state: l.stale ? "待复核" : l.confirmed ? "已确认" : "待确认",
     }).alignment = wrap;
   }
   styleHeader(pbs);
@@ -170,17 +172,42 @@ export async function exportProject(view) {
   }
   styleHeader(reqs);
 
+  const scenes = book.addWorksheet("场景需求");
+  scenes.columns = [
+    { header: "场景编号", key: "code", width: 12 }, { header: "名称", key: "name", width: 30 },
+    { header: "目标", key: "goal", width: 40 }, { header: "角色", key: "actors", width: 25 },
+    { header: "条件", key: "context", width: 35 }, { header: "触发", key: "trigger", width: 30 },
+    { header: "活动", key: "activities", width: 50 }, { header: "结果", key: "outcomes", width: 40 },
+    { header: "范围与依赖", key: "boundaries", width: 40 }, { header: "推断", key: "assumptions", width: 40 },
+    { header: "具体要求", key: "requirements", width: 45 }, { header: "字段原文依据", key: "evidence", width: 70 },
+    { header: "未解决问题", key: "questions", width: 50 }, { header: "状态", key: "status", width: 12 }, { header: "版本", key: "revision", width: 8 },
+  ];
+  for (const s of view.scenarios ?? []) {
+    scenes.addRow({ ...s, actors: s.actors.join("；"), outcomes: s.outcomes.join("；"), boundaries: s.boundaries.join("；"),
+      activities: s.activities.map((a) => a.text + " [" + a.req_ids.join("、") + "]").join("\n"),
+      assumptions: s.assumptions.map((a) => a.text + "（" + a.reason + "）").join("\n"),
+      requirements: s.links.map((l) => l.req_id + " " + l.role + " " + (reqByCode.get(l.req_id)?.text ?? "")).join("\n"),
+      evidence: s.evidence.map((e) => e.field_path + " · " + (e.material_title || "澄清Q" + e.question_id) + " · " + e.quote).join("\n"),
+      questions: view.questions.filter((q) => q.scenario_ids?.includes(s.code) && ["待处理", "待答复", "已答复"].includes(q.status)).map((q) => q.question).join("\n"),
+    }).alignment = wrap;
+  }
+  styleHeader(scenes);
+  const destinations = book.addWorksheet("需求处理去向");
+  destinations.columns = [{ header: "需求编号", key: "req_id", width: 12 }, { header: "内容", key: "text", width: 50 }, { header: "处理去向", key: "kinds", width: 25 }, { header: "关联场景", key: "scenarios", width: 24 }, { header: "约束适用范围", key: "scope", width: 25 }, { header: "说明", key: "note", width: 45 }];
+  for (const d of view.dispositions ?? []) destinations.addRow({ ...d, text: reqByCode.get(d.req_id)?.text, kinds: d.kinds.join("、"), scenarios: d.linked_scenarios.join("、"), scope: d.scenario_ids.join("、") || (d.kinds.includes("跨场景约束") ? "整个项目" : "") }).alignment = wrap;
+  styleHeader(destinations);
   const qs = book.addWorksheet("澄清问题");
   qs.columns = [
     { header: "问题", key: "question", width: 60 },
+    { header: "关联场景", key: "scenario_refs", width: 24 },
     { header: "影响", key: "impact", width: 12 },
     { header: "状态", key: "status", width: 8 },
     { header: "负责人", key: "assignee", width: 10 },
     { header: "客户答复", key: "answer", width: 40 },
     { header: "答复来源", key: "answer_source", width: 10 },
-    { header: "默认假设", key: "suggested_answer", width: 30 },
+    { header: "待确认建议", key: "suggested_answer", width: 30 },
   ];
-  view.questions.filter((q) => q.status !== "已忽略").forEach((q) => (qs.addRow(q).alignment = wrap));
+  view.questions.filter((q) => q.status !== "已忽略").forEach((q) => (qs.addRow({ ...q, scenario_refs: (q.scenario_ids ?? []).join("、") }).alignment = wrap));
   styleHeader(qs);
 
   const params = book.addWorksheet("测算参数");

@@ -39,16 +39,19 @@ export function segmentText(raw) {
   let section = "";
   let seq = 0;
   let seenHeading = false;
+  let continuation = null;
   const push = (id, body) => doc.segments.push({ id, chapter, section, text: body, ...mark(body) });
 
   for (const line of lines) {
     if (!line || line.startsWith(">")) continue;
     let m;
     if ((m = line.match(/^#\s+(.+)$/))) {
+      continuation = null;
       doc.title ||= m[1].trim();
       continue;
     }
     if ((m = line.match(/^#{2,}\s+(.+)$/))) {
+      continuation = null;
       chapter = m[1].trim();
       section = "";
       seenHeading = true;
@@ -60,9 +63,22 @@ export function segmentText(raw) {
       continue;
     }
     if (doc.numbered) {
-      if ((m = line.match(CLAUSE))) push(m[1], m[2].trim());
-      else if ((m = line.match(SECTION))) section = m[2].trim();
-      else if (/^第.+[章节]/.test(line)) chapter = line;
+      if ((m = line.match(CLAUSE))) {
+        push(m[1], m[2].trim());
+        continuation = doc.segments.at(-1);
+      } else if ((m = line.match(SECTION))) {
+        section = m[2].trim();
+        continuation = null;
+      } else if (/^第.+[章节]/.test(line)) {
+        chapter = line;
+        continuation = null;
+      } else if (continuation) {
+        continuation.text += `\n${line}`;
+        continuation.rejectRule ||= /无效投标|废标|否决投标/.test(line);
+      } else {
+        // Unnumbered introductions also carry requirements; keep their own stable segment.
+        push(`S${String(++seq).padStart(3, "0")}`, line);
+      }
       continue;
     }
     for (const sentence of sentences(line.replace(LIST_PREFIX, ""))) {

@@ -1,0 +1,215 @@
+import { computed, defineComponent, inject, ref, watch } from "vue";
+import { ElMessageBox } from "element-plus";
+import { api, call, runJob } from "../../api.js";
+import { SCENARIO_FIELD_LABELS, scenarioFieldLabel } from "../../ui.js";
+
+const clone = (v) => JSON.parse(JSON.stringify(v));
+const empty = () => ({ name: "", goal: "", actors: [], context: "", trigger: "", activities: [], outcomes: [], boundaries: [], assumptions: [], links: [], evidence: [], supersedes: [] });
+const textFields = { goal: "业务目标", context: "时间、地点与条件", trigger: "触发条件" };
+const arrayFields = { actors: "参与角色", outcomes: "预期结果与验收条件", boundaries: "范围、约束与依赖" };
+const dispositions = ["场景关联", "跨场景约束", "交付与服务", "商务与资质", "背景", "范围外", "待归类"];
+const typeOf = (status) => ({ 已确认: "success", 待复核: "warning", 已归档: "info", 待确认: "primary" })[status];
+
+const ScenarioForm = defineComponent({
+  props: ["draft", "requirements", "sources"],
+  setup() {
+    const evidenceFields = (draft) => [...Object.keys(SCENARIO_FIELD_LABELS), ...draft.activities.map((_, i) => `activities.${i}.text`), ...draft.outcomes.map((_, i) => `outcomes.${i}`), ...draft.boundaries.map((_, i) => `boundaries.${i}`)];
+    const removeActivity = (draft, index) => {
+      draft.activities.splice(index, 1);
+      draft.evidence = draft.evidence.filter((e) => !e.field_path.startsWith(`activities.${index}.`)).map((e) => {
+        const match = e.field_path.match(/^activities\.(\d+)(.*)$/);
+        return match && Number(match[1]) > index ? { ...e, field_path: `activities.${Number(match[1]) - 1}${match[2]}` } : e;
+      });
+    };
+    return { textFields, arrayFields, scenarioFieldLabel, evidenceFields, removeActivity };
+  },
+  template: `
+  <el-form label-position="top">
+    <el-form-item label="场景名称"><el-input v-model="draft.name" placeholder="角色在什么条件下完成什么业务目标" /></el-form-item>
+    <el-form-item v-for="(label, field) in textFields" :key="field" :label="label"><el-input v-model="draft[field]" type="textarea" :rows="2" placeholder="材料未明确时留空" /></el-form-item>
+    <el-form-item v-for="(label, field) in arrayFields" :key="field" :label="label + '（每行一项）'">
+      <el-input :model-value="draft[field].join('\\n')" @update:model-value="(v) => draft[field] = v.split('\\n').filter((s) => s.trim())" type="textarea" :rows="2" />
+    </el-form-item>
+    <el-divider>具体要求与活动</el-divider>
+    <div v-for="(link, n) in draft.links" :key="n" class="toolbar">
+      <el-select v-model="link.req_id" filterable style="flex:1" placeholder="选择原始需求"><el-option v-for="r in requirements" :key="r.code" :value="r.code" :label="r.code + ' ' + r.text" /></el-select>
+      <el-select v-model="link.role" style="width:125px"><el-option v-for="role in ['核心要求', '支撑要求', '适用约束']" :key="role" :value="role" /></el-select>
+      <el-button link type="danger" @click="draft.links.splice(n, 1)">移除</el-button>
+    </div>
+    <el-button size="small" @click="draft.links.push({ req_id: '', role: '核心要求' })">关联原始需求</el-button>
+    <el-form-item v-for="(a, n) in draft.activities" :key="n" :label="'活动 ' + (n + 1)">
+      <el-input v-model="a.text" placeholder="业务活动" />
+      <el-select v-model="a.req_ids" multiple style="width:100%;margin-top:6px" placeholder="这项活动依据哪些已关联需求"><el-option v-for="l in draft.links.filter((l) => l.req_id)" :key="l.req_id" :value="l.req_id" :label="l.req_id" /></el-select>
+      <el-button link type="danger" @click="removeActivity(draft, n)">移除活动</el-button>
+    </el-form-item>
+    <el-button size="small" @click="draft.activities.push({ text: '', req_ids: [] })">添加业务活动</el-button>
+    <el-divider>推断与字段依据</el-divider>
+    <div class="muted">仅为分析推断的内容填在这里，不要写成客户已经确定的要求。</div>
+    <div v-for="(a, n) in draft.assumptions" :key="n" style="margin:8px 0">
+      <el-input v-model="a.text" placeholder="推断内容" /><el-input v-model="a.reason" placeholder="推断理由" />
+      <el-button link type="danger" @click="draft.assumptions.splice(n, 1)">移除推断</el-button>
+    </div>
+    <el-button size="small" @click="draft.assumptions.push({ text: '', reason: '' })">添加推断</el-button>
+    <div v-for="(e, n) in draft.evidence" :key="n" class="chunk" style="margin-top:12px">
+      <template v-if="e.kind === 'answer'"><div>澄清 Q{{ e.question_id }} · {{ scenarioFieldLabel(e.field_path) }}</div><blockquote>{{ e.quote }}</blockquote></template>
+      <template v-else>
+        <el-select v-model="e.field_path" placeholder="支持的字段"><el-option v-for="path in evidenceFields(draft)" :key="path" :value="path" :label="scenarioFieldLabel(path)" /></el-select>
+
+        <el-select v-model="e.seg_uid" filterable placeholder="原文片段" style="width:100%;margin:6px 0"><el-option v-for="s in sources" :key="s.uid" :value="s.uid" :label="s.uid + ' ' + s.text.slice(0, 70)" /></el-select>
+        <el-input v-model="e.quote" type="textarea" placeholder="连续复制的原文引用，保存时逐字核对" />
+      </template>
+      <el-button link type="danger" @click="draft.evidence.splice(n, 1)">移除当前引用</el-button>
+    </div>
+    <el-button size="small" style="margin-top:8px" @click="draft.evidence.push({ field_path: 'goal', seg_uid: '', quote: '' })">添加字段依据</el-button>
+  </el-form>`,
+});
+
+export default defineComponent({
+  components: { ScenarioForm },
+  setup() {
+    const { id, view, reload } = inject("project");
+    const { open, focus } = inject("workspace");
+    const filter = ref("active");
+    const pane = ref("scenes");
+    const selected = ref([]);
+    const detailCode = ref(null);
+    const editing = ref(null);
+    const dispositionEdit = ref(null);
+    const question = ref(null);
+    const historyRows = ref([]);
+    const detail = computed(() => view.value.scenarios.find((s) => s.code === detailCode.value));
+    const rows = computed(() => view.value.scenarios.filter((s) => filter.value === "all" || (filter.value === "active" ? s.status !== "已归档" : s.status === filter.value)));
+    const requirements = computed(() => view.value.requirements.filter((r) => r.status !== "已删除" && r.category !== "范围外"));
+    const sources = computed(() => view.value.sourceSnapshots.filter((s) => s.active));
+    const req = (code) => view.value.requirements.find((r) => r.code === code);
+    watch(() => focus.value, (code) => { if (typeof code === "string" && code.startsWith("SC")) detailCode.value = code; }, { immediate: true });
+    watch(detailCode, () => { historyRows.value = []; });
+
+    const generate = async () => {
+      const request_id = crypto.randomUUID();
+      if (await runJob("拆分场景需求", () => api(`/projects/${id}/scenarios/generate`, { method: "POST", body: { request_id } }))) await reload();
+    };
+    const startEdit = (scene) => { editing.value = { mode: scene ? "edit" : "add", originals: scene ? [{ code: scene.code, revision: scene.revision }] : [], parts: [clone(scene ?? empty())] }; };
+    const confirm = async (scene) => {
+      if (await call(() => api(`/projects/${id}/scenarios/confirm`, { method: "POST", body: { scenarios: [{ code: scene.code, revision: scene.revision }] } }), "已确认当前版本，未解决问题仍会保留")) await reload();
+    };
+    const archive = async (scene) => {
+      const { value } = await ElMessageBox.prompt("归档原因（历史记录与原文会保留）", "归档场景", { inputPattern: /\S/, inputErrorMessage: "请填写原因" });
+      if (await call(() => api(`/projects/${id}/scenarios/${scene.code}`, { method: "PUT", body: { revision: scene.revision, status: "已归档", reason: value } }), "已归档")) await reload();
+    };
+    const restore = async (scene) => {
+      if (await call(() => api(`/projects/${id}/scenarios/${scene.code}`, { method: "PUT", body: { revision: scene.revision, status: "待确认", reason: "恢复场景，重新审阅" } }))) await reload();
+    };
+    const merge = () => {
+      const originals = selected.value;
+      if (originals.length < 2) return;
+      const data = empty();
+      data.name = originals.map((s) => s.name).join("与");
+      for (const field of ["goal", "context", "trigger"]) data[field] = originals.map((s) => s[field]).filter(Boolean).join("；");
+      for (const field of ["actors", "outcomes", "boundaries"]) data[field] = [...new Set(originals.flatMap((s) => s[field]))];
+      for (const field of ["activities", "assumptions"]) data[field] = clone(originals.flatMap((s) => s[field]));
+      data.links = [...new Map(originals.flatMap((s) => s.links).map((l) => [l.req_id, clone(l)])).values()];
+      data.evidence = clone(originals.flatMap((s) => s.evidence)).map((e) => e.kind === "answer" ? e : ({ ...e, field_path: e.field_path.replace(/\.\d+.*$/, "") }));
+      editing.value = { mode: "merge", originals: originals.map((s) => ({ code: s.code, revision: s.revision })), parts: [data] };
+    };
+    const split = (scene) => {
+      const first = clone(scene), second = clone(scene);
+      first.name += "（分组一）"; second.name += "（分组二）";
+      editing.value = { mode: "split", originals: [{ code: scene.code, revision: scene.revision }], parts: [first, second] };
+    };
+    const save = async () => {
+      const e = editing.value;
+      let path, body, method = "POST";
+      if (e.mode === "edit") { path = `/scenarios/${e.originals[0].code}`; body = { ...e.parts[0], revision: e.originals[0].revision, status: "待确认" }; method = "PUT"; }
+      else if (e.mode === "add") { path = "/scenarios"; body = e.parts[0]; }
+      else { path = "/scenarios/merge"; body = { originals: e.originals, replacements: e.parts }; }
+      if (await call(() => api(`/projects/${id}${path}`, { method, body }), "已保存草稿，请审阅后确认")) { editing.value = null; selected.value = []; await reload(); }
+    };
+    const ask = (scene) => { question.value = { question: "", reason: "", impact: "影响方案", req_ids: scene.links.map((l) => l.req_id), scenario_ids: [scene.code], field_paths: [] }; };
+    const addQuestion = async () => {
+      if (await call(() => api(`/projects/${id}/questions`, { method: "POST", body: question.value }), "问题已关联当前场景")) { question.value = null; await reload(); }
+    };
+    const saveDisposition = async () => {
+      const d = dispositionEdit.value;
+      if (await call(() => api(`/projects/${id}/requirements/${d.req_id}/disposition`, { method: "PUT", body: d }), "处理去向已保存")) { dispositionEdit.value = null; await reload(); }
+    };
+    const history = async () => { const result = await call(() => api(`/projects/${id}/scenarios/${detailCode.value}`)); if (result) historyRows.value = result.revisions; };
+    return { view, scenarioFieldLabel, open, pane, filter, rows, selected, detailCode, detail, editing, dispositionEdit, question, historyRows, requirements, sources, req, typeOf, dispositions, clone, empty, textFields, arrayFields, generate, startEdit, confirm, archive, restore, merge, split, save, ask, addQuestion, saveDisposition, history };
+  },
+  template: `
+  <el-alert :closable="false" type="info" title="从客户业务目标拆分场景。引用有效、内容已确认、问题已解决和产品已响应分别展示。" style="margin-bottom:12px" />
+  <div class="summary-row">
+    <div class="tile"><div class="v">{{ view.scenarioCoverage.active }}</div><div class="l">有效场景</div></div>
+    <div class="tile"><div class="v">{{ view.scenarioCoverage.confirmed }}</div><div class="l">已确认描述</div></div>
+    <div class="tile warn"><div class="v">{{ view.scenarioCoverage.pending }}</div><div class="l">待审阅场景</div></div>
+    <div class="tile" :class="{ warn: view.scenarioCoverage.unmapped.length }"><div class="v">{{ view.scenarioCoverage.unmapped.length }}</div><div class="l">待归类原始需求</div></div>
+  </div>
+  <div class="toolbar">
+    <el-radio-group v-model="pane" size="small"><el-radio-button value="scenes">场景需求</el-radio-button><el-radio-button value="dispositions">原始需求去向 {{ view.scenarioCoverage.classified }}/{{ view.scenarioCoverage.total }}</el-radio-button></el-radio-group>
+    <span style="flex:1"></span>
+    <el-button size="small" @click="startEdit(null)">新增场景</el-button>
+    <el-button size="small" type="primary" :disabled="!view.steps.requirements.total" @click="generate">{{ view.scenarios.length ? '重新生成草稿' : '生成场景草稿' }}</el-button>
+  </div>
+  <el-alert v-for="note in view.scenarioNotes" :key="note" :title="note" :closable="false" type="warning" style="margin-bottom:8px" />
+  <template v-if="pane === 'scenes'">
+    <div class="toolbar">
+      <el-select v-model="filter" size="small" style="width:150px"><el-option label="有效场景" value="active" /><el-option v-for="s in ['待确认', '已确认', '待复核', '已归档']" :key="s" :value="s" /><el-option label="全部含历史" value="all" /></el-select>
+      <el-button size="small" :disabled="selected.length < 2" @click="merge">合并所选</el-button>
+      <span class="muted">人工编辑和确认内容会保留；重生成替代的草稿可在归档中查看。</span>
+    </div>
+    <el-table :data="rows" row-key="code" @selection-change="(v) => selected = v" empty-text="尚未建立场景需求，可从原始需求生成草稿或手动新增">
+      <el-table-column type="selection" width="38" :selectable="(s) => s.status !== '已归档'" />
+      <el-table-column label="编号" prop="code" width="70" />
+      <el-table-column label="场景与目标" min-width="220"><template #default="{ row }"><el-button link type="primary" @click="detailCode = row.code">{{ row.name }}</el-button><div class="muted">{{ row.goal || '业务目标未明确' }}</div></template></el-table-column>
+      <el-table-column label="要求" width="50"><template #default="{ row }">{{ row.links.length }}</template></el-table-column>
+      <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag size="small" :type="typeOf(row.status)">{{ row.status }}</el-tag><div class="muted">版本 {{ row.revision }}</div></template></el-table-column>
+      <el-table-column label="问题" width="50"><template #default="{ row }">{{ row.open_questions.length }}</template></el-table-column>
+      <el-table-column label="操作" width="140"><template #default="{ row }"><el-button v-if="row.status !== '已归档'" link @click="startEdit(row)">修改</el-button><el-button v-if="!['已确认', '已归档'].includes(row.status)" link type="success" @click="confirm(row)">确认</el-button><el-button v-if="row.status !== '已归档'" link @click="split(row)">拆分</el-button><el-button v-if="row.status === '已归档'" link @click="restore(row)">恢复</el-button></template></el-table-column>
+    </el-table>
+  </template>
+  <el-table v-else :data="view.dispositions" row-key="req_id">
+    <el-table-column label="原始需求" min-width="280"><template #default="{ row }"><b>{{ row.req_id }}</b> {{ req(row.req_id)?.text }}</template></el-table-column>
+    <el-table-column label="处理去向" min-width="150"><template #default="{ row }"><el-tag v-for="kind in row.kinds" :key="kind" size="small" :type="kind === '待归类' ? 'warning' : 'info'">{{ kind }}</el-tag><div class="muted">{{ row.note }}</div></template></el-table-column>
+    <el-table-column label="关联场景" min-width="125"><template #default="{ row }"><el-button v-for="code in row.linked_scenarios" :key="code" link type="primary" @click="detailCode = code">{{ code }}</el-button><div v-if="row.kinds.includes('跨场景约束')" class="muted">适用：{{ row.scenario_ids.join('、') || '整个项目' }}</div></template></el-table-column>
+    <el-table-column label="操作" width="85"><template #default="{ row }"><el-button link @click="dispositionEdit = clone(row)">调整去向</el-button></template></el-table-column>
+  </el-table>
+  <el-drawer :model-value="!!detail" @close="detailCode = null" :title="detail ? detail.code + ' ' + detail.name : ''" size="65%">
+    <template v-if="detail">
+      <div class="toolbar"><el-tag :type="typeOf(detail.status)">{{ detail.status }}</el-tag><span class="muted">版本 {{ detail.revision }} · {{ detail.origin }}</span><el-button v-if="detail.status !== '已归档'" @click="startEdit(detail)">修改</el-button><el-button v-if="detail.status !== '已归档'" @click="ask(detail)">提出问题</el-button><el-button v-if="detail.status !== '已归档'" link type="danger" @click="archive(detail)">归档</el-button></div>
+      <el-alert v-if="detail.review_reason" :title="detail.review_reason" type="warning" :closable="false" />
+      <p v-for="issue in detail.issues" :key="issue" class="muted">待核对：{{ issue }}</p>
+      <p v-if="detail.supersedes.length">替代场景：{{ detail.supersedes.join('、') }}，原记录和依据保留。</p>
+      <el-descriptions :column="1" border>
+        <el-descriptions-item v-for="(label, field) in textFields" :key="field" :label="label">{{ detail[field] || '未明确' }}</el-descriptions-item>
+        <el-descriptions-item v-for="(label, field) in arrayFields" :key="field" :label="label">{{ detail[field].join('；') || '未明确' }}</el-descriptions-item>
+      </el-descriptions>
+      <h3>业务活动与具体要求</h3>
+      <div v-for="(a, n) in detail.activities" :key="n" class="chunk"><b>{{ n + 1 }}. {{ a.text }}</b><div v-for="code in a.req_ids" :key="code" class="muted">{{ code }} {{ req(code)?.text }}</div></div>
+      <div v-for="l in detail.links" :key="l.req_id" class="chunk"><el-tag size="small">{{ l.role }}</el-tag> <b>{{ l.req_id }}</b> {{ req(l.req_id)?.text }} <el-tag v-if="req(l.req_id)?.status === '已删除'" type="warning" size="small">已删除或被替代</el-tag></div>
+      <h3>原文与答复依据</h3>
+      <div class="muted">引用可定位只说明出处有效，请核对它是否支持对应字段。</div>
+      <div v-for="(e, n) in detail.evidence" :key="n" class="chunk"><div class="muted">{{ scenarioFieldLabel(e.field_path) }} · {{ e.material_title || ('澄清 Q' + e.question_id) }} · {{ e.seg_uid || e.answer_source }}</div><blockquote>{{ e.quote }}</blockquote><el-collapse v-if="e.source_text"><el-collapse-item title="查看原文上下文">{{ e.source_text }}</el-collapse-item></el-collapse></div>
+      <div v-if="!detail.evidence.length" class="muted">当前为人工描述，尚未关联字段原文。</div>
+      <h3>推断与待确认事项</h3>
+      <div v-for="(a, n) in detail.assumptions" :key="n" class="chunk"><b>分析推断：</b>{{ a.text }}<div class="muted">{{ a.reason }}</div></div>
+      <div v-for="q in view.questions.filter((q) => q.scenario_ids.includes(detail.code))" :key="q.id" class="chunk"><el-tag size="small">{{ q.status }}</el-tag> {{ q.question }}<div v-if="q.answer">答复：{{ q.answer }}</div></div>
+      <el-button link type="primary" @click="open('questions')">进入澄清工作区</el-button>
+      <h3>下游 PBS</h3><div v-for="i in view.items.filter((i) => i.scenario_ids.includes(detail.code))" :key="i.id"><el-button link type="primary" @click="open('pbs', i.id)">{{ i.code }} {{ i.name }}</el-button> {{ i.stale }}</div>
+      <el-divider /><el-button @click="history">查看修改记录</el-button>
+      <el-collapse><el-collapse-item v-for="r in historyRows" :key="r.revision" :title="'版本 ' + r.revision + ' · ' + r.reason"><div>{{ r.at }}</div><div>{{ r.snapshot.name }} · {{ r.snapshot.status }}</div><div>{{ r.snapshot.goal }}</div><div>关联要求：{{ r.snapshot.links.map((l) => l.req_id).join('、') }}</div></el-collapse-item></el-collapse>
+    </template>
+  </el-drawer>
+  <el-dialog :model-value="!!editing" @close="editing = null" :title="editing?.mode === 'split' ? '拆分场景' : editing?.mode === 'merge' ? '合并场景' : '编辑场景需求'" width="800px">
+    <template v-if="editing">
+      <el-alert :closable="false" type="info" title="保存后为待确认。未知内容可以留空；合并或拆分必须承接原场景的全部需求，重新分配后再审阅。" />
+      <div v-for="(draft, n) in editing.parts" :key="n" style="margin-top:16px"><h3 v-if="editing.parts.length > 1">新场景 {{ n + 1 }}</h3><ScenarioForm :draft="draft" :requirements="requirements" :sources="sources" /><el-divider /></div>
+      <el-button v-if="editing.mode === 'split'" @click="editing.parts.push(empty())">再增加一个场景</el-button>
+    </template>
+    <template #footer><el-button @click="editing = null">取消</el-button><el-button type="primary" @click="save">保存草稿</el-button></template>
+  </el-dialog>
+  <el-dialog :model-value="!!dispositionEdit" @close="dispositionEdit = null" title="调整需求处理去向" width="550px">
+    <el-form v-if="dispositionEdit" label-position="top"><p>{{ req(dispositionEdit.req_id)?.text }}</p><el-form-item label="去向"><el-select v-model="dispositionEdit.kinds" multiple style="width:100%"><el-option v-for="kind in dispositions" :key="kind" :value="kind" /></el-select></el-form-item><el-form-item label="跨场景约束适用范围（留空表示整个项目）"><el-select v-model="dispositionEdit.scenario_ids" multiple style="width:100%"><el-option v-for="s in view.scenarios.filter((s) => s.status !== '已归档')" :key="s.code" :value="s.code" :label="s.code + ' ' + s.name" /></el-select></el-form-item><el-form-item label="说明"><el-input v-model="dispositionEdit.note" type="textarea" /></el-form-item></el-form>
+    <template #footer><el-button @click="dispositionEdit = null">取消</el-button><el-button type="primary" @click="saveDisposition">保存</el-button></template>
+  </el-dialog>
+  <el-dialog :model-value="!!question" @close="question = null" title="提出场景澄清问题" width="550px"><el-form v-if="question" label-position="top"><el-form-item label="问题"><el-input v-model="question.question" type="textarea" /></el-form-item><el-form-item label="为什么需要确认"><el-input v-model="question.reason" /></el-form-item><el-form-item label="涉及字段"><el-select v-model="question.field_paths" multiple><el-option v-for="(label, field) in { ...textFields, ...arrayFields, activities: '活动', assumptions: '推断' }" :key="field" :value="field" :label="label" /></el-select></el-form-item></el-form><template #footer><el-button @click="question = null">取消</el-button><el-button type="primary" @click="addQuestion">保存问题</el-button></template></el-dialog>`,
+});

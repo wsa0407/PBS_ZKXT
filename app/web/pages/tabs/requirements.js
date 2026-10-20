@@ -14,7 +14,7 @@ export default defineComponent({
     const adding = ref(null);
     const paramEdit = ref(null);
 
-    const segByUid = computed(() => new Map(view.value.segments.map((s) => [s.uid, s])));
+    const segByUid = computed(() => new Map([...view.value.sourceSnapshots, ...view.value.segments].map((s) => [s.uid, s])));
     const rows = computed(() =>
       view.value.requirements.filter((r) => {
         const f = filter.value;
@@ -39,7 +39,7 @@ export default defineComponent({
     const openSource = (r) => {
       const s = segByUid.value.get(r.seg_uid);
       if (!s) return;
-      const siblings = view.value.segments.filter((x) => x.material_no === s.material_no);
+      const siblings = [...view.value.sourceSnapshots].filter((x) => x.material_no === s.material_no);
       const i = siblings.indexOf(s);
       source.value = { req: r, seg: s, context: siblings.slice(Math.max(0, i - 2), i + 3) };
     };
@@ -121,7 +121,7 @@ export default defineComponent({
       <el-button size="small" :disabled="!selected.length" @click="confirm(selected.map((r) => r.code))">确认所选（{{ selected.length }}）</el-button>
       <el-button size="small" type="success" plain @click="confirmBatchable">一键确认“批量确认”级</el-button>
       <el-button size="small" @click="adding = { text: '', category: '功能', priority: '重要', source_note: '' }">新增需求</el-button>
-      <el-button size="small" type="primary" @click="open('questions')">下一步：澄清问题 →</el-button>
+      <el-button size="small" type="primary" @click="open('scenarios')">下一步：场景需求 →</el-button>
     </div>
 
     <el-card shadow="never" body-style="padding:0">
@@ -155,6 +155,7 @@ export default defineComponent({
         <el-table-column label="审核" width="84">
           <template #default="{ row }"><el-tag v-if="row.review && row.status === '待确认'" :type="TIER_TYPE[row.review]" size="small" effect="plain">{{ row.review }}</el-tag><span v-else class="muted">{{ row.status }}</span></template>
         </el-table-column>
+        <el-table-column label="场景与去向" width="150"><template #default="{ row }"><el-button v-for="code in row.scenario_ids" :key="code" link type="primary" @click="open('scenarios', code)">{{ code }}</el-button><div class="muted">{{ row.disposition?.kinds.join('、') || '历史需求' }}</div></template></el-table-column>
         <el-table-column label="承接 PBS" width="110">
           <template #default="{ row }">
             <el-tag v-for="c in row.leaves" :key="c" size="small" type="info">{{ c }}</el-tag>

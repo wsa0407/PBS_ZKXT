@@ -7,8 +7,8 @@ const NODE_FORMAT = `{"code":"1.1","parent":"1","name":"...","spec":"规格或�
 const BLOCKED_FORMAT = `{"product_ref":"P02","limit":"逐字复制的产品限制"}`;
 const CONFLICT_FORMAT = `{"product_ref":"P08","req_id":"R030","evidence":"逐字复制的产品限制或信创字段原文","reason":"..."}`;
 
-const MATCH_RULES = `匹配产品（最重要）。**必须经过“业务能力 → 产品能力 → 产品”逐层中转，不得从需求直接跳到产品**：
-a. 先确定这一项服务于哪些“业务能力”（capability_ids，填能力编号如 C01）；再到产品目录里找能满足这些业务能力的“产品能力”；最后才确定产品。没有业务能力支撑的匹配视为无效。
+const MATCH_RULES = `匹配产品（最重要）。**从场景中的具体要求（或已有业务能力）匹配产品能力，再确定产品**：
+a. 先确定这一项服务于哪些“业务能力”（capability_ids，填能力编号如 C01）；再到产品目录里找能满足这些业务能力的“产品能力”；最后才确定产品。已经提供场景时，以场景活动及关联需求为依据，不要求另建业务能力，capability_ids可为空。场景中未明确的条件不可默认满足。
 b. 业务能力能被产品目录中某个产品的能力满足时，source 填“自有产品”，product_ref 填产品 ID，matched_capabilities 逐字复制该产品“能力”中满足需求的条目。
 c. 每个用到的自有产品只出一个叶子（产品本身），不要为同一产品的标准能力再拆“部署”“配置”“开发”叶子。
 d. 产品“限制”中写明不具备、不包含、需定制的内容，不能算自有产品覆盖。要拆出外采或自研叶子，并在 blocked_by 中写明是哪个产品的哪条限制：${BLOCKED_FORMAT}。
@@ -104,8 +104,9 @@ function findText(claim, options) {
   );
 }
 
-export function createContext({ requirements, segments, template, products, sizing, history, chunks = [], capabilities = [] }) {
+export function createContext({ requirements, segments, template, products, sizing, history, chunks = [], capabilities = [], scenarios = [] }) {
   return {
+    scenarioById: new Map(scenarios.map((s) => [s.code, s])),
     capById: new Map(capabilities.map((c) => [c.code, c])),
     reqById: new Map(requirements.map((r) => [r.id, r])),
     segById: new Map(segments.map((s) => [s.id, s])),
@@ -153,6 +154,7 @@ export function normalizeLeaf(raw, ctx) {
     blocked_by: raw.blocked_by && typeof raw.blocked_by === "object" ? { product_ref: String(raw.blocked_by.product_ref ?? ""), limit: String(raw.blocked_by.limit ?? "") } : null,
     evidence_chunks: asList(raw.evidence_chunks),
     capability_ids: ctx.capById.size ? capIds.filter((id) => ctx.capById.has(id)) : capIds,
+    scenario_ids: [...(ctx.scenarioById?.values() ?? [])].filter((s) => s.links.some((l) => reqIds.includes(l.req_id))).map((s) => s.code),
     req_ids: reqIds.filter((id) => ctx.reqById.has(id)),
     sizing_rule: raw.sizing_rule ? String(raw.sizing_rule) : null,
     qty: raw.qty === null || raw.qty === undefined || raw.qty === "" ? null : Number(raw.qty),
@@ -164,6 +166,8 @@ export function normalizeLeaf(raw, ctx) {
     repairs: raw.repairs ?? [],
     origin: raw.origin ?? "model",
     edited: Boolean(raw.edited),
+    confirmed: Boolean(raw.confirmed),
+    stale: String(raw.stale ?? ""),
   };
 }
 
@@ -200,7 +204,7 @@ function checkMatch(leaf, ctx) {
     note(ctx, "匹配校验", `叶子「${leaf.name}」标为自有产品，但没有对应到产品目录，请人工确认`, [leaf.code]);
   }
   // Requirements must not jump straight to a product: a product match needs a business capability behind it.
-  if (ctx.capById.size && leaf.product_ref && !leaf.capability_ids.length && !leaf.edited && leaf.origin === "model") {
+  if (ctx.capById.size && !ctx.scenarioById?.size && leaf.product_ref && !leaf.capability_ids.length && !leaf.edited && leaf.origin === "model") {
     leaf.unsupported = true;
     note(ctx, "匹配校验", `「${leaf.name}」匹配了产品 ${ctx.productById.get(leaf.product_ref)?.name ?? leaf.product_ref}，但没有任何业务能力支撑，需求不能直接匹配产品，请确认`, [leaf.code]);
   }
@@ -441,13 +445,17 @@ function historyText(similar) {
  * candidates: products to show in full (chosen by retrieval); chunks: retrieved product/manual
  * passages (numbered K<id>); kept: lines a person edited, which the model must not duplicate.
  */
-export async function generatePbs({ doc, requirements, template, candidates, chunks = [], similar, sizing, kept = [], capabilities = [], llm }) {
-  const reqList = requirements.filter((r) => r.category !== "背景").map(reqLine).join("\n");
+export async function generatePbs({ doc, requirements, template, candidates, chunks = [], similar, sizing, kept = [], capabilities = [], scenarioContext = null, llm }) {
+  const reqList = requirements.filter((r) => !NON_DELIVERABLE.has(r.category)).map(reqLine).join("\n");
   const keptText = kept.length
     ? `\n\n已由人工确认的项（保留不变，不要重复输出，但可以在 req_ids 覆盖检查时视为已承接）：\n${kept.map((l) => `- ${l.code} ${l.name}（${l.source}${l.product_ref ? " " + l.product_ref : ""}）承接 ${l.req_ids.join("、") || "无"}`).join("\n")}`
     : "";
 
-  const user = `项目：${doc.title || "（未命名）"}
+  const user = `场景性需求、适用约束及未解决事项：
+${scenarioContext ? JSON.stringify(scenarioContext) : "尚未建立场景，生成兼容草稿并保留复核"}
+场景中的业务活动是产品能力匹配的需求依据，不必另建独立业务能力。按场景具体要求匹配真实产品能力；未明确的条件保持待确认，禁止默认满足、默认接口开放或生成未知数量。范围外、背景和商务资质不能转成采购项。已知约束和服务仍需响应。
+
+项目：${doc.title || "（未命名）"}
 
 PBS 模板一级分类：
 ${templateText(template)}
@@ -474,11 +482,13 @@ ${reqList}${keptText}`;
   return { nodes: data.nodes ?? [], conflicts: data.conflicts ?? [] };
 }
 
-export async function repairCoverage({ leaves, uncovered, template, candidates, chunks = [], capabilities = [], llm, ctx }) {
+export async function repairCoverage({ leaves, uncovered, template, candidates, chunks = [], capabilities = [], scenarioContext = null, llm, ctx }) {
+  const scenarioNote = scenarioContext ? `场景、约束与待确认事项：${JSON.stringify(scenarioContext)}\n未知内容不得默认满足。` : "";
   const leafList = leaves
     .map((l) => `${l.code} ${l.name}（${l.source}${l.product_ref ? " " + l.product_ref : ""}）${l.spec ? "：" + l.spec : ""}`)
     .join("\n");
-  const user = `PBS 模板一级分类：
+  const user = `${scenarioNote}
+PBS 模板一级分类：
 ${templateText(template)}
 
 已有叶子：
@@ -503,6 +513,10 @@ ${uncovered.map(reqLine).join("\n")}`;
   for (const link of data.links ?? []) {
     const leaf = byCode.get(String(link.code));
     if (!leaf || !target.has(link.req_id)) continue;
+    if (leaf.edited || leaf.confirmed || leaf.reviewed) {
+      note(ctx, "人工关联待复核", `${link.req_id} 建议关联人工处理过的 ${leaf.code}，请人工核对后关联`, [link.req_id, leaf.code]);
+      continue;
+    }
     if (!leaf.req_ids.includes(link.req_id)) leaf.req_ids.push(link.req_id);
     leaf.repairs.push(link.req_id);
     repairs.push({ target: link.req_id, code: leaf.code, action: "关联到已有项", reason: String(link.reason ?? ""), refs: [link.req_id, leaf.code] });
@@ -521,7 +535,8 @@ ${uncovered.map(reqLine).join("\n")}`;
 /** Re-decide source / product for one line. Returns a normalised leaf; the caller enforces and saves it. */
 export async function rematchLeaf({ leaf, requirements, template, candidates, chunks = [], capabilities = [], sizing, instruction = "", llm, ctx }) {
   const reqs = leaf.req_ids.map((id) => requirements.find((r) => r.id === id)).filter(Boolean);
-  const user = `PBS 模板一级分类：
+  const user = `当前场景需求：${JSON.stringify([...(ctx.scenarioById?.values() ?? [])])}
+PBS 模板一级分类：
 ${templateText(template)}
 
 当前这一项：${leaf.code} ${leaf.name}（${leaf.source}${leaf.product_ref ? " " + leaf.product_ref : ""}）${leaf.spec ? "：" + leaf.spec : ""}

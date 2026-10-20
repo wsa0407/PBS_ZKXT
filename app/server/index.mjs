@@ -12,6 +12,7 @@ import { activeJob, failInterruptedJobs, getJob, llmCalls, startJob } from "./jo
 import * as rag from "./rag.mjs";
 import * as repo from "./repo.mjs";
 import * as svc from "./services.mjs";
+import * as scenarios from "./scenarios.mjs";
 import { exportProject, parseProductSheet, productTemplate } from "./xlsx.mjs";
 
 const webDir = fileURLToPath(new URL("../web/", import.meta.url));
@@ -167,7 +168,7 @@ post("/api/projects/:id/materials", async ({ id }, body) => {
 });
 get("/api/projects/:id/materials/:mid", ({ id, mid }) => repo.getMaterial(id, Number(mid)));
 del("/api/projects/:id/materials/:mid", ({ id, mid }) => {
-  repo.deleteMaterial(id, Number(mid));
+  svc.deleteMaterial(id, Number(mid));
   repo.logEvent(id, "材料", `删除材料 #${mid}`);
   return { ok: true };
 });
@@ -180,6 +181,16 @@ post("/api/projects/:id/requirements", ({ id }, body) => ({ code: svc.addRequire
 put("/api/projects/:id/requirements/:code", ({ id, code }, body) => (svc.editRequirement(id, code, body), { ok: true }));
 post("/api/projects/:id/requirements/confirm", ({ id }, body) => (svc.confirmRequirements(id, body.codes ?? []), { ok: true }));
 put("/api/projects/:id/params/:name", ({ id, name }, body) => (svc.setParam(id, name, body), { ok: true }));
+
+// Scenario requirements: every mutation uses the same versioned service as chat.
+post("/api/projects/:id/scenarios/generate", ({ id }, body) => job(startJob({ projectId: id, kind: "scenarios", steps: ["归纳场景与待确认事项", "校验来源并保存草稿"], run: (ctx) => scenarios.generateScenarios(id, { ...ctx, requestId: body.request_id }) })));
+post("/api/projects/:id/scenarios", ({ id }, body) => scenarios.addScenario(id, body));
+get("/api/projects/:id/scenarios/:code", ({ id, code }) => ({ scenario: scenarios.getScenario(id, code), revisions: scenarios.revisions(id, code) }));
+put("/api/projects/:id/scenarios/:code", ({ id, code }, body) => scenarios.editScenario(id, code, body));
+post("/api/projects/:id/scenarios/confirm", ({ id }, body) => ({ scenarios: scenarios.confirmScenarios(id, body) }));
+post("/api/projects/:id/scenarios/merge", ({ id }, body) => scenarios.restructure(id, body));
+post("/api/projects/:id/scenarios/:code/split", ({ id, code }, body) => scenarios.restructure(id, { ...body, originals: [{ code, revision: body.revision }] }));
+put("/api/projects/:id/requirements/:code/disposition", ({ id, code }, body) => scenarios.editDisposition(id, code, body));
 
 // business capabilities
 post("/api/projects/:id/capabilities/generate", ({ id }) =>
@@ -196,7 +207,7 @@ del("/api/projects/:id/questions/:qid", ({ id, qid }) => (repo.deleteQuestion(id
 post("/api/projects/:id/questions/:qid/answer", ({ id, qid }, body) =>
   job(startJob({ projectId: id, kind: "answer", steps: ["模型分析答复的影响"], run: ({ llm, progress }) => (progress.step(0), svc.proposeAnswer(id, Number(qid), body, llm)) })),
 );
-post("/api/projects/:id/questions/:qid/apply", ({ id, qid }, body) => svc.applyAnswer(id, Number(qid), body.accepted ?? []));
+post("/api/projects/:id/questions/:qid/apply", ({ id, qid }, body) => svc.applyAnswer(id, Number(qid), body.accepted ?? [], body.resolution_note ?? ""));
 
 // chat (conversational control; every turn is a background job so model calls show progress)
 get("/api/projects/:id/chat", ({ id }) => ({ messages: chat.chatHistory(id), suggestions: chat.suggestions(svc.projectView(id)) }));

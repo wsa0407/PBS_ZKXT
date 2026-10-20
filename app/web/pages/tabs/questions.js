@@ -1,10 +1,10 @@
 import { computed, defineComponent, inject, ref } from "vue";
 import { ElMessageBox } from "element-plus";
 import { api, call, meta, runJob } from "../../api.js";
-import { IMPACT_TYPE, Q_STATUS_TYPE } from "../../ui.js";
+import { scenarioFieldLabel, scenarioValue, IMPACT_TYPE, Q_STATUS_TYPE } from "../../ui.js";
 
-const CHANGE_LABEL = { set_param: "设定参数", update_requirement: "修改需求", add_requirement: "新增需求", remove_requirement: "删除需求" };
-const CHANGE_TYPE = { set_param: "primary", update_requirement: "warning", add_requirement: "success", remove_requirement: "danger" };
+const CHANGE_LABEL = { set_param: "设定参数", update_requirement: "修改需求", add_requirement: "新增需求", remove_requirement: "删除需求", update_scenario: "修改场景" };
+const CHANGE_TYPE = { set_param: "primary", update_requirement: "warning", add_requirement: "success", remove_requirement: "danger", update_scenario: "warning" };
 
 export default defineComponent({
   setup() {
@@ -55,11 +55,11 @@ export default defineComponent({
 
     const openReview = (q) => {
       const changes = q.proposal?.changes ?? [];
-      review.value = { q, accepted: changes.map((_, i) => i) };
+      review.value = { q, accepted: changes.map((c, i) => !c.conflict && c.quoteVerified ? i : null).filter((i) => i !== null), resolution_note: "" };
     };
     const apply = async () => {
       const { q, accepted } = review.value;
-      const res = await call(() => api(`/projects/${id}/questions/${q.id}/apply`, { method: "POST", body: { accepted } }));
+      const res = await call(() => api(`/projects/${id}/questions/${q.id}/apply`, { method: "POST", body: { accepted, resolution_note: review.value.resolution_note } }));
       if (res) {
         review.value = null;
         await reload();
@@ -78,12 +78,12 @@ export default defineComponent({
       }
     };
 
-    return { view, filter, questions, count, reqByCode, answering, review, adding, meta, open, assign, ignore, restore, remove, startAnswer, submitAnswer, openReview, apply, toggle, addQuestion, CHANGE_LABEL, CHANGE_TYPE, IMPACT_TYPE, Q_STATUS_TYPE };
+    return { scenarioFieldLabel, scenarioValue, view, filter, questions, count, reqByCode, answering, review, adding, meta, open, assign, ignore, restore, remove, startAnswer, submitAnswer, openReview, apply, toggle, addQuestion, CHANGE_LABEL, CHANGE_TYPE, IMPACT_TYPE, Q_STATUS_TYPE };
   },
   template: `
   <div v-if="!view.questions.length" class="empty">
     还没有澄清问题。<el-button link type="primary" @click="open('materials')">添加材料并抽取需求</el-button>后，系统会自动生成。
-    <el-button link type="primary" @click="adding = { question: '', impact: '影响方案', reason: '' }">手动添加一个问题</el-button>
+    <el-button link type="primary" @click="adding = { question: '', impact: '影响方案', reason: '', scenario_ids: [] }">手动添加一个问题</el-button>
   </div>
   <template v-else>
     <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px"
@@ -96,7 +96,7 @@ export default defineComponent({
         <el-radio-button value="all">全部</el-radio-button>
       </el-radio-group>
       <span style="flex:1"></span>
-      <el-button size="small" @click="adding = { question: '', impact: '影响方案', reason: '' }">添加问题</el-button>
+      <el-button size="small" @click="adding = { question: '', impact: '影响方案', reason: '', scenario_ids: [] }">添加问题</el-button>
       <el-button size="small" type="primary" @click="open('pbs')">下一步：PBS →</el-button>
     </div>
 
@@ -117,8 +117,9 @@ export default defineComponent({
       </div>
       <div class="q-text">{{ q.question }}</div>
       <div class="muted" v-if="q.reason">为什么问：{{ q.reason }}</div>
-      <div class="muted" v-if="q.suggested_answer">客户不回复时的默认假设：{{ q.suggested_answer }}</div>
+      <div class="muted" v-if="q.suggested_answer">待确认的分析建议：{{ q.suggested_answer }}</div>
       <div v-if="q.req_ids.length" class="muted">关联需求：<el-tag v-for="c in q.req_ids" :key="c" size="small" type="info" :title="reqByCode.get(c)?.text">{{ c }}</el-tag></div>
+      <div v-if="q.scenario_ids.length" class="muted">关联场景：<el-button v-for="code in q.scenario_ids" :key="code" link type="primary" @click="open('scenarios', code)">{{ code }}</el-button><span v-if="q.field_paths.length"> · {{ q.field_paths.map(scenarioFieldLabel).join('、') }}</span></div>
       <div v-if="q.answer" class="answer"><b>客户答复（{{ q.answer_source }}）：</b>{{ q.answer }}</div>
       <div v-if="q.applied" class="applied">
         <b>已应用：</b>
@@ -152,11 +153,14 @@ export default defineComponent({
           <el-tag size="small" :type="CHANGE_TYPE[c.type]">{{ CHANGE_LABEL[c.type] }}</el-tag>
           <template v-if="c.type === 'set_param'"> <b>{{ c.label }}</b>：{{ c.before ?? '未知' }} → <b>{{ c.value }}{{ c.unit }}</b></template>
           <template v-else-if="c.type === 'update_requirement'"> {{ c.code }}<div class="diff"><s>{{ c.before }}</s><br />{{ c.text }}</div></template>
+          <template v-else-if="c.type === 'update_scenario'"> {{ c.code }} · {{ scenarioFieldLabel(c.field_path) }}<div class="diff"><s>{{ scenarioValue(c.before) }}</s><br />{{ scenarioValue(c.value) }}</div></template>
           <template v-else-if="c.type === 'add_requirement'"> <div class="diff">{{ c.text }}（{{ c.category }} · {{ c.priority }}）</div></template>
           <template v-else-if="c.type === 'remove_requirement'"> {{ c.code }}<div class="diff"><s>{{ c.before }}</s><br />{{ c.reason }}</div></template>
+          <el-alert v-if="c.conflict" :title="c.conflict" type="warning" :closable="false" />
           <div class="muted">依据：“{{ c.quote }}” <el-tag v-if="!c.quoteVerified" size="small" type="warning">引用未通过校验</el-tag></div>
         </div>
       </div>
+      <el-form-item v-if="review.q.proposal.changes.some((c, i) => review.accepted.includes(i) && c.conflict)" label="冲突处理依据"><el-input v-model="review.resolution_note" type="textarea" placeholder="记录采用答复的依据及如何处理与正式条款的冲突" /></el-form-item>
       <el-alert v-for="d in review.q.proposal.dropped" :key="d" type="warning" :closable="false" :title="'已丢弃一条不可靠的建议：' + d" style="margin-top:8px" />
       <div class="muted" style="margin-top:12px">应用后：涉及的测算参数标为“客户确认”，用到它们的 PBS 数量自动重算并标记“建议复核”；被修改的需求关联的 PBS 项也会标记复核。</div>
     </template>
@@ -171,6 +175,7 @@ export default defineComponent({
       <el-form-item label="问题"><el-input v-model="adding.question" type="textarea" :rows="3" /></el-form-item>
       <el-form-item label="影响"><el-radio-group v-model="adding.impact"><el-radio-button v-for="i in ['影响废标风险', '影响报价', '影响方案']" :key="i" :value="i">{{ i }}</el-radio-button></el-radio-group></el-form-item>
       <el-form-item label="原因"><el-input v-model="adding.reason" /></el-form-item>
+      <el-form-item label="关联场景"><el-select v-model="adding.scenario_ids" multiple filterable style="width:100%"><el-option v-for="s in view.scenarios.filter((s) => s.status !== '已归档')" :key="s.code" :value="s.code" :label="s.code + ' ' + s.name" /></el-select></el-form-item>
     </el-form>
     <template #footer><el-button @click="adding = null">取消</el-button><el-button type="primary" :disabled="!adding?.question.trim()" @click="addQuestion">添加</el-button></template>
   </el-dialog>`,

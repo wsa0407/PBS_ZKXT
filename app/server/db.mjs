@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
 const seedDir = new URL("../seed/", import.meta.url);
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
@@ -42,6 +42,37 @@ CREATE TABLE IF NOT EXISTS chunks (
   hash TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS chunks_product ON chunks(product_id);
+
+CREATE TABLE IF NOT EXISTS source_snapshots (
+  project_id TEXT NOT NULL, uid TEXT NOT NULL, data TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1, PRIMARY KEY (project_id, uid)
+);
+CREATE TABLE IF NOT EXISTS scenarios (
+  project_id TEXT NOT NULL, code TEXT NOT NULL, data TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT '待确认', revision INTEGER NOT NULL DEFAULT 1,
+  origin TEXT NOT NULL DEFAULT '系统', edited INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  PRIMARY KEY (project_id, code)
+);
+CREATE TABLE IF NOT EXISTS scenario_requirements (
+  project_id TEXT NOT NULL, scenario_code TEXT NOT NULL, req_code TEXT NOT NULL,
+  role TEXT NOT NULL, PRIMARY KEY (project_id, scenario_code, req_code)
+);
+CREATE TABLE IF NOT EXISTS scenario_revisions (
+  project_id TEXT NOT NULL, scenario_code TEXT NOT NULL, revision INTEGER NOT NULL,
+  snapshot TEXT NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL,
+  PRIMARY KEY (project_id, scenario_code, revision)
+);
+CREATE TABLE IF NOT EXISTS requirement_dispositions (
+  project_id TEXT NOT NULL, req_code TEXT NOT NULL, data TEXT NOT NULL,
+  edited INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (project_id, req_code)
+);
+CREATE TABLE IF NOT EXISTS scenario_runs (
+  project_id TEXT NOT NULL, request_id TEXT NOT NULL, input_hash TEXT NOT NULL,
+  result TEXT NOT NULL, created_at TEXT NOT NULL,
+  PRIMARY KEY (project_id, request_id)
+);
 
 CREATE TABLE IF NOT EXISTS embed_cache (
   hash TEXT NOT NULL,
@@ -250,6 +281,7 @@ export function readSeed(path) {
 }
 
 let db = null;
+let transactionDepth = 0;
 
 export function openDb(file = process.env.APP_DB || fileURLToPath(new URL("../data/app.db", import.meta.url))) {
   if (db) return db;
@@ -265,6 +297,15 @@ export function openDb(file = process.env.APP_DB || fileURLToPath(new URL("../da
 // CREATE TABLE IF NOT EXISTS never alters an existing table, so new columns need an explicit step.
 const MIGRATIONS = [
   { version: 2, table: "pbs_items", column: "capability_ids", ddl: "ALTER TABLE pbs_items ADD COLUMN capability_ids TEXT NOT NULL DEFAULT '[]'" },
+  { version: 3, table: "pbs_items", column: "scenario_ids", ddl: "ALTER TABLE pbs_items ADD COLUMN scenario_ids TEXT NOT NULL DEFAULT '[]'" },
+  { version: 3, table: "pbs_items", column: "reviewed", ddl: "ALTER TABLE pbs_items ADD COLUMN reviewed INTEGER NOT NULL DEFAULT 0" },
+  { version: 3, table: "requirements", column: "revision", ddl: "ALTER TABLE requirements ADD COLUMN revision INTEGER NOT NULL DEFAULT 1" },
+  { version: 3, table: "requirements", column: "retired", ddl: "ALTER TABLE requirements ADD COLUMN retired INTEGER NOT NULL DEFAULT 0" },
+  { version: 3, table: "requirements", column: "answer_evidence", ddl: "ALTER TABLE requirements ADD COLUMN answer_evidence TEXT NOT NULL DEFAULT '[]'" },
+  { version: 3, table: "questions", column: "scenario_ids", ddl: "ALTER TABLE questions ADD COLUMN scenario_ids TEXT NOT NULL DEFAULT '[]'" },
+  { version: 3, table: "questions", column: "field_paths", ddl: "ALTER TABLE questions ADD COLUMN field_paths TEXT NOT NULL DEFAULT '[]'" },
+  { version: 3, table: "chunks", column: "active", ddl: "ALTER TABLE chunks ADD COLUMN active INTEGER NOT NULL DEFAULT 1" },
+  { version: 3, table: "requirement_dispositions", column: "revision", ddl: "ALTER TABLE requirement_dispositions ADD COLUMN revision INTEGER NOT NULL DEFAULT 1" },
 ];
 
 function migrate(database) {
@@ -273,6 +314,11 @@ function migrate(database) {
     const has = database.prepare(`PRAGMA table_info(${m.table})`).all().some((c) => c.name === m.column);
     if (!has) database.exec(m.ddl);
   }
+  database.exec("UPDATE pbs_items SET reviewed = 1 WHERE confirmed = 1 AND reviewed = 0");
+  // Snapshot existing source text before any material can be removed. No confirmation is inferred.
+  const sources = database.prepare("SELECT s.*, m.title AS material_title, m.no AS material_no, m.kind AS material_kind FROM segments s JOIN materials m ON m.id = s.material_id").all();
+  const putSource = database.prepare("INSERT OR IGNORE INTO source_snapshots(project_id, uid, data) VALUES (?, ?, ?)");
+  for (const source of sources) putSource.run(source.project_id, source.uid, json(source));
   if (current < SCHEMA_VERSION) {
     database.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema', ?)").run(String(SCHEMA_VERSION));
   }
@@ -300,14 +346,18 @@ function seedProducts() {
 
 export function tx(fn) {
   const d = getDb();
-  d.exec("BEGIN");
+  const level = transactionDepth++;
+  d.exec(level ? `SAVEPOINT nested_${level}` : "BEGIN");
   try {
     const result = fn(d);
-    d.exec("COMMIT");
+    d.exec(level ? `RELEASE nested_${level}` : "COMMIT");
     return result;
   } catch (error) {
-    d.exec("ROLLBACK");
+    d.exec(level ? `ROLLBACK TO nested_${level}` : "ROLLBACK");
+    if (level) d.exec(`RELEASE nested_${level}`);
     throw error;
+  } finally {
+    transactionDepth -= 1;
   }
 }
 

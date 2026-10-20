@@ -2,6 +2,7 @@ import { CATEGORIES } from "../engine/extract.mjs";
 import { loadConfig } from "./db.mjs";
 import * as repo from "./repo.mjs";
 import * as svc from "./services.mjs";
+import * as scenarios from "./scenarios.mjs";
 
 /**
  * Conversational control layer. The user talks; the model turns the message into a list of
@@ -22,7 +23,10 @@ const SYSTEM = `你是 PBS 拆解助手，和售前、方案人员对话，帮�
 - add_requirement {text, category?, priority?}：新增需求。
 - set_param {name, value}：设定测算参数（name 取参数字典）。用户明确说了数量时使用；客户的答复请用 answer_question。
 - answer_question {id, answer}：用户转述了客户对某个澄清问题的答复。系统会再分析它带来的变更，让用户确认。
-- generate_capabilities {}：从需求归纳业务能力（先推演业务场景，再归纳能力；能力只讲业务上需要什么，不涉及产品）。生成 PBS 之前先做这一步，匹配会更准。
+- generate_scenarios {}：从原始需求生成场景需求、来源映射和待确认事项，保留人工成果。
+- confirm_scenarios {codes: ["SC001"]}：用户明确要求确认场景时使用。
+- edit_scenario {code, name?, goal?, context?, trigger?}：修改场景，保存后待确认。
+- generate_capabilities {}：从需求归纳业务能力（先推演业务场景，再归纳能力；能力只讲业务上需要什么，不涉及产品）。历史兼容功能，新流程优先使用generate_scenarios。
 - confirm_capabilities {codes?: ["C01"], scope?: "all"}：确认业务能力。
 - edit_capability {code, name?, description?, activity?, priority?}：修改业务能力。
 - delete_capability {code, reason}：删除业务能力（可恢复）。
@@ -32,7 +36,7 @@ const SYSTEM = `你是 PBS 拆解助手，和售前、方案人员对话，帮�
 - rematch_item {id, instruction?}：让系统重新判断某一项该用哪个产品或外采、自研。
 - confirm_items {ids?: [..], scope?: "all"}：确认 PBS 项。
 - finish {}：标记项目完成。
-- show {view: requirements|capabilities|questions|pbs|materials|export}：让右侧工作区切到某个页面。
+- show {view: requirements|scenarios|questions|pbs|materials|export}：让右侧工作区切到某个页面。
 
 规则：
 - 只依据“项目现状”回答，不要编造现状里没有的编号、数字或产品。引用编号时必须是现状里存在的。
@@ -70,6 +74,10 @@ function context(projectId, view) {
     if (reqs.length > 150) lines.push(`……另有 ${reqs.length - 150} 条`);
   }
 
+  if (view.scenarios.length) {
+    lines.push("\n场景需求（编号 版本 状态 名称 目标 关联需求）：");
+    for (const scene of view.scenarios.filter((s) => s.status !== "已归档")) lines.push(`${scene.code} v${scene.revision} ${scene.status} ${scene.name} ${scene.goal} ${scene.links.map((l) => l.req_id).join("、")}`);
+  }
   const caps = view.capabilities.filter((c) => c.status !== "已删除");
   if (caps.length) {
     lines.push("\n业务能力（编号 [优先级/状态] 名称｜业务活动｜被哪些 PBS 项实现）：");
@@ -193,6 +201,22 @@ function plan(action, view, ctx) {
         },
       };
     }
+    case "generate_scenarios":
+      return { label: "生成场景需求", steps: ["归纳场景与待确认事项", "校验来源并保存草稿"], run: async (progress) => {
+        const result = await scenarios.generateScenarios(ctx.projectId, { llm: ctx.llm, progress });
+        return { text: `生成 ${result.created} 条场景需求，保留 ${result.kept} 条人工成果`, open: "scenarios" };
+      } };
+    case "confirm_scenarios": {
+      const selected = view.scenarios.filter((s) => s.status !== "已归档" && a.codes?.includes(s.code));
+      if (!selected.length) throw new Error("请选择真实存在的场景编号");
+      return { label: "确认场景", steps: [], run: () => (scenarios.confirmScenarios(ctx.projectId, { scenarios: selected.map((s) => ({ code: s.code, revision: s.revision })) }), { text: `已确认 ${selected.length} 条场景`, open: "scenarios" }) };
+    }
+    case "edit_scenario": {
+      const scene = view.scenarios.find((s) => s.code === a.code);
+      if (!scene) throw new Error("场景不存在");
+      const fields = Object.fromEntries(["name", "goal", "context", "trigger"].filter((k) => a[k] !== undefined).map((k) => [k, a[k]]));
+      return { label: "修改场景", steps: [], run: () => (scenarios.editScenario(ctx.projectId, scene.code, { ...fields, revision: scene.revision }), { text: `${scene.code} 已保存，待确认`, open: "scenarios" }) };
+    }
     case "generate_capabilities":
       if (!view.requirements.some((r) => r.status !== "已删除")) throw new Error("还没有需求，先添加材料并抽取需求");
       return {
@@ -278,9 +302,9 @@ function plan(action, view, ctx) {
     case "finish":
       return { label: "标记完成", steps: [], run: () => (repo.updateProject(ctx.projectId, { done: true }), repo.logEvent(ctx.projectId, "项目", "标记完成"), { text: "项目已标记为完成，可以导出了", open: "finish" }) };
     case "show": {
-      const views = ["requirements", "capabilities", "questions", "pbs", "materials", "export"];
+      const views = ["requirements", "scenarios", "capabilities", "questions", "pbs", "materials", "export"];
       if (!views.includes(a.view)) throw new Error("不认识的页面");
-      return { label: "切换页面", steps: [], run: () => ({ text: "", open: a.view === "export" ? "finish" : a.view }) };
+      return { label: "切换页面", steps: [], run: () => ({ text: "", open: a.view === "export" ? "finish" : a.view === "capabilities" ? "scenarios" : a.view }) };
     }
     default:
       throw new Error(`不支持的操作 ${a.type}`);
@@ -298,8 +322,8 @@ export function suggestions(view) {
   if (batchable) out.push({ label: `确认 ${batchable} 条低风险需求`, actions: [{ type: "confirm_requirements", scope: "batchable" }] });
   if (s.requirements.mustReview) out.push({ label: `看 ${s.requirements.mustReview} 条必审需求`, ui: "open:requirements" });
   if (s.questions.answered) out.push({ label: `应用 ${s.questions.answered} 条已答复`, ui: "open:questions" });
-  if (s.requirements.total && !s.capabilities.total) out.push({ label: "归纳业务能力", actions: [{ type: "generate_capabilities" }] });
-  if (s.capabilities.pending) out.push({ label: `确认 ${s.capabilities.pending} 条业务能力`, ui: "open:capabilities" });
+  if (s.requirements.total && !s.scenarios.active) out.push({ label: "拆分场景需求", actions: [{ type: "generate_scenarios" }] });
+  if (s.scenarios.pending) out.push({ label: `审阅 ${s.scenarios.pending} 条场景需求`, ui: "open:scenarios" });
   if (s.requirements.total && !s.pbs.items) out.push({ label: "生成 PBS", actions: [{ type: "generate_pbs" }] });
   if (s.pbs.items) {
     if (s.pbs.stale) out.push({ label: `复核 ${s.pbs.stale} 项变化`, ui: "open:pbs" });

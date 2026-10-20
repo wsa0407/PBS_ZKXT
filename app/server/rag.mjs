@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { embed, embedModel, listEmbeddingModels } from "./embed.mjs";
 import { normalize } from "../engine/text.mjs";
-import { getDb } from "./db.mjs";
+import { getDb, tx } from "./db.mjs";
 
 /**
  * Retrieval over the product library, product manuals and past projects.
@@ -47,19 +47,40 @@ function insertChunk({ kind, productId = null, docId = null, historyId = null, t
     .run(kind, productId, docId, historyId, text, hashOf(text));
 }
 
-export function indexProduct(product) {
-  const db = getDb();
-  db.prepare("DELETE FROM chunks WHERE product_id = ? AND kind != 'manual'").run(product.id);
-  insertChunk({ kind: "summary", productId: product.id, text: `${product.name}：${product.summary || product.name}` });
-  for (const c of product.capabilities) insertChunk({ kind: "capability", productId: product.id, text: `${product.name} 能力：${c}` });
-  for (const l of product.limits) insertChunk({ kind: "limit", productId: product.id, text: `${product.name} 限制：${l}` });
-  if (product.xinchuang) insertChunk({ kind: "xinchuang", productId: product.id, text: `${product.name} 信创适配：${product.xinchuang}` });
+// Retired chunks remain immutable evidence. Search only sees the current version.
+function flagRetiredEvidence() {
+  getDb().exec(`UPDATE pbs_items SET confirmed = 0, stale = '产品依据已变化或移除，请复核'
+    WHERE id IN (SELECT i.id FROM pbs_items i, json_each(i.evidence_chunks) e
+      JOIN chunks c ON c.id = CAST(e.value AS INTEGER) WHERE c.active = 0)`);
+}
+
+function syncChunks(where, args, chunks) {
+  tx((db) => {
+    const old = db.prepare(`SELECT * FROM chunks WHERE ${where}`).all(...args);
+    db.prepare(`UPDATE chunks SET active = 0 WHERE ${where}`).run(...args);
+    const used = new Set();
+    for (const chunk of chunks) {
+      const same = old.find((c) => !used.has(c.id) && c.kind === chunk.kind && c.text === chunk.text && c.product_id === (chunk.productId ?? null) && c.doc_id === (chunk.docId ?? null) && c.history_id === (chunk.historyId ?? null));
+      if (same) {
+        used.add(same.id);
+        db.prepare('UPDATE chunks SET active = 1 WHERE id = ?').run(same.id);
+      } else insertChunk(chunk);
+    }
+    flagRetiredEvidence();
+  });
   version += 1;
 }
 
+export function indexProduct(product) {
+  const chunks = [{ kind: 'summary', productId: product.id, text: `${product.name}：${product.summary || product.name}` }];
+  for (const c of product.capabilities) chunks.push({ kind: 'capability', productId: product.id, text: `${product.name} 能力：${c}` });
+  for (const l of product.limits) chunks.push({ kind: 'limit', productId: product.id, text: `${product.name} 限制：${l}` });
+  if (product.xinchuang) chunks.push({ kind: 'xinchuang', productId: product.id, text: `${product.name} 信创适配：${product.xinchuang}` });
+  syncChunks("product_id = ? AND kind != 'manual'", [product.id], chunks);
+}
+
 export function removeProductChunks(productId) {
-  getDb().prepare("DELETE FROM chunks WHERE product_id = ?").run(productId);
-  version += 1;
+  syncChunks('product_id = ?', [productId], []);
 }
 
 /** Split a manual into ~400-character chunks on paragraph boundaries; headings stay with their text. */
@@ -89,24 +110,19 @@ export function splitManual(text, size = 400) {
 }
 
 export function indexManual({ docId, productId, text }) {
-  const db = getDb();
-  db.prepare("DELETE FROM chunks WHERE doc_id = ?").run(docId);
-  for (const piece of splitManual(text)) insertChunk({ kind: "manual", productId, docId, text: piece });
-  version += 1;
+  syncChunks('doc_id = ?', [docId], splitManual(text).map((text) => ({ kind: 'manual', productId, docId, text })));
 }
 
 export function removeManualChunks(docId) {
-  getDb().prepare("DELETE FROM chunks WHERE doc_id = ?").run(docId);
-  version += 1;
+  syncChunks('doc_id = ?', [docId], []);
 }
 
 export function indexHistory(history) {
-  getDb().prepare("DELETE FROM chunks WHERE kind = 'history'").run();
-  for (const p of history) {
-    const lines = p.pbs.map((i) => `${i.name} ${i.qty}${i.unit}（${i.source}）`).join("；");
-    insertChunk({ kind: "history", historyId: p.id, text: `${p.name}（${p.industry}，${p.year}）：${lines}。经验：${p.lessons}` });
-  }
-  version += 1;
+  const chunks = history.map((p) => {
+    const lines = p.pbs.map((i) => `${i.name} ${i.qty}${i.unit}（${i.source}）`).join('；');
+    return { kind: 'history', historyId: p.id, text: `${p.name}（${p.industry}，${p.year}）：${lines}。经验：${p.lessons}` };
+  });
+  syncChunks("kind = 'history'", [], chunks);
 }
 
 export function getChunks(ids) {
@@ -128,7 +144,7 @@ function tokens(text) {
 }
 
 function buildIndex() {
-  const chunks = getDb().prepare("SELECT c.*, d.name AS doc_name FROM chunks c LEFT JOIN product_docs d ON d.id = c.doc_id").all();
+  const chunks = getDb().prepare("SELECT c.*, d.name AS doc_name FROM chunks c LEFT JOIN product_docs d ON d.id = c.doc_id WHERE c.active = 1").all();
   const df = new Map();
   const docs = chunks.map((chunk) => {
     const tf = new Map();

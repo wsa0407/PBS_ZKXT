@@ -109,7 +109,7 @@ export function getProject(id) {
   return { ...row, pbs_meta: parse(row.pbs_meta, {}), done: Boolean(row.done) };
 }
 
-export function createProject({ name, customer, industry }) {
+export function createProject({ name, customer = "", industry = "" }) {
   const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   getDb().prepare("INSERT INTO projects (id, name, customer, industry, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run(id, name, customer, industry, now(), now());
   return getProject(id);
@@ -131,7 +131,7 @@ export function touchProject(id) {
 
 export function deleteProject(id) {
   tx((db) => {
-    for (const table of ["materials", "segments", "requirements", "param_overrides", "questions", "pbs_items", "capabilities", "events", "llm_calls", "chat_messages"]) {
+    for (const table of ["materials", "segments", "source_snapshots", "requirements", "param_overrides", "questions", "pbs_items", "capabilities", "scenarios", "scenario_requirements", "scenario_revisions", "requirement_dispositions", "scenario_runs", "events", "llm_calls", "chat_messages"]) {
       db.prepare(`DELETE FROM ${table} WHERE project_id = ?`).run(id);
     }
     db.prepare("DELETE FROM jobs WHERE project_id = ?").run(id);
@@ -198,13 +198,20 @@ export function getMaterial(projectId, id) {
 
 export function addMaterial(projectId, { kind, title, fileName, text, doc }) {
   return tx((db) => {
-    const no = (db.prepare("SELECT max(no) AS n FROM materials WHERE project_id = ?").get(projectId)?.n ?? 0) + 1;
+    const currentNo = db.prepare("SELECT max(no) AS n FROM materials WHERE project_id = ?").get(projectId)?.n ?? 0;
+    const historyNo = db.prepare("SELECT max(json_extract(data, '$.material_no')) AS n FROM source_snapshots WHERE project_id = ?").get(projectId)?.n ?? 0;
+    const no = Math.max(currentNo, historyNo) + 1;
     const r = db
       .prepare("INSERT INTO materials (project_id, no, kind, title, file_name, text, numbered, meta, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
       .run(projectId, no, kind, title, fileName ?? null, text, doc.numbered ? 1 : 0, json(doc.meta), now());
     const materialId = Number(r.lastInsertRowid);
     const ins = db.prepare("INSERT INTO segments (project_id, uid, material_id, seg_id, chapter, text, star, triangle, ord) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    doc.segments.forEach((s, i) => ins.run(projectId, `M${no}:${s.id}`, materialId, s.id, s.chapter ?? "", s.text, s.star ? 1 : 0, s.triangle ? 1 : 0, no * 100000 + i));
+    const snapshot = db.prepare("INSERT INTO source_snapshots(project_id, uid, data) VALUES (?, ?, ?)");
+    doc.segments.forEach((s, i) => {
+      const uid = `M${no}:${s.id}`;
+      ins.run(projectId, uid, materialId, s.id, s.chapter ?? "", s.text, s.star ? 1 : 0, s.triangle ? 1 : 0, no * 100000 + i);
+      snapshot.run(projectId, uid, json({ ...s, uid, seg_id: s.id, material_id: materialId, material_no: no, material_title: title, material_kind: kind }));
+    });
     db.prepare("UPDATE projects SET updated_at = ? WHERE id = ?").run(now(), projectId);
     return materialId;
   });
@@ -215,8 +222,8 @@ export function deleteMaterial(projectId, id) {
     const uids = db.prepare("SELECT uid FROM segments WHERE project_id = ? AND material_id = ?").all(projectId, id).map((r) => r.uid);
     db.prepare("DELETE FROM segments WHERE project_id = ? AND material_id = ?").run(projectId, id);
     if (uids.length) {
-      db.prepare(`DELETE FROM requirements WHERE project_id = ? AND origin = '系统' AND edited = 0 AND seg_uid IN (${uids.map(() => "?").join(",")})`).run(projectId, ...uids);
-      db.prepare(`UPDATE requirements SET seg_uid = NULL WHERE project_id = ? AND seg_uid IN (${uids.map(() => "?").join(",")})`).run(projectId, ...uids);
+      db.prepare(`UPDATE requirements SET quote_verified = 0, source_note = '来源材料已删除，请复核', revision = revision + 1 WHERE project_id = ? AND seg_uid IN (${uids.map(() => "?").join(",")})`).run(projectId, ...uids);
+      db.prepare(`UPDATE source_snapshots SET active = 0 WHERE project_id = ? AND uid IN (${uids.map(() => "?").join(",")})`).run(projectId, ...uids);
     }
     db.prepare("DELETE FROM materials WHERE project_id = ? AND id = ?").run(projectId, id);
   });
@@ -233,6 +240,11 @@ export function listSegments(projectId) {
     .map((s) => ({ ...s, star: Boolean(s.star), triangle: Boolean(s.triangle) }));
 }
 
+export function listSourceSnapshots(projectId) {
+  return getDb().prepare("SELECT * FROM source_snapshots WHERE project_id = ? ORDER BY uid").all(projectId)
+    .map((r) => ({ ...parse(r.data, {}), active: Boolean(r.active) }));
+}
+
 // ---------- requirements ----------
 
 export function rowToReq(r) {
@@ -243,6 +255,8 @@ export function rowToReq(r) {
     star: Boolean(r.star),
     triangle: Boolean(r.triangle),
     edited: Boolean(r.edited),
+    retired: Boolean(r.retired),
+    answer_evidence: parse(r.answer_evidence, []),
     params: parse(r.params, []),
     rejected_params: parse(r.rejected_params, []),
   };
@@ -299,7 +313,7 @@ export function updateRequirement(projectId, code, fields) {
   if (!keys.length) return;
   const val = (k) => {
     const v = fields[k];
-    if (["params", "rejected_params"].includes(k)) return json(v);
+    if (["params", "rejected_params", "answer_evidence"].includes(k)) return json(v);
     if (typeof v === "boolean") return v ? 1 : 0;
     return v;
   };
@@ -309,7 +323,8 @@ export function updateRequirement(projectId, code, fields) {
 }
 
 export function deleteRequirement(projectId, code) {
-  getDb().prepare("DELETE FROM requirements WHERE project_id = ? AND code = ?").run(projectId, code);
+  // Keep historical references and never reuse requirement IDs.
+  getDb().prepare("UPDATE requirements SET status = '已删除', retired = 1, revision = revision + 1, delete_reason = '已被重新抽取结果替代' WHERE project_id = ? AND code = ?").run(projectId, code);
 }
 
 // ---------- business capabilities ----------
@@ -354,7 +369,7 @@ export function updateCapability(projectId, code, fields) {
 }
 
 export function deleteCapability(projectId, code) {
-  getDb().prepare("DELETE FROM capabilities WHERE project_id = ? AND code = ?").run(projectId, code);
+  getDb().prepare("UPDATE capabilities SET status = '已删除', delete_reason = '已被重新生成结果替代' WHERE project_id = ? AND code = ?").run(projectId, code);
 }
 
 // ---------- parameters ----------
@@ -377,7 +392,7 @@ export function clearOverride(projectId, name) {
 // ---------- questions ----------
 
 export function rowToQuestion(q) {
-  return { ...q, req_ids: parse(q.req_ids, []), proposal: parse(q.proposal, null), applied: parse(q.applied, null), edited: Boolean(q.edited) };
+  return { ...q, req_ids: parse(q.req_ids, []), scenario_ids: parse(q.scenario_ids, []), field_paths: parse(q.field_paths, []), proposal: parse(q.proposal, null), applied: parse(q.applied, null), edited: Boolean(q.edited) };
 }
 
 export function listQuestions(projectId) {
@@ -400,16 +415,16 @@ export function getQuestion(projectId, id) {
 export function insertQuestion(projectId, q) {
   getDb()
     .prepare(
-      `INSERT INTO questions (project_id, source, topic, param, req_ids, question, reason, impact, suggested_answer, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '待处理', ?, ?)`,
+      `INSERT INTO questions (project_id, source, topic, param, req_ids, question, reason, impact, suggested_answer, scenario_ids, field_paths, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '待处理', ?, ?)`,
     )
-    .run(projectId, q.source, q.topic ?? "", q.param ?? null, json(q.req_ids ?? []), q.question, q.reason ?? "", q.impact, q.suggested_answer ?? "", now(), now());
+    .run(projectId, q.source, q.topic ?? "", q.param ?? null, json(q.req_ids ?? []), q.question, q.reason ?? "", q.impact, q.suggested_answer ?? "", json(q.scenario_ids ?? []), json(q.field_paths ?? []), now(), now());
 }
 
 export function updateQuestion(projectId, id, fields) {
   const keys = Object.keys(fields);
   if (!keys.length) return;
-  const val = (k) => (["req_ids", "proposal", "applied"].includes(k) ? json(fields[k]) : typeof fields[k] === "boolean" ? (fields[k] ? 1 : 0) : fields[k]);
+  const val = (k) => (["req_ids", "scenario_ids", "field_paths", "proposal", "applied"].includes(k) ? json(fields[k]) : typeof fields[k] === "boolean" ? (fields[k] ? 1 : 0) : fields[k]);
   getDb()
     .prepare(`UPDATE questions SET ${keys.map((k) => `${k} = ?`).join(", ")}, updated_at = ? WHERE project_id = ? AND id = ?`)
     .run(...keys.map(val), now(), projectId, id);
@@ -421,8 +436,8 @@ export function deleteQuestion(projectId, id) {
 
 // ---------- PBS items ----------
 
-const ITEM_JSON = ["matched_capabilities", "blocked_by", "evidence_chunks", "capability_ids", "req_ids", "history_ref", "repairs"];
-const ITEM_BOOL = ["manual_qty", "edited", "confirmed"];
+const ITEM_JSON = ["matched_capabilities", "blocked_by", "evidence_chunks", "capability_ids", "scenario_ids", "req_ids", "history_ref", "repairs"];
+const ITEM_BOOL = ["manual_qty", "edited", "confirmed", "reviewed"];
 const ITEM_COLUMNS = [
   "code",
   "parent",
@@ -441,6 +456,7 @@ const ITEM_COLUMNS = [
   "origin",
   "edited",
   "confirmed",
+  "reviewed",
   "stale",
   "last_qty",
 ];

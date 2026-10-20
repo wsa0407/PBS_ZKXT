@@ -123,7 +123,7 @@ test("2 review: confirm, edit, add, delete need a reason, restore", () => {
   svc.editRequirement(PROJECT, "R003", { text: "自动识别交通事故、违停、拥堵和抛洒物" });
   const edited = repo.getRequirement(PROJECT, "R003");
   assert.equal(edited.edited, true);
-  assert.equal(edited.status, "已确认");
+  assert.equal(edited.status, "待确认", "saving an edit is separate from confirmation");
 
   const added = svc.addRequirement(PROJECT, { text: "巡逻视频保存不少于 90 天", category: "安全", priority: "重要" });
   assert.equal(repo.getRequirement(PROJECT, added).origin, "人工");

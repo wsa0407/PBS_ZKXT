@@ -1,9 +1,9 @@
-import { computed, defineComponent, inject, nextTick, onMounted, ref } from "vue";
+import { computed, defineComponent, inject, nextTick, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { api, call, fileToBase64, jobState, meta } from "../api.js";
 
 const KIND_LABEL = { tender: "招标文件", minutes: "会议纪要", oral: "用户描述", other: "其他材料" };
-const CHANGE_LABEL = { set_param: "设定参数", update_requirement: "修改需求", add_requirement: "新增需求", remove_requirement: "删除需求" };
+const CHANGE_LABEL = { set_param: "设定参数", update_requirement: "修改需求", add_requirement: "新增需求", remove_requirement: "删除需求", update_scenario: "修改场景" };
 
 export default defineComponent({
   props: { open: Function },
@@ -28,6 +28,11 @@ export default defineComponent({
         scrollDown();
       }
     };
+    watch(view, async () => {
+      if (busy.value) return;
+      const data = await call(() => api(`/projects/${id}/chat`));
+      if (data) suggestions.value = data.suggestions;
+    });
     onMounted(async () => {
       await load();
       samples.value = (await call(() => api("/samples"))) ?? [];
@@ -104,7 +109,7 @@ export default defineComponent({
     const card = (m, i) => m.payload.cards[i];
     const question = (c) => view.value.questions.find((q) => q.id === c.question_id);
     const acceptedIdx = ref({});
-    const proposalAccepted = (m, i) => acceptedIdx.value[`${m.id}-${i}`] ?? (question(card(m, i))?.proposal?.changes ?? []).map((_, k) => k);
+    const proposalAccepted = (m, i) => acceptedIdx.value[`${m.id}-${i}`] ?? (question(card(m, i))?.proposal?.changes ?? []).map((c, k) => !c.conflict && c.quoteVerified ? k : null).filter((k) => k !== null);
     const toggleChange = (m, i, k, on) => {
       const set = new Set(proposalAccepted(m, i));
       on ? set.add(k) : set.delete(k);
@@ -117,6 +122,7 @@ export default defineComponent({
     };
     const applyProposal = async (m, i) => {
       const c = card(m, i);
+      if (question(c)?.proposal?.changes.some((change) => change.conflict)) return props.open("questions");
       const res = await call(() => api(`/projects/${id}/questions/${c.question_id}/apply`, { method: "POST", body: { accepted: proposalAccepted(m, i) } }));
       if (res) {
         await resolve(m, i, "accept");

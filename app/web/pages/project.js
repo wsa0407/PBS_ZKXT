@@ -5,19 +5,21 @@ import Chat from "./chat.js";
 import Materials from "./tabs/materials.js";
 import Requirements from "./tabs/requirements.js";
 import Questions from "./tabs/questions.js";
+import Scenarios from "./tabs/scenarios.js";
 import Pbs from "./tabs/pbs.js";
 import Finish from "./tabs/finish.js";
 
 const TABS = [
   { key: "materials", label: "材料" },
   { key: "requirements", label: "需求" },
+  { key: "scenarios", label: "场景需求" },
   { key: "questions", label: "澄清" },
   { key: "pbs", label: "PBS" },
   { key: "finish", label: "导出" },
 ];
 
 export default defineComponent({
-  components: { Chat, Materials, Requirements, Questions, Pbs, Finish },
+  components: { Chat, Materials, Requirements, Scenarios, Questions, Pbs, Finish },
   setup() {
     const id = router.params.id;
     const view = ref(null);
@@ -62,7 +64,7 @@ export default defineComponent({
     }
     // The conversation drives the workspace: it opens the tab where the result of an action lives.
     const open = (key, focusId = null) => {
-      tab.value = key === "export" ? "finish" : key;
+      tab.value = key === "export" ? "finish" : key === "capabilities" ? "scenarios" : key;
       focus.value = focusId;
       history.replaceState(null, "", `#/projects/${id}/${tab.value}`);
     };
@@ -75,6 +77,7 @@ export default defineComponent({
       return {
         materials: b(s.materials.pending, "份新材料未处理"),
         requirements: b(s.requirements.pending, `条待确认（必审 ${s.requirements.mustReview}）`),
+        scenarios: b(s.scenarios.pending + s.scenarios.unmapped.length, "项场景或需求去向待审阅"),
         questions: b(s.questions.open + s.questions.answered, `个待处理（已答复待应用 ${s.questions.answered}）`),
         pbs: b(s.pbs.uncovered + s.pbs.stale + s.pbs.conflicts, `项待处理：未覆盖 ${s.pbs.uncovered}，待复核 ${s.pbs.stale}，冲突 ${s.pbs.conflicts}`),
       };
@@ -99,6 +102,7 @@ export default defineComponent({
         <div class="work-body">
           <Materials v-if="tab === 'materials'" />
           <Requirements v-else-if="tab === 'requirements'" />
+          <Scenarios v-else-if="tab === 'scenarios'" />
           <Questions v-else-if="tab === 'questions'" />
           <Pbs v-else-if="tab === 'pbs'" />
           <Finish v-else-if="tab === 'finish'" />
