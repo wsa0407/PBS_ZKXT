@@ -99,16 +99,18 @@ export async function analyzeMaterials(projectId, { all = false, llm, progress }
 
   progress.step(0, `${materials.length} 份材料`);
   let done = 0;
-  const results = await Promise.all(
-    materials.map(async (m) => {
-      const mine = segments.filter((s) => s.material_id === m.id);
-      const doc = { title: m.title, numbered: m.numbered, segments: mine.map((s) => ({ id: s.seg_id, chapter: s.chapter, text: s.text, star: s.star, triangle: s.triangle })) };
-      const out = await extractRequirements({ doc, params: sizing.params, inputType: KIND_TO_INPUT[m.kind], llm });
-      done += 1;
-      progress.detail(`${done}/${materials.length} 份材料`);
-      return { material: m, mine, ...out };
-    }),
-  );
+  const results = [];
+  // Each material already has a bounded worker pool; do not multiply it by the material count.
+  for (const m of materials) {
+    const mine = segments.filter((s) => s.material_id === m.id);
+    const doc = { title: m.title, numbered: m.numbered, segments: mine.map((s) => ({ id: s.seg_id, chapter: s.chapter, text: s.text, star: s.star, triangle: s.triangle })) };
+    const out = await extractRequirements({ doc, params: sizing.params, inputType: KIND_TO_INPUT[m.kind], llm,
+      onBatch: (count, total) => progress.detail(`材料 ${done + 1}/${materials.length}：已处理 ${count}/${total} 批`),
+    });
+    done += 1;
+    progress.detail(`${done}/${materials.length} 份材料`);
+    results.push({ material: m, mine, ...out });
+  }
 
   progress.step(1);
   tx(() => {

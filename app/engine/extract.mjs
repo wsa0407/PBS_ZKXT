@@ -69,16 +69,48 @@ export async function extractRequirements({ doc, params, inputType, llm, onBatch
   const system = systemPrompt(params, inputType);
   const batches = batchSegments(doc);
   let done = 0;
-  const outputs = await Promise.all(
-    batches.map(async (segments) => {
+  const outputs = new Array(batches.length);
+  let next = 0;
+  let failure;
+  const validate = (data) => {
+    if (!Array.isArray(data.requirements)) throw new Error("requirements 必须为数组");
+  };
+  const extractBatch = async (segments) => {
+    try {
       const head = segments[0].chapter ? `章节：${segments[0].chapter}\n` : "";
       const user = `${head}片段：\n${segments.map((s) => `[${s.id}] ${s.text}`).join("\n")}`;
-      const data = await llm.json({ step: "extract", system, user, maxTokens: 6000 });
-      done += 1;
-      onBatch?.(done, batches.length);
-      return data.requirements ?? [];
-    }),
-  );
+      const data = await llm.json({ step: "extract", system, user, maxTokens: 6000, validate });
+      validate(data);
+      return data.requirements;
+    } catch (error) {
+      if (error.code !== "LLM_OUTPUT_LIMIT") throw error;
+      let halves;
+      if (segments.length > 1) {
+        const mid = Math.ceil(segments.length / 2);
+        halves = [segments.slice(0, mid), segments.slice(mid)];
+      } else if (segments[0].text.length > 256) {
+        halves = batchSegments({ segments }, 1, Math.ceil(segments[0].text.length / 2));
+      } else throw error;
+      const first = await extractBatch(halves[0]);
+      const rest = [];
+      for (const half of halves.slice(1)) rest.push(...await extractBatch(half));
+      return [...first, ...rest];
+    }
+  };
+  // Stop scheduling after a failure and drain in-flight calls before reporting it to the job.
+  await Promise.all(Array.from({ length: Math.min(3, batches.length) }, async () => {
+    while (!failure && next < batches.length) {
+      const index = next++;
+      try {
+        outputs[index] = await extractBatch(batches[index]);
+        done += 1;
+        onBatch?.(done, batches.length);
+      } catch (error) {
+        failure ??= error;
+      }
+    }
+  }));
+  if (failure) throw failure;
 
   const segById = new Map(doc.segments.map((s) => [s.id, s]));
   const requirements = [];

@@ -151,8 +151,13 @@ export async function listModels({ timeoutMs = 8000 } = {}) {
   return payload.data.map((item) => item.id);
 }
 
-export async function chatCompletion({ messages, model, maxTokens = 16000, temperature, retries = 3 }) {
+export async function chatCompletion({ messages, model, maxTokens = 16000, temperature, retries = 3, jsonMode = false }) {
   const body = { model, messages, max_tokens: maxTokens };
+  if (jsonMode) {
+    body.response_format = { type: "json_object" };
+    // DeepSeek defaults to thinking, which shares max_tokens with the final JSON answer.
+    if (/^deepseek/i.test(model)) body.thinking = { type: "disabled" };
+  }
   if (temperature !== undefined) body.temperature = temperature;
   let lastError;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
@@ -162,6 +167,7 @@ export async function chatCompletion({ messages, model, maxTokens = 16000, tempe
       return {
         content: choice?.message?.content ?? "",
         finishReason: choice?.finish_reason,
+        reasoningTokens: payload.usage?.completion_tokens_details?.reasoning_tokens ?? 0,
         usage: payload.usage ?? {},
         model: payload.model ?? model,
       };
