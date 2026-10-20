@@ -30,6 +30,6 @@
 - 收件与审阅分别封装在 conversation-store.mjs、conversation-review.mjs，业务工具仍按角色及模式授权。新增 respond_to_message、request_confirmation 契约。
 - 14 项聚焦检查通过（原有 6 项协作回归与 8 项对话核心检查）；前端 Vue 模板编译与改动文件 ESLint 通过。
 - 在内存数据库运行一次真实 dsh/BAI 模型验收，使用 deepseek-v4.1-flash：广播“10 路视频并发能否当成 10 架无人机”的只读问题，三位专家全部实际收件；材料、需求理解均 pass，仅 PBS 专家认领并答复，任务正常结束。未修改用户项目。验收记录位于本机 /private/tmp/pbs-conversation-smoke-20261021.json。
-- 此次真实模型答复偏长，随后明确了 acknowledge_intervention.explanation 就是用户可见答复、默认 120 字的规则；未再增加付费复测。不把一个案例视为任意语句都能稳定认领的证明。
+- 此次真实模型答复偏长，当时对 acknowledge_intervention.explanation 添加了默认 120 字的约束。后续已改为显示模型最终答复、回执只留作记录，见 [专家对话回显修正](2026-10-21-conversation-reply-fix.md)。不把一个案例视为任意语句都能稳定认领的证明。
 - 对话确认由模型解释意图，宿主独立校验展示请求、完整原话、明确同意、范围与版本。复杂表达无法可靠确认时继续问清楚；局部范围可先展示，再由用户回复。不将“继续”隐式视为同意。
 - 本轮没有浏览器视觉验收，仅验证模板和交互逻辑。历史旧版澄清、选型卡片保留说明及右侧入口；当前 Agent 变更建议支持文字采纳。

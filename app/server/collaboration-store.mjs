@@ -12,6 +12,7 @@ export function updateTask(id, values) {
   return task(id);
 }
 export function event(t, kind, sender, recipient, content, payload = {}) {
+  if (["activity", "delivery"].includes(kind)) payload = { ...payload, visibility: "activity" };
   return tx((db) => {
     const chatId = repo.addChat(t.project_id, sender === "human" ? "user" : "assistant", content, { ...payload, collaboration: true, kind, sender, recipient, taskId: t.id });
     const result = db.prepare("INSERT INTO collaboration_events(project_id,task_id,kind,sender,recipient,content,payload,chat_id,created_at) VALUES (?,?,?,?,?,?,?,?,?)")

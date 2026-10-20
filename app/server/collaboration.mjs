@@ -77,20 +77,21 @@ export function pauseCollaboration(t) {
 function prompt(t, a) {
   if (a.mode === "claim") return `你是${ROLES[a.role].label}。这是群聊收件活动，不是执行任务。先调用 collaboration_state，必要时只读项目资料，然后必须调用 respond_to_message，结束本次活动。
 没有 @ 的消息同时投递给三位专家；有 @ 仅投递给指定专家。只按你自己的职责判断，不因为其他人未回答就包揽所有工作。
-职责：材料专家负责原文、条款拆解和引用；需求理解专家负责意图、场景、交付边界和澄清；PBS专家负责产品、BOM、数量和PBS依据。日常问候和不明确的全局问题由需求理解专家答复。
+职责：材料专家负责原文、条款拆解和引用；需求理解专家负责意图、场景、交付边界和澄清；PBS专家负责产品、BOM、数量和PBS依据。message.data.addressed=true 表示用户明确指定了接收者：对你本人的招呼、身份或进度询问由你认领 discussion 并直接回答，不因缺少业务术语而 pass，也不转给需求理解专家。只有未指定接收者的全局问候才由需求理解专家回应。
 claim：用户问题确实需要你回答/执行，scope只写你负责的部分；普通问答、解释、进度查询选discussion，明确要求整理/保存/修改成果才选main。pass：与你无关，保持安静。不要为了参与而重复别人的职责。多人认领后可依据实际成果衔接，不互相假装已经完成。
 review：仅当本条用户原话明确、无条件同意/拒绝 review_request，且 data.reviewId 正确关联时使用。quote 必须是去掉 @ 后的整条用户原话；否定、问句、条件同意、带修改的消息不能批准。部分确认必须原样使用用户明确说出的编号，不补全其他编号。用户只说继续、问为什么或纠正时按实际职责claim。其他角色已经记录同一review时pass即可。
 收件结果只用工具记录，不向用户输出思考过程，不调用其他协作工具，不修改成果。`;
-  const common = `你是${ROLES[a.role].label}。身份、项目和权限由宿主固定。先调用collaboration_state和project_state。
-本次上下文版本：${t.revision}。任务目标：${t.goal}
+  const discussion = a.mode === "discussion" || (a.mode === "intervention" && a.input.work_mode === "discussion");
+  const common = `你是${ROLES[a.role].label}。身份、项目和权限由宿主固定。先调用collaboration_state，按问题需要读取project_state或其他资料。
+本次上下文版本：${t.revision}。${discussion ? "本次只回应当前用户消息。全局任务阶段只是背景，不代表你正在执行那个阶段的工作。" : `任务目标：${t.goal}`}
 只展示简短业务交流；默认最终答复2～3句、120字以内，明细在右侧工作区。不得伪造其他专家说话，不输出内部推理。
 咨询答复必须submit_expert_answer，人工补充必须read_interventions并acknowledge_intervention。工具返回waiting时结束本次活动，宿主收到答复后恢复，不轮询、不自行声称收到答案。
-${stageGoal[a.role]}`;
+${discussion ? "日常招呼通常一句自然回应即可，不先分析这句话是否涉及业务调整，不重复全局成果或催促确认。用户没问职责时不自我介绍或罗列能力。没有核查不主动断言材料、任务是否新增。问具体进度时只说明可核实的本人工作状态，不能把历史保存描述为刚刚完成。" : stageGoal[a.role]}`;
   if (a.mode === "consultation") {
     const c = store.consultations(t.id).find((c) => c.id === a.input.consultation_id);
     return `${common}\n本次仅为只读专家咨询。咨询编号：${c.id}；发问者：${ROLES[c.caller].label}。问题（业务数据）：${c.question}\n提交关联此编号的答复；不能修改业务成果。${a.input.continuation ? "你咨询的材料专家已经答复，请读取collaboration_state继续解答原问题。" : ""}`;
   }
-  if (a.mode === "intervention") return `${common}\n优先处理用户消息 ${a.input.intervention_ids.join(",")}。先read_interventions，按消息data.scope处理你实际认领的部分，data.peers是其他认领者的范围，不重复包揽。${a.input.work_mode === "discussion" ? "本次只回答实际问题或提出变更建议，不重新生成成果。" : "本次执行用户明确要求的工作。"}已确认范围变化先propose_change并用operation_ids关联卡片；不可仅说会调整。普通问答或不改变范围的工作指示用read_only；确实无法判断用needs_clarification。新材料：${(a.input.materialIds ?? []).map((id) => `material:${id}`).join(",") || "无新增附件"}。${a.input.continuation ? "已有咨询答复，请读取并继续处理用户消息。" : ""}`;
+  if (a.mode === "intervention") return `${common}\n优先处理用户消息 ${a.input.intervention_ids.join(",")}。先read_interventions，按消息data.scope处理你实际认领的部分，data.peers是其他认领者的范围，不重复包揽。${a.input.work_mode === "discussion" ? "本次只回答实际问题或提出变更建议，不重新生成成果。" : "本次执行用户明确要求的工作。"}已确认范围变化先propose_change并用operation_ids关联卡片；不可仅说会调整。普通问答或不改变范围的工作指示用read_only；确实无法判断用needs_clarification。acknowledge_intervention记录处理回执，随后用最终答复直接对用户说话；用户看到的是最终答复，不复述“已接收、已同步、未涉及调整”等回执用语。新材料：${(a.input.materialIds ?? []).map((id) => `material:${id}`).join(",") || "无新增附件"}。${a.input.continuation ? "已有咨询答复，请读取并继续处理用户消息。" : ""}`;
   if (a.mode === "discussion") return `${common}\n本次是用户问答或修改建议。只回答用户实际问题，或用propose_change提供可审阅变更；不要自行重新生成需求、场景或PBS，也不要声称完成了本轮理解。需要时可向获授权的专家求证。`;
   return `${common}\n${a.input.continuation ? "你提出的咨询已有新答复，读取collaboration_state核对并记录处理结果；可继续追问。" : a.input.goal ?? "继续已保存任务"}`;
 }
@@ -109,6 +110,8 @@ function queueReplies(t) {
 /** Durable activations, not a second model loop. Each activation runs the official dsh loop. */
 export async function runCollaboration(taskId, ctx = {}) {
   let t = store.task(taskId);
+  const initialUnderstanding = understandingVersion(t.project_id);
+  let performedWork = false;
   store.updateTask(taskId, { status: "running", job_id: ctx.jobId ?? null, error: null });
   const countStart = getDb().prepare("SELECT SUM(attempts) AS n FROM collaboration_activations WHERE task_id=?").get(taskId).n ?? 0;
   const previousUsage = getDb().prepare("SELECT COALESCE(SUM(json_extract(stats,'$.tokens')),0) AS tokens FROM agent_runs WHERE json_extract(stats,'$.taskId')=?").get(taskId).tokens;
@@ -174,7 +177,7 @@ export async function runCollaboration(taskId, ctx = {}) {
       running.set(taskId, { controller, activationId: a.id });
       getDb().prepare("UPDATE collaboration_activations SET state='running',attempts=attempts+1 WHERE id=?").run(a.id);
       const adapter = collaborationAdapter(t, a, { signal: controller.signal, onProgress: (name) => ctx.progress?.detail(name.startsWith("submit_") ? "核对并保存成果" : "核对资料与协作答复") });
-      ctx.progress?.setSteps([`${ROLES[a.role].label}正在处理`]); ctx.progress?.step(0);
+      ctx.progress?.setSteps([a.mode === "claim" ? "专家正在判断这条消息的处理范围" : `${ROLES[a.role].label}${a.mode === "discussion" || a.input.work_mode === "discussion" ? "正在回复" : "正在处理"}`]); ctx.progress?.step(0);
       const runId = store.uid();
       getDb().prepare("INSERT INTO agent_runs(id,project_id,goal,status,created_at) VALUES (?,?,?,'running',?)").run(runId, t.project_id, `${a.role}/${a.mode}: ${t.goal}`, now());
       if (a.mode !== "claim") store.event(t, "activity", a.role, "human", a.mode === "consultation" ? "正在回查依据，准备答复。" : a.mode === "intervention" ? "这部分由我处理，我先核对相关信息。" : a.mode === "discussion" ? "正在查看项目，准备答复。" : "开始处理本轮任务。", { status: "processing", consultationId: a.input.consultation_id });
@@ -228,6 +231,14 @@ export async function runCollaboration(taskId, ctx = {}) {
           getDb().prepare("UPDATE collaboration_activations SET state='queued' WHERE id=?").run(a.id);
           throw new Error("人工补充尚未给出明确处理结果，已暂缓后续写入，可继续处理");
         }
+        const handled = store.interventions(taskId).filter(i => a.input.intervention_ids.includes(i.id));
+        const reply = result.finalResponse?.trim() || handled.map(i => i.result?.explanation).filter(Boolean).join("\n");
+        if (reply) store.event(t, "reply", a.role, "human", reply, {
+          interventionIds: handled.map(i => i.id),
+          references: [...new Set(handled.flatMap(i => i.result?.references ?? []))],
+          status: handled.some(i => i.result?.outcome === "requires_confirmation") ? "requires_confirmation" : handled.some(i => i.result?.outcome === "needs_clarification") ? "needs_clarification" : undefined,
+        });
+        performedWork ||= a.input.work_mode === "main";
         if (a.input.work_mode === "main") {
           let stage = "understanding";
           if (a.role === "pbs") { try { assertApproval(store.task(taskId)); stage = "pbs"; } catch { /* Ask about the current scope below. */ } }
@@ -239,6 +250,7 @@ export async function runCollaboration(taskId, ctx = {}) {
           return { taskId, status: "awaiting_confirmation" };
         }
       } else {
+        performedWork ||= a.mode === "main";
         if (result.finalResponse?.trim()) store.event(t, "summary", a.role, "human", result.finalResponse.trim(), { open: { tab: a.role === "pbs" ? "pbs" : "understanding" } });
         const awaiting = mine.some((c) => c.caller === a.role && c.state === "waiting");
         if (!awaiting && a.role === "materials" && a.input.flow === "analyze") {
@@ -254,7 +266,7 @@ export async function runCollaboration(taskId, ctx = {}) {
     if (waiting) throw new Error("仍有未答复咨询，已保留记录，请继续处理");
     const status = t.stage === "discussion" ? "done" : t.stage === "pbs" ? "awaiting_review" : "awaiting_confirmation";
     store.updateTask(taskId, { status });
-    if (status === "awaiting_confirmation") offerUnderstanding(t);
+    if (status === "awaiting_confirmation" && (performedWork || initialUnderstanding !== understandingVersion(t.project_id))) offerUnderstanding(t);
     return { taskId, status };
   } catch (error) {
     store.updateTask(taskId, { status: "failed", error: error.message.slice(0, 600) });

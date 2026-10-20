@@ -6,6 +6,7 @@ import { scenarioFieldLabel, scenarioValue } from "../ui.js";
 import { ExpertDetails, expertLabels } from "../collaboration-ui.js";
 
 import { mentionQuery, parseMentions } from "../mentions.mjs";
+import { isConversationMessage } from "../chat-events.mjs";
 
 const KIND_LABEL = { tender: "招标文件", minutes: "会议纪要", oral: "用户描述", other: "其他材料" };
 const CHANGE_LABEL = { set_param: "设定参数", update_requirement: "修改需求", add_requirement: "新增需求", remove_requirement: "删除需求", update_scenario: "修改场景" };
@@ -50,8 +51,9 @@ export default defineComponent({
         const data = await api(`/projects/${id}/chat`);
         if (disposed) return;
         const existing = new Set(messages.value.map(m => m.id));
-        if (!atBottom) unread.value += data.messages.filter(m => !existing.has(m.id)).length;
-        messages.value = data.messages;
+        const conversationMessages = data.messages.filter(isConversationMessage);
+        if (!atBottom) unread.value += conversationMessages.filter(m => !existing.has(m.id)).length;
+        messages.value = conversationMessages;
         suggestions.value = data.suggestions;
         collaboration.value = data.collaboration;
         progress.value = data.job;
@@ -315,20 +317,11 @@ export default defineComponent({
         </div>
       </div>
 
-      <div v-if="progress" class="msg assistant">
-        <div class="bot-avatar">PBS</div>
-        <div class="bubble bot working">
-          <div v-for="s in progress.steps" :key="s.name" class="job-step" :class="s.state">
-            <span class="ic"><template v-if="s.state === 'done'">✓</template><template v-else-if="s.state === 'running'"><i class="spin"></i></template></span>
-            <span>{{ s.name }}</span><span class="muted" v-if="s.detail">{{ s.detail }}</span>
-          </div>
-          <el-button size="small" :disabled="!progress.id || stopping" @click="stop">{{ stopping ? '正在暂停…' : '暂停任务' }}</el-button>
-        </div>
-      </div>
     </div>
 
     <button v-if="unread" class="new-messages" @click="showLatest">{{ unread }} 条新消息 ↓</button>
     <div class="chat-foot">
+      <div v-if="progress" class="chat-activity" role="status" aria-live="polite"><i class="spin"></i><span>{{ progress.steps?.find(s => s.state === 'running')?.name || '正在处理' }}…</span><el-button link size="small" :disabled="!progress.id || stopping" @click="stop">{{ stopping ? '正在暂停' : '暂停' }}</el-button></div>
       <div v-if="['paused','failed'].includes(collaboration.task?.status)" class="task-resume"><span>{{ collaboration.task.status === 'paused' ? '任务已暂停，补充会先保存' : '协作尚未完成，已有成果保留' }}</span><el-button size="small" @click="resume">继续处理</el-button></div>
       <div class="composer-hint">{{ recipients.length ? '已 @ ' + recipients.map(r => expertLabels[r]).join('、') : '发到专家群，由相关专家认领；输入 @ 可指定专家' }}</div>
       <div class="quick" v-if="suggestions.length && !busy">

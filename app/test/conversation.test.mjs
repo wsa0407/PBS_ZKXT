@@ -11,6 +11,9 @@ import { assertApproval } from "../server/collaboration-approval.mjs";
 import { collaborationAdapter } from "../server/collaboration-tools.mjs";
 import { parseMentions, mentionQuery } from "../web/mentions.mjs";
 import { setAgentRuntimeFactory } from "../server/agent-runner.mjs";
+import { createServer } from "../server/index.mjs";
+import { getJob } from "../server/jobs.mjs";
+import { chatHistory } from "../server/chat.mjs";
 
 let id;
 beforeEach(() => { resetDb(); id = repo.createProject({ name: "对话认领核心验证" }).id; });
@@ -58,6 +61,45 @@ test("broadcast reaches all three role sessions, only claimant answers, and disc
   assert.equal(conversation.claims("broadcast").length, 3);
   assert.equal(store.task(t.id).status, "done");
   assert.equal(store.events(id).filter(e => e.kind === "intervention_result").length, 1);
+});
+
+test("an addressed greeting overrides a stale recipient and shows the model reply without receipts or a confirmation prompt", async () => {
+  svc.addRequirement(id, { text: "已有需求，尚待审阅" });
+  const t = createCollaboration(id, { goal: "此前整理需求场景", mode: "conversation" });
+  store.updateTask(t.id, { stage: "understanding", status: "awaiting_confirmation" });
+  const roles = [];
+  setAgentRuntimeFactory(async o => {
+    const s = await ok(o.execute, "collaboration_state");
+    roles.push(o.role); assert.equal(o.role, "materials");
+    if (s.activation_mode === "claim") {
+      assert.equal(s.message.content, "@材料拆解专家 嘛呢");
+      assert.equal(s.message.data.addressed, true);
+      await claim(o, s, { decision: "claim", scope: "回应给本人的招呼", work_mode: "discussion" });
+    } else {
+      assert.ok(!o.goal.includes("完整检查待处理材料，按顺序阅读"));
+      const inputs = await ok(o.execute, "read_interventions");
+      await ok(o.execute, "acknowledge_intervention", { operation_id: "ack", intervention_id: inputs.messages[0].id, outcome: "read_only", explanation: "内部记录：已经处理，不修改业务数据。" });
+    }
+    return { finalResponse: "我在。需要我帮你回查哪份材料？" };
+  });
+  const server = createServer();
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/projects/${id}/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId: "greeting-regression", text: "@材料拆解专家 嘛呢", target: "understanding" }) });
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    for (let i = 0; i < 100 && getJob(result.jobId).status === "处理中"; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(getJob(result.jobId).status, "已完成");
+    assert.deepEqual(roles, ["materials", "materials"]);
+    assert.deepEqual(chatHistory(id).map(m => m.content), ["@材料拆解专家 嘛呢", "我在。需要我帮你回查哪份材料？"]);
+    assert.equal(chatHistory(id)[0].payload.recipient, "materials");
+    assert.ok(store.events(id).some(e => e.kind === "intervention_result" && e.payload.visibility === "activity"));
+    assert.ok(!store.events(id).some(e => e.kind === "approval_required"));
+    // Old persisted activity bubbles are also hidden without altering their audit record.
+    repo.addChat(id, "assistant", "正在同步你的补充。", { collaboration: true, kind: "activity", sender: "understanding" });
+    repo.addChat(id, "assistant", "已读到你的补充。", { collaboration: true, kind: "delivery", sender: "understanding" });
+    assert.equal(chatHistory(id).length, 2);
+  } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });
 
 test("explicit mentions restrict delivery, multiple experts each execute their claimed part after recovery", async () => {

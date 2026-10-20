@@ -10,6 +10,7 @@ export const pendingMessages = taskId => inbox(taskId).filter(m => m.state === "
 export const claims = id => getDb().prepare("SELECT * FROM conversation_claims WHERE message_id=? ORDER BY rowid").all(id).map(r => ({ ...r, data: parse(r.data, {}) }));
 export function saveMessage(t, { id, content, targets = [], data = {} }) {
   const recipients = targets.length ? [...new Set(targets)] : Object.keys(ROLES);
+  data = { ...data, addressed: targets.length > 0 };
   getDb().prepare("INSERT INTO conversation_messages(id,task_id,project_id,content,targets,data,created_at) VALUES (?,?,?,?,?,?,?)")
     .run(id, t.id, t.project_id, content, json(recipients), json(data), now());
   store.event(t, "message", "human", targets.length === 1 ? targets[0] : "all", content, { messageId: id, recipients, status: "received", ...(data.attachment ? { attachment: data.attachment } : {}) });

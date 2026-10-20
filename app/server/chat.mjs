@@ -4,6 +4,7 @@ import * as repo from "./repo.mjs";
 import * as svc from "./services.mjs";
 import * as scenarios from "./scenarios.mjs";
 import { hash } from "../engine/scenario.mjs";
+import { isConversationMessage } from "../web/chat-events.mjs";
 
 const AGENT_CHANGE_TYPES = new Set(["set_param", "edit_requirement", "add_requirement", "delete_requirement", "edit_scenario", "confirm_scenarios", "confirm_requirements", "edit_item", "confirm_items", "delete_item", "finish", "show"]);
 export const changeVersion = (id) => hash({ requirements: repo.listRequirements(id), items: repo.listItems(id), params: repo.listOverrides(id), scenarios: scenarios.listScenarios(id), project: repo.getProject(id) });
@@ -449,4 +450,4 @@ export function resolveCard(projectId, messageId, cardIndex, decision) {
   return { note };
 }
 
-export const chatHistory = (projectId) => repo.listChat(projectId, 200);
+export const chatHistory = (projectId) => repo.listChat(projectId, 200).filter(isConversationMessage);

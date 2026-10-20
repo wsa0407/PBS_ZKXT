@@ -8,7 +8,8 @@ export const ExpertDetails = defineComponent({
   emits: ["resume"],
   setup(props) {
     const openReference = (ref) => props.open(/^SC/.test(ref) ? "scenarios" : /^R/.test(ref) ? "requirements" : /^M\d+:/.test(ref) ? "materials" : "pbs", ref.startsWith("pbs:") ? Number(ref.slice(4)) : ref);
-    return { expertLabels, exchangeStatus, openReference };
+    const meaningfulStatus = (status) => ["waiting", "requires_confirmation", "needs_clarification", "paused"].includes(status) ? exchangeStatus[status] : "";
+    return { expertLabels, exchangeStatus, openReference, meaningfulStatus };
   },
   template: `<div class="exchange-details">
     <div v-if="message.payload.nature" class="muted" style="font-size:11px;margin-top:6px">{{ ({source_fact:'原文事实',human_confirmed:'人工已确认范围',analysis:'专家分析建议',unknown:'仍待澄清'})[message.payload.nature] }}</div>
@@ -21,9 +22,9 @@ export const ExpertDetails = defineComponent({
       <p v-if="message.payload.detail">{{ message.payload.detail }}</p>
     </details>
     <details v-if="message.payload.reviewScope"><summary>查看本轮确认范围</summary><p>需求：{{ message.payload.reviewScope.requirements.join('、') }}</p><p>场景：{{ message.payload.reviewScope.scenarios.join('、') || '无' }}</p><p v-for="q in message.payload.reviewScope.questions" :key="q.id">待澄清：{{ q.question }}</p></details>
-    <div class="exchange-actions">
+    <div v-if="message.payload.resumable || message.payload.consultationId || meaningfulStatus(message.payload.status)" class="exchange-actions">
       <button v-if="message.payload.resumable" @click="$emit('resume')">继续处理</button>
-      <span>{{ exchangeStatus[message.payload.status] || '' }}</span>
+      <span>{{ meaningfulStatus(message.payload.status) }}</span>
       <span v-if="message.payload.consultationId" title="同一编号表示同一段专家讨论">讨论 {{ message.payload.consultationId.slice(0, 6) }}</span>
     </div>
   </div>`,

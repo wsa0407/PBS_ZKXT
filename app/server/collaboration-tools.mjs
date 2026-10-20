@@ -159,7 +159,7 @@ export function collaborationAdapter(t, activation, { signal, onProgress } = {})
         if (before !== after) getDb().prepare("UPDATE conversation_reviews SET version=? WHERE project_id=? AND kind='change' AND state='pending' AND version=?").run(after, t.project_id, before);
       }
       getDb().prepare("UPDATE collaboration_interventions SET state='handled',result=? WHERE id=?").run(json(args), i.id);
-      store.event(t, "intervention_result", role, "human", args.explanation, { interventionId: i.id, status: args.outcome, references: args.references ?? [] });
+      store.event(t, "intervention_result", role, "human", args.explanation, { visibility: "activity", interventionId: i.id, status: args.outcome, references: args.references ?? [] });
       return { recorded: true, outcome: args.outcome };
     },
   };
