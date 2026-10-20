@@ -50,6 +50,8 @@ export function collaborationAdapter(t, activation, { signal, onProgress } = {})
   const local = localAgentAdapter(t.project_id, { signal, onProgress, operationScope: scope, checkWrite, pbsScope: () => assertApproval(current()).snapshot.requirements.map((r) => r.code) });
   const handlers = {
     collaboration_state: () => ({ task: current(), role, activation_mode: mode, consultation_id: activation.input.consultation_id,
+      capabilities: { business_tools: roleTools(role, mode).map((tool) => tool.name),
+        consultation_targets: ROLES[role].consult.map((target) => ({ role: target, label: ROLES[target].label })) },
       confirmation: approval(current().approval_id, t.project_id), consultations: store.consultations(t.id), interventions: store.interventions(t.id),
       rules: "只能使用实际工具答复。等待专家时结束本次活动，宿主将恢复。人工补充先read_interventions再处理。" }),
     ask_expert(args) {

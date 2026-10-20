@@ -1,19 +1,29 @@
 ---
 name: pbs-products
-description: 根据场景需求检索公司产品能力与限制，组合项目解决方案并生成有依据的 PBS 和 BOM 草稿。
+description: 核对产品能力与适用条件、分析交付缺口和数量依据，组合客户方案与 PBS 草稿并读取产品 BOM；适用于选型咨询和确认范围内的 PBS 编制。
 ---
 
-先读取原始需求、场景及未解决问题。search_evidence(domain=products) 查找候选，read_product 获取完整能力、限制与 BOM；不要仅凭名称匹配产品。
+## 适用范围与权限
+
+所有角色可读取本技能进行选型理解和可行性分析。正式保存 PBS 或项目方案需要当前角色的写入权限与有效人工确认范围；咨询时只读，不因具备产品知识而修改客户需求。当前工具读取产品 BOM，不创建或改写共享产品及 BOM。
+
+## 匹配与缺口分析
+
+先读取本次需求、场景及未解决问题；编制时从 collaboration_state 核对确认范围。search_evidence(domain=products) 查候选，read_product 获取完整能力、限制与 BOM。比较目标、指标、环境、接口和使用条件，不仅凭名称或关键词判断满足。
 
 每次优先核对最相关的少量候选。已有能力和约束足以判断时停止扩展检索，不逐个通读整个产品目录；存在具体缺口时再定向查询。
 
 产品来源为自有产品、外采、自研、服务。已有产品可复用、组合或需要集成；能力/约束不满足时明确缺口，不能修改目录内容或捏造已有能力。项目解决方案按客户目标自由组合，不进入共享产品库。
 
+检索不到不等于公司没有此能力；区分候选未找到、资料不足和已核实不满足。受版本、数量或部署条件影响的能力说明条件，不能把待核实的适用性写成完全满足。缺口涉及客户边界时按需咨询，不用产品现状反推客户要求。
+
+## PBS、数量与方案
+
 blocked_by 只用于另行交付的外采/自研缺口，指向无法满足该要求的产品，不能与本行 product_ref 相同。已有产品的使用条件写入 spec/basis，不能因此清除产品关联。客户提供的服务器或设备作为环境依赖，不自行新增外采采购项；需要时列部署适配服务。
 
-submit_pbs 的 items 含 name、parent、source、product_ref、req_ids、scenario_ids、matched_capabilities、spec、basis、qty、unit、sizing_rule、evidence_chunks。parent 从 project_state 的分组选择；产品匹配必须引用真实 product_ref。未知数量用 null，不用 1 掩盖未知；数量规则和许可/BOM 关系由工具校验。
+submit_pbs 的 items 含 name、parent、source、product_ref、req_ids、scenario_ids、matched_capabilities、spec、basis、qty、unit、sizing_rule、evidence_chunks；显式数量附 qty_quote。parent 从 project_state 的分组选择；产品匹配必须引用真实 product_ref。未知数量用 null，不用 1 掩盖未知；数量规则和许可/BOM 关系由工具校验。10 路视频并发等能力指标不能直接换算为 10 台无人机；仅使用本轮确认范围内的参数或明确获批的测算依据。
 
-submit_pbs 可分批合并提交，每批不超过80项。只修改本批同名的未人工处理草稿，其他已存项保留；修改草稿保持名称以保留其ID。过期或重复项通过 propose_change 提出删除建议，不靠省略旧项隐式删除。每批使用最新 pbs_version。
+submit_pbs 可分批合并提交，每批不超过80项。只修改本批同名的未人工处理草稿，其他已存项保留；修改草稿保持名称以保留其ID。过期或重复项通过 propose_change 提出删除建议，不靠省略旧项隐式删除。每批提供 operation_id，以最新 pbs_version 作为 expected_version；具体字段与限额以当前工具 schema 为准。
 
 每项关联真实需求，说明能力对应关系和限制。服务、集成与实施不能隐去，商务资质不变成产品项。先提交可审阅草稿，再读取 run_report，修复未覆盖、约束冲突与来源问题；有待确认项可交付草稿，但不能宣布项目已完成。
 

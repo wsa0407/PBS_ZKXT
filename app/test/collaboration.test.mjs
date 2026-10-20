@@ -65,6 +65,9 @@ test("independent roles answer correlated multi-round consultations and preserve
     seen.push({ role, sessionId });
     const state = await ok(execute, "collaboration_state");
     if (role === "pbs") {
+      assert.deepEqual(state.capabilities.consultation_targets.map((r) => r.role), ["understanding", "materials"]);
+      assert.ok(state.capabilities.business_tools.includes("submit_pbs"));
+      assert.ok(!state.capabilities.business_tools.includes("submit_requirements"));
       pbsCalls++;
       if (pbsCalls === 1) {
         await ok(execute, "ask_expert", { operation_id: "same-id", target: "understanding", question: "是否需要新建工单闭环？" });
@@ -75,6 +78,8 @@ test("independent roles answer correlated multi-round consultations and preserve
         await ok(execute, "ask_expert", { operation_id: "follow", target: "materials", question: "是否明确接口数量？", followup_to: state.consultations.find((c) => c.target === "materials").id });
       }
     } else {
+      assert.ok(!state.capabilities.business_tools.some((name) => name.startsWith("submit_")));
+      if (role === "materials") assert.deepEqual(state.capabilities.consultation_targets, []);
       assert.equal((await execute("submit_requirements", {})).error.code, "ROLE_PERMISSION");
       const c = state.consultations.find((c) => c.id === state.consultation_id);
       await ok(execute, "submit_expert_answer", { operation_id: "same-id", consultation_id: c.id, answer: "当前只能确认异常推送，接口数量待明确。", nature: "analysis" });
