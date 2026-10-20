@@ -2,7 +2,7 @@ import { computed, defineComponent, inject, nextTick, ref, watch } from "vue";
 import { ElMessageBox } from "element-plus";
 import { api, call, meta, runJob } from "../../api.js";
 import { SCENARIO_FIELD_LABELS, scenarioFieldLabel, scenarioValue, IMPACT_TYPE, Q_STATUS_TYPE, questionStatusLabel, originLabel, impactLabel } from "../../ui.js";
-import { questionPending, questionUnlinked, questionsForRequirement, questionActions } from "../../understanding.js";
+import { questionPending, questionUnlinked, questionsForRequirement, questionActions } from "../../../shared/understanding.js";
 
 const CHANGE_LABEL = { set_param: "设定参数", update_requirement: "修改需求", add_requirement: "新增需求", remove_requirement: "删除需求", update_scenario: "修改场景" };
 const CHANGE_TYPE = { set_param: "primary", update_requirement: "warning", add_requirement: "success", remove_requirement: "danger", update_scenario: "warning" };

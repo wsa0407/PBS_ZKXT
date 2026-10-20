@@ -1,4 +1,4 @@
-import { NON_DELIVERABLE } from "./extract.mjs";
+import { NON_DELIVERABLE } from "./requirements.mjs";
 import { findUncovered } from "./pbs.mjs";
 import { CONFIRMED, missingRules } from "./sizing.mjs";
 

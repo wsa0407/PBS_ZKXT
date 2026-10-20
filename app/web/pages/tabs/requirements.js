@@ -2,7 +2,7 @@ import { computed, defineComponent, inject, nextTick, ref, watch } from "vue";
 import { ElMessageBox } from "element-plus";
 import { api, call, meta } from "../../api.js";
 import { highlight, TIER_TYPE, REVIEW_HELP, reviewLabel, requirementStatusLabel } from "../../ui.js";
-import { questionPending, questionsForRequirement } from "../../understanding.js";
+import { questionPending, questionsForRequirement } from "../../../shared/understanding.js";
 
 export default defineComponent({
   setup() {

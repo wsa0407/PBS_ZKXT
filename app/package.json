@@ -3,13 +3,14 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "PBS 智能拆解：需求 → 澄清 → PBS → 产品匹配，带人工审阅与编辑",
+  "description": "PBS 专家协作工作台：材料、需求理解、人工确认与 PBS",
   "scripts": {
     "start": "node server/index.mjs",
     "test": "node --test",
-    "lint": "eslint .",
+    "lint": "eslint ..",
     "check:templates": "node scripts/check-templates.mjs",
-    "check": "npm run lint && npm run check:templates && npm test"
+    "check": "npm run lint && npm run check:architecture && npm run check:templates && npm test",
+    "check:architecture": "node scripts/check-architecture.mjs"
   },
   "engines": {
     "node": ">=22.19"

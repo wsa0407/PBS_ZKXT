@@ -1,5 +1,4 @@
-import { randomUUID } from "node:crypto";
-import { buildScenarios, defaultDisposition, DISPOSITIONS, hash, SCENARIO_FIELDS, validFieldPath, validateScenario } from "../engine/scenario.mjs";
+import { defaultDisposition, DISPOSITIONS, hash, SCENARIO_FIELDS, validFieldPath, validateScenario } from "../engine/scenario.mjs";
 import { getDb, json, now, parse, tx } from "./db.mjs";
 import { badRequest, HttpError, notFound } from "./errors.mjs";
 import * as repo from "./repo.mjs";
@@ -189,61 +188,6 @@ export function scenarioView(projectId) {
   const active = enriched.filter(live);
   const latest = getDb().prepare("SELECT result FROM scenario_runs WHERE project_id = ? ORDER BY created_at DESC LIMIT 1").get(projectId);
   return { scenarios: enriched, dispositions, scenarioCoverage: { total: requirements.length, classified: dispositions.filter((d) => !d.kinds.includes("待归类")).length, unmapped: dispositions.filter((d) => d.kinds.includes("待归类")).map((d) => d.req_id), pending: active.filter((s) => s.status !== "已确认").length, confirmed: active.filter((s) => s.status === "已确认").length, active: active.length }, scenarioNotes: parse(latest?.result, {}).notes ?? [] };
-}
-
-function inputState(projectId) {
-  return { project: repo.getProject(projectId), requirements: repo.listRequirements(projectId, { includeDeleted: false }), sources: repo.listSourceSnapshots(projectId), existing: listScenarios(projectId), dispositions: dispositionRows(projectId) };
-}
-
-export async function generateScenarios(projectId, { llm, progress, requestId = randomUUID() }) {
-  repo.getProject(projectId);
-  if (typeof requestId !== "string" || requestId.length > 100 || !requestId.trim()) throw badRequest("生成请求标识无效");
-  const previous = getDb().prepare("SELECT result FROM scenario_runs WHERE project_id = ? AND request_id = ?").get(projectId, requestId);
-  if (previous) return parse(previous.result, {});
-  const state = inputState(projectId);
-  if (!state.requirements.length) throw badRequest("请先抽取或添加原始需求");
-  const inputHash = hash(state);
-  const protectedScenes = state.existing.filter((s) => s.edited || ["已确认", "待复核"].includes(s.status) || s.origin !== "系统");
-  progress.step(0, `${state.requirements.length} 条原始需求`);
-  const draft = await buildScenarios({ ...state, existing: protectedScenes, llm });
-  progress.step(1);
-  return tx((db) => {
-    if (hash(inputState(projectId)) !== inputHash) throw new HttpError(409, "生成期间项目内容已变化，原结果已保留，请重新生成");
-    const keys = new Map();
-    for (const s of state.existing.filter((s) => s.status === "待确认" && !protectedScenes.some((p) => p.code === s.code))) {
-      write(projectId, { ...s, revision: s.revision + 1, status: "已归档" }, "系统草稿已被重新生成结果替代");
-      flagPbs(projectId, [s.code], "场景草稿已重新生成，请复核");
-    }
-    let created = 0;
-    const notes = [...draft.notes];
-    for (const candidate of draft.scenarios) {
-      const duplicate = protectedScenes.find((s) => s.name === candidate.data.name);
-      if (duplicate) {
-        keys.set(candidate.key, duplicate.code);
-        notes.push(`保留 ${duplicate.code}「${duplicate.name}」，模型的新建议未覆盖人工成果，请核对新增要求`);
-        continue;
-      }
-      const code = nextCode(projectId);
-      keys.set(candidate.key, code);
-      write(projectId, { ...candidate.data, code, revision: 1, status: "待确认", origin: "系统", edited: false }, "生成场景草稿");
-      created++;
-      for (const q of candidate.questions) {
-        const ids = q.req_ids ?? [];
-        const same = repo.listQuestions(projectId).find((old) => old.question === q.question && old.status !== "已忽略");
-        if (same) repo.updateQuestion(projectId, same.id, { scenario_ids: [...new Set([...same.scenario_ids, code])], req_ids: [...new Set([...same.req_ids, ...ids])], field_paths: [...new Set([...same.field_paths, ...(q.field_paths ?? [])])] });
-        else repo.insertQuestion(projectId, { ...q, source: "场景分析", impact: ["影响方案", "影响报价", "影响废标风险"].includes(q.impact) ? q.impact : "影响方案", req_ids: ids, scenario_ids: [code] });
-      }
-    }
-    for (const d of draft.dispositions) {
-      if (state.dispositions.some((old) => old.req_id === d.req_id && old.edited)) continue;
-      putDisposition(projectId, { ...d, scenario_ids: (d.scenario_keys ?? []).map((k) => keys.get(k)) });
-    }
-    const result = { created, kept: protectedScenes.length, notes, requestId };
-    db.prepare("INSERT INTO scenario_runs(project_id, request_id, input_hash, result, created_at) VALUES (?, ?, ?, ?, ?)").run(projectId, requestId, inputHash, json(result), now());
-    repo.logEvent(projectId, "场景", `生成 ${created} 条场景需求，保留 ${protectedScenes.length} 条人工处理结果`);
-    repo.touchProject(projectId);
-    return result;
-  });
 }
 
 /** Agent tool boundary: deterministic validation and persistence, with no model call. */

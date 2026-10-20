@@ -1,7 +1,7 @@
 import { TOOLS, validateArguments } from "../../agents/pbs/contracts/tools.mjs";
 import { hash } from "../engine/scenario.mjs";
 import { normalize } from "../engine/text.mjs";
-import { checkParam } from "../engine/extract.mjs";
+import { checkParam } from "../engine/requirements.mjs";
 import { getDb, json, now, parse, tx } from "./db.mjs";
 import * as repo from "./repo.mjs";
 import * as svc from "./services.mjs";
@@ -141,7 +141,7 @@ export function localAgentAdapter(projectId, { signal, onProgress = () => {}, ma
           if (!existing.edited && existing.status === "待确认" && existing.origin === "系统") repo.updateRequirement(projectId, existing.code, { quote: r.quote, quote_verified: true, revision: existing.revision + 1 });
           recordCoverage(source.uid, d.document_version, "requirement"); return { code: existing.code, kept: true };
         }
-        const code = repo.insertRequirement(projectId, { text: r.text, seg_uid: source.uid, quote: r.quote, quote_verified: true, category: r.category, priority: source.star || source.triangle ? "必须" : r.priority, inferred: d.kind !== "tender" && Boolean(r.inferred), star: source.star, triangle: source.triangle, params, rejected_params: rejected, ord: source.ord * 10 });
+        const code = repo.insertRequirement(projectId, { text: r.text, seg_uid: source.uid, quote: r.quote, quote_verified: true, category: r.category, priority: r.priority, inferred: d.kind !== "tender" && Boolean(r.inferred), star: source.star, triangle: source.triangle, params, rejected_params: rejected, ord: source.ord * 10 });
         recordCoverage(source.uid, d.document_version, "requirement"); return { code, rejected_params: rejected };
       });
       const ignored = batch(args.ignored ?? [], (v) => {

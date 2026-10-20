@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 import { defaultPack, installDefaultCatalog, readCatalog, previewImport, importCatalog, saveEntry, runtimeConfig } from "../server/catalog.mjs";
-import { saveProjectSolutions, captureProjectBom, projectCatalogView, solutionContext } from "../server/project-solutions.mjs";
+import { saveProjectSolutions, captureProjectBom, projectCatalogView, solutionContext, projectInputHash } from "../server/project-solutions.mjs";
 import { expandBom, validatePack, digest } from "../engine/catalog.mjs";
 import { createContext, enforceLeaves, normalizeLeaf, productText } from "../engine/pbs.mjs";
 import { resolveParams, missingRules } from "../engine/sizing.mjs";
@@ -190,21 +190,14 @@ test("BOM product units must match and project unit mismatches never produce fal
   assert.ok(current.warnings.some((w) => w.includes("单位"))); assert.ok(current.bom.every((l) => l.total_qty === null));
 });
 
-test("professional generation receives solution context and never revives the legacy mock catalogue", async () => {
+test("Agent PBS submission preserves project solutions and never revives the legacy catalogue", () => {
   const { id, req } = projectWithItems();
-  saveProjectSolutions(id, [{ id: "CUSTOM", name: "客户道路专用方案", req_ids: [req], scenario_ids: [], item_ids: repo.listItems(id).map((i) => i.id) }]);
-  let prompt = "";
-  const llm = { async json({ step, user }) {
-    if (step === "pbs") {
-      prompt = user;
-      return { nodes: [{ parent: "2", name: "H30T热成像载荷", source: "外采", product_ref: "LA-E04", req_ids: [req] }], conflicts: [] };
-    }
-    return { links: [], new_nodes: [] };
-  } };
-  await svc.generateProjectPbs(id, { llm, progress: { step() {} } });
-  assert.match(prompt, /客户道路专用方案/); assert.doesNotMatch(prompt, /reference_templates|模拟解决方案模板/);
-  assert.ok(repo.listItems(id).some((i) => i.product_ref === "LA-E04" && i.source === "外采"));
-  assert.ok(repo.listItems(id).every((i) => !/^P\d+$/.test(i.product_ref ?? "")));
+  saveProjectSolutions(id, [{ id: "CUSTOM", name: "客户道路专用方案", req_ids: [req], scenario_ids: [], item_ids: repo.listItems(id).map(i => i.id) }]);
+  const product = repo.getProduct("LA-E04");
+  svc.submitAgentPbs(id, { expected_version: projectInputHash(id), items: [{ parent: "2", name: product.name, source: "外采", product_ref: product.id, matched_capabilities: [product.capabilities[0]], req_ids: [req] }] });
+  assert.ok(solutionContext(id).some(s => s.name === "客户道路专用方案"));
+  assert.ok(repo.listItems(id).some(i => i.product_ref === "LA-E04"));
+  assert.ok(repo.listItems(id).every(i => !/^P\d+$/.test(i.product_ref ?? "")));
 });
 
 test("product packs reject solution templates while legacy imports ignore them with an explicit notice", () => {

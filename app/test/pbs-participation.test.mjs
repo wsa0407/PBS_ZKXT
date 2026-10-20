@@ -178,3 +178,48 @@ test("stale queued PBS work is cancelled or made read-only without blocking upst
   assert.equal(store.task(t.id).status, "awaiting_confirmation");
   assert.equal(repo.listItems(id).length, 0);
 });
+
+test("PBS can acknowledge its own saved adjustment without revoking an unchanged understanding scope", async () => {
+  const approved = approveUnderstanding(id, { version: approvalPreview(id).version, requirements: [code] });
+  const t = createCollaboration(id, { role: "pbs", mode: "conversation", goal: "编制 PBS", approvalId: approved.id });
+  runtime(async (o, s) => {
+    if (s.activation_mode === "claim") {
+      await ok(o.execute, "respond_to_message", { operation_id: "claim", message_id: s.message.id, decision: "claim", work_mode: "main", scope: "保存巡查服务" });
+      return;
+    }
+    const input = (await ok(o.execute, "read_interventions")).messages[0];
+    const state = await ok(o.execute, "project_state");
+    await ok(o.execute, "submit_pbs", { operation_id: "save", expected_version: state.pbs_version, items: [{ name: "巡查服务", parent: "5", source: "服务", req_ids: [code], unit: "项" }] });
+    await ok(o.execute, "acknowledge_intervention", { operation_id: "ack", intervention_id: input.id, outcome: "adjusted", operation_ids: ["save"], explanation: "已保存巡查服务草稿。" });
+  });
+  receiveMessage(t, { id: "pbs-work", content: "@PBS专家 编制巡查服务项", targets: ["pbs"] });
+  await runCollaboration(t.id);
+  assert.equal(store.task(t.id).approval_id, approved.id);
+  assert.equal(pbsParticipation(store.task(t.id)).can_execute, true);
+  assert.equal(store.task(t.id).status, "awaiting_review");
+});
+
+test("rematch utilities cannot bypass missing, excluded or stale human scope", async () => {
+  const item = svc.saveItem(id, null, { name: "巡查服务", parent: "5", source: "服务", req_ids: [code], unit: "项" });
+  let calls = 0;
+  const llm = { json: async () => { calls++; return { node: { name: "巡查服务建议", parent: "5", source: "服务", req_ids: ["R999"] } }; } };
+  await assert.rejects(svc.rematchItem(id, item, { llm }), /确认/);
+  assert.equal(calls, 0);
+  const approved = approveUnderstanding(id, { version: approvalPreview(id).version, requirements: [code] });
+  const t = createCollaboration(id, { role: "pbs", mode: "conversation", goal: "匹配", approvalId: approved.id });
+  const result = await svc.rematchItem(id, item, { llm });
+  assert.equal(calls, 1); assert.equal(result.suggestion.approval_id, approved.id);
+  assert.deepEqual(result.suggestion.req_ids, [code]);
+  svc.acceptRematch(id, item, result.suggestion);
+  assert.equal(repo.getItem(id, item).name, "巡查服务建议");
+  assert.deepEqual(repo.getItem(id, item).req_ids, [code]);
+  svc.editRequirement(id, code, { text: "仅在日间开展巡查" });
+  await assert.rejects(svc.rematchItem(id, item, { llm }), /变化|确认/);
+  assert.throws(() => svc.acceptRematch(id, item, result.suggestion), /变化|确认/);
+  assert.equal(calls, 1); assert.equal(repo.getItem(id, item).name, "巡查服务建议");
+  const other = svc.addRequirement(id, { text: "其他一期需求" });
+  const partial = approveUnderstanding(id, { version: approvalPreview(id).version, requirements: [other] });
+  store.updateTask(t.id, { approval_id: partial.id });
+  await assert.rejects(svc.rematchItem(id, item, { llm }), /超出/);
+  assert.equal(calls, 1);
+});

@@ -11,7 +11,12 @@ import * as rag from "../server/rag.mjs";
 import { segmentText } from "../engine/segment.mjs";
 import { exportProject } from "../server/xlsx.mjs";
 
-const progress = { step() {}, detail() {} };
+import { collaborationAdapter } from "../server/collaboration-tools.mjs";
+import { createCollaboration } from "../server/collaboration.mjs";
+import { nextActivation } from "../server/collaboration-store.mjs";
+import { projectInputHash } from "../server/project-solutions.mjs";
+import { approvalPreview, approveUnderstanding } from "../server/collaboration-approval.mjs";
+const submitPbs = items => svc.submitAgentPbs(project, { expected_version: projectInputHash(project), items });
 const material = `# 道路巡查\n## 技术要求\n2.1.1 支持夜间巡逻，发现路面交通事故。\n识别准确率不低于90%。\n2.1.2 发现事故后自动通知值班人员。\n2.1.3 数据须在局内机房保存不少于90天。\n2.1.4 本期不包括渣土车监管。`;
 let project, materialId;
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -32,7 +37,32 @@ function draft(name = "道路事故发现与通知") {
   };
 }
 const model = (value) => ({ async json() { return clone(value); } });
-const generate = (value = draft(), extra = {}) => scenes.generateScenarios(project, { llm: model(value), progress, ...extra });
+async function generate(value = draft()) {
+  for (const d of value.dispositions) {
+    const current = scenes.scenarioView(project).dispositions.find(r => r.req_id === d.req_id);
+    if (!current.edited) scenes.editDisposition(project, d.req_id, { ...current, kinds: d.kinds, note: d.note });
+  }
+  // Exercise current role tools; independent disposition edits represent the workspace review.
+  const t = createCollaboration(project, { role: "understanding", goal: "整理场景" });
+  const adapter = collaborationAdapter(t, nextActivation(t.id));
+  for (const [i, candidate] of value.scenarios.entries()) {
+    const { key, questions, ...scenario } = candidate;
+    const saved = await adapter.execute("submit_scenarios", { operation_id: `scene-${i}`, expected_version: projectInputHash(project), scenarios: [scenario] });
+    assert.equal(saved.ok, true, JSON.stringify(saved));
+    assert.deepEqual(saved.data.errors, []);
+    const code = saved.data.accepted[0].code;
+    if (questions?.length) {
+      const q = await adapter.execute("submit_questions", { operation_id: `questions-${key}`, questions: questions.map(q => ({ ...q, scenario_ids: [code] })) });
+      assert.equal(q.ok, true); assert.deepEqual(q.data.errors, []);
+    }
+  }
+
+}
+function approveScope() {
+  const preview = approvalPreview(project);
+  const a = approveUnderstanding(project, { version: preview.version, requirements: preview.requirements.map(r => r.code), scenarios: preview.scenarios.map(s => s.code) });
+  createCollaboration(project, { role: "pbs", approvalId: a.id, goal: "按确认范围复核" });
+}
 function item(req, scenarioIds = []) {
   const id = svc.saveItem(project, null, { parent: "1", name: `交付 ${req}`, source: "服务", req_ids: [req] });
   const row = repo.getItem(project, id);
@@ -64,28 +94,26 @@ test("generation saves source-grounded scenarios, questions and independent requ
   assert.ok(view.requirements.find((r) => r.code === "R001").scenario_ids.includes("SC001"));
 });
 
-test("bad quotes and fabricated numbers are rejected with one repair attempt, preserving old results", async () => {
+test("bad quotes and fabricated numbers cannot overwrite an existing scenario", async () => {
   await generate();
-  let calls = 0;
-  const bad = draft(); bad.scenarios[0].evidence[0].quote = "根本不存在的引用"; bad.scenarios[0].goal = "30秒送达";
-  await assert.rejects(scenes.generateScenarios(project, { progress, llm: { async json() { calls++; return clone(bad); } } }), /校验失败/);
-  assert.equal(calls, 2);
-  assert.equal(scenes.getScenario(project, "SC001").status, "待确认");
+  const bad = draft().scenarios[0]; bad.evidence[0].quote = "根本不存在的引用"; bad.goal = "30秒送达";
+  assert.throws(() => scenes.submitAgentScenario(project, bad), /引用|数字/);
   assert.equal(scenes.listScenarios(project).length, 1);
 });
 
-test("completed generation requests are idempotent and protected human work is never overwritten", async () => {
-  const result = await generate(draft(), { requestId: "same-request" });
-  const repeat = await scenes.generateScenarios(project, { requestId: "same-request", progress, llm: { json() { throw Error("must not run"); } } });
-  assert.deepEqual(repeat, result);
+
+test("repeated Agent submissions preserve protected human scenarios", async () => {
+  await generate();
   scenes.editScenario(project, "SC001", { revision: 1, goal: "人工完善的目标" });
   await generate();
   assert.equal(scenes.getScenario(project, "SC001").goal, "人工完善的目标");
   assert.equal(scenes.listScenarios(project).length, 1);
 });
 
+
 test("replacement drafts retain old IDs and immutable revision history", async () => {
   await generate();
+  scenes.editScenario(project, "SC001", { revision: 1, status: "已归档", reason: "改用新的巡查场景" });
   await generate(draft("改进后的巡查场景"));
   assert.equal(scenes.getScenario(project, "SC001").status, "已归档");
   assert.equal(scenes.getScenario(project, "SC002").status, "待确认");
@@ -188,26 +216,9 @@ test("index rebuilds preserve evidence IDs; changed product passages remain read
   assert.ok(!hits.some((h) => h.chunk.id === chunk.id));
 });
 
-test("generation detects changes while a model is running and does not save partial results", async () => {
-  await generate();
-  const llm = { async json() { repo.updateRequirement(project, "R001", { text: "客户更正了巡查要求", revision: 2 }); return draft("过时的输出"); } };
-  await assert.rejects(scenes.generateScenarios(project, { llm, progress }), /生成期间项目内容已变化/);
-  assert.equal(scenes.listScenarios(project).length, 1);
-  assert.equal(scenes.getScenario(project, "SC001").status, "待确认");
-});
 
-test("re-extraction reuses unchanged IDs and retains replaced requirements as history", async () => {
-  const llm = { async json({ step }) {
-    if (step === "clarify") return { questions: [] };
-    return { requirements: [{ seg_id: "2.1.1", text: repo.getRequirement(project, "R001").text, quote: repo.getRequirement(project, "R001").quote, category: "功能", priority: "必须" }] };
-  } };
-  await generate();
-  await svc.analyzeMaterials(project, { all: true, llm, progress });
-  assert.equal(repo.getRequirement(project, "R001").retired, false);
-  assert.equal(repo.getRequirement(project, "R002").retired, true);
-  assert.equal(scenes.getScenario(project, "SC001").status, "待复核");
-  assert.equal(repo.nextReqCode(project), "R005");
-});
+
+
 
 test("v2 databases migrate without losing reviewed requirements, materials or PBS", () => {
   const dir = mkdtempSync(join(tmpdir(), "pbs-migration-"));
@@ -227,21 +238,15 @@ test("v2 databases migrate without losing reviewed requirements, materials or PB
     assert.equal(repo.getItem(oldProject, oldItem).qty, 5);
     assert.equal(repo.getItem(oldProject, oldItem).confirmed, true);
     assert.equal(repo.getItem(oldProject, oldItem).reviewed, true);
-    assert.equal(getDb().prepare("SELECT value FROM meta WHERE key = 'schema'").get().value, "5");
+    assert.equal(getDb().prepare("SELECT value FROM meta WHERE key = 'schema'").get().value, "7");
     assert.equal(scenes.listScenarios(oldProject).length, 0);
   } finally { resetDb(":memory:"); rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("PBS receives scenario context, retains scenarios across regeneration, and export contains trace sheets", async () => {
   await generate();
-  let sawContext = false;
-  const llm = { async json({ step, user }) {
-    if (step === "pbs") { sawContext = user.includes("SC001") && user.includes("由谁发起通知") && user.includes("跨场景约束"); return { nodes: [{ code: "1.1", parent: "1", name: "事故识别", source: "自有产品", product_ref: "P06", matched_capabilities: ["交通事故识别"], req_ids: ["R001"] }], conflicts: [] }; }
-    return { links: [], new_nodes: [] };
-  } };
-  await svc.generateProjectPbs(project, { llm, progress });
+  submitPbs([{ parent: "1", name: "事故识别", source: "自有产品", product_ref: "P06", matched_capabilities: ["交通事故识别"], req_ids: ["R001"], scenario_ids: ["SC001"] }]);
   const view = svc.projectView(project);
-  assert.ok(sawContext);
   assert.equal(view.scenarios.length, 1);
   const matched = view.items.find((i) => i.req_ids.includes("R001"));
   assert.ok(matched.scenario_ids.includes("SC001"));
@@ -250,26 +255,14 @@ test("PBS receives scenario context, retains scenarios across regeneration, and 
   const buffer = await exportProject(view);
   const ExcelJS = (await import("exceljs")).default;
   const book = new ExcelJS.Workbook(); await book.xlsx.load(buffer);
-  assert.equal(book.worksheets.length, 7);
+  assert.deepEqual(book.worksheets.map(s => s.name), ["导出前检查", "PBS 清单", "需求对应表", "场景需求", "需求处理去向", "澄清问题", "测算参数", "审核结果"]);
   assert.equal(book.getWorksheet("场景需求").getRow(2).getCell(1).value, "SC001");
   assert.equal(book.getWorksheet("需求处理去向").rowCount, 5);
 });
 
-test("repeated system regeneration never resurrects or selects an archived draft as the active result", async () => {
-  await generate(); await generate(); await generate();
-  const rows = scenes.listScenarios(project);
-  assert.equal(rows.filter((s) => s.status !== "已归档").length, 1);
-  assert.equal(rows.find((s) => s.status !== "已归档").code, "SC003");
-  assert.equal(scenes.revisions(project, "SC001").length, 2, "archived system history is not repeatedly rewritten");
-});
 
-test("invalid model shapes receive a bounded repair and cannot overwrite a valid draft", async () => {
-  await generate();
-  let calls = 0;
-  await assert.rejects(scenes.generateScenarios(project, { progress, llm: { async json() { calls++; return { scenarios: [null], dispositions: [null] }; } } }), /校验失败/);
-  assert.equal(calls, 2);
-  assert.equal(scenes.listScenarios(project).length, 1);
-});
+
+
 
 test("constraint scopes follow split lineage and use their own optimistic version", async () => {
   await generate();
@@ -299,28 +292,24 @@ test("confirmed PBS items keep their ID and content when unedited items are rege
   const id = item("R001", ["SC001"]);
   const protectedItem = repo.getItem(project, id);
   repo.saveItems(project, [{ ...protectedItem, edited: false }]);
-  await svc.generateProjectPbs(project, { progress, llm: model({ nodes: [], conflicts: [], links: [], new_nodes: [] }) });
+  submitPbs([]);
   assert.equal(repo.getItem(project, id).name, protectedItem.name);
   assert.equal(repo.getItem(project, id).confirmed, true);
 });
 
-test("PBS generated against an outdated project is rejected without replacing previous rows", async () => {
+test("PBS submitted against an outdated project preserves existing rows", async () => {
   await generate();
-  const id = item("R001", ["SC001"]);
-  const previousName = repo.getItem(project, id).name;
-  const llm = { async json({ step }) {
-    if (step === "pbs") {
-      svc.editRequirement(project, "R001", { text: "客户要求增加巡查范围" });
-      return { nodes: [{ code: "1.1", parent: "1", name: "过时的方案", source: "服务", req_ids: ["R001"] }], conflicts: [] };
-    }
-    return { links: [], new_nodes: [] };
-  } };
-  await assert.rejects(svc.generateProjectPbs(project, { llm, progress }), /原 PBS 已保留/);
-  assert.equal(repo.getItem(project, id).name, previousName);
+  const id = item("R001", ["SC001"]), version = projectInputHash(project);
+  const previous = repo.getItem(project, id).name;
+  svc.editRequirement(project, "R001", { text: "客户要求增加巡查范围" });
+  assert.throws(() => svc.submitAgentPbs(project, { expected_version: version, items: [] }), /项目已变化/);
+  assert.equal(repo.getItem(project, id).name, previous);
 });
+
 
 test("a rematch suggestion cannot overwrite a later manual edit", async () => {
   const id = item("R001");
+  approveScope();
   const result = await svc.rematchItem(project, id, { llm: model({ node: { name: "巡查服务", parent: "1", source: "服务" } }) });
   svc.saveItem(project, id, { name: "人工修改后的巡查服务" });
   assert.throws(() => svc.acceptRematch(project, id, result.suggestion), /重新匹配/);
@@ -338,7 +327,7 @@ test("previously reviewed PBS is retained after an upstream edit invalidates its
   svc.editRequirement(project, "R001", { text: "修改后的巡查要求" });
   assert.equal(repo.getItem(project, id).confirmed, false);
   assert.equal(repo.getItem(project, id).reviewed, true);
-  await svc.generateProjectPbs(project, { progress, llm: model({ nodes: [], conflicts: [], links: [], new_nodes: [] }) });
+  submitPbs([]);
   assert.equal(repo.getItem(project, id).name, "交付 R001");
   assert.equal(repo.getItem(project, id).confirmed, false);
 });

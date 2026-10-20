@@ -1,6 +1,6 @@
 import { computed, defineComponent, ref, watch } from "vue";
 import { api, call } from "./api.js";
-import { approvalSelectionIssue } from "./understanding.js";
+import { approvalSelectionIssue } from "../shared/understanding.js";
 
 export const expertLabels = { materials: "材料拆解专家", understanding: "需求理解专家", pbs: "PBS专家", human: "我", all: "专家群", system: "协作提示" };
 export const exchangeStatus = { received: "已接收", waiting: "等待答复", delivered: "已送达", processing: "正在处理", answered: "已答复", adjusted: "已据此调整", requires_confirmation: "需你确认", needs_clarification: "仍待澄清", read_only: "已答复", paused: "已暂停" };

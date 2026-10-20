@@ -1,28 +1,14 @@
 import { hash } from "../engine/scenario.mjs";
-import { getDb, json, now, parse, tx } from "./db.mjs";
+import { json, now, tx } from "./db.mjs";
 import * as repo from "./repo.mjs";
 import * as scenes from "./scenarios.mjs";
 import * as svc from "./services.mjs";
 import { HttpError } from "./errors.mjs";
 import { uid } from "./collaboration-store.mjs";
-import { questionPending } from "../web/understanding.js";
+import { understandingFacts } from "./understanding-scope.mjs";
 
-export function understandingFacts(projectId) {
-  return {
-    requirements: repo.listRequirements(projectId, { includeDeleted: false }),
-    scenarios: scenes.listScenarios(projectId).filter((s) => s.status !== "已归档"),
-    dispositions: scenes.scenarioView(projectId).dispositions,
-    sources: repo.listMaterials(projectId).map((m) => ({ id: m.id, title: m.title, version: hash(repo.getMaterial(projectId, m.id).text) })),
-    answers: repo.listQuestions(projectId).filter((q) => q.answer).map((q) => ({ id: q.id, answer: q.answer, source: q.answer_source, status: q.status, applied: q.applied })),
-    overrides: repo.listOverrides(projectId),
-  };
-}
-export const understandingVersion = (projectId) => hash(understandingFacts(projectId));
-export function approvalPreview(projectId) {
-  const facts = understandingFacts(projectId);
-  return { ...facts, version: hash(facts), questions: repo.listQuestions(projectId).filter(questionPending),
-    defaults: { requirements: facts.requirements.filter((r) => r.status === "已确认").map((r) => r.code), scenarios: facts.scenarios.filter((s) => s.status === "已确认").map((s) => s.code) } };
-}
+export { understandingFacts, understandingVersion, approvalPreview, approval, assertApproval, pbsParticipation } from "./understanding-scope.mjs";
+
 export function approveUnderstanding(projectId, body) {
   return tx((db) => {
     const facts = understandingFacts(projectId);
@@ -43,19 +29,4 @@ export function approveUnderstanding(projectId, body) {
     db.prepare("INSERT INTO collaboration_approvals(id,project_id,input_version,snapshot,created_at) VALUES (?,?,?,?,?)").run(id, projectId, version, json(snapshot), now());
     return { id, version, snapshot };
   });
-}
-export function approval(id, projectId) {
-  const row = getDb().prepare("SELECT * FROM collaboration_approvals WHERE id=? AND project_id=?").get(id ?? "", projectId);
-  return row ? { ...row, snapshot: parse(row.snapshot, {}) } : null;
-}
-export function pbsParticipation(t) {
-  const confirmed = approval(t.approval_id, t.project_id);
-  const canExecute = Boolean(confirmed && confirmed.input_version === understandingVersion(t.project_id));
-  return { can_discuss: true, can_execute: canExecute,
-    reason: canExecute ? null : "需求理解尚未经人工确认，或确认后的内容已变化。PBS 专家可交流和答疑，暂不认领或执行成果任务。" };
-}
-export function assertApproval(t) {
-  const a = approval(t.approval_id, t.project_id);
-  if (!a || a.input_version !== understandingVersion(t.project_id)) throw new HttpError(409, "本轮需求理解尚未确认或已变化，请先审阅并重新交接给PBS");
-  return a;
 }

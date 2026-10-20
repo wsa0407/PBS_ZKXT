@@ -2,7 +2,7 @@ import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import http from "node:http";
 import { extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { INPUT_TYPES, CATEGORIES } from "../engine/extract.mjs";
+import { CATEGORIES } from "../engine/requirements.mjs";
 import { fileToText, SUPPORTED } from "../engine/ingest.mjs";
 import * as catalog from "./catalog.mjs";
 import * as projectSolutions from "./project-solutions.mjs";
@@ -11,7 +11,6 @@ import * as chat from "./chat.mjs";
 import * as models from "./models.mjs";
 import { badRequest, HttpError } from "./errors.mjs";
 import { activeJob, cancelJob, failInterruptedJobs, getJob, llmCalls, startJob } from "./jobs.mjs";
-import { agentChatTurn, agentGoal } from "./agent-chat.mjs";
 import * as collaboration from "./collaboration-api.mjs";
 import { events as collaborationEvents, recoverCollaboration } from "./collaboration-store.mjs";
 import * as rag from "./rag.mjs";
@@ -21,6 +20,7 @@ import * as scenarios from "./scenarios.mjs";
 import { exportProject, parseProductSheet, productTemplate } from "./xlsx.mjs";
 
 const webDir = fileURLToPath(new URL("../web/", import.meta.url));
+const sharedDir = fileURLToPath(new URL("../shared/", import.meta.url));
 const vendor = {
   "/vendor/vue.js": "vue/dist/vue.esm-browser.prod.js",
   "/vendor/element-plus.js": "element-plus/dist/index.full.min.mjs",
@@ -86,7 +86,7 @@ get("/api/meta", () => {
     execution: "deepseek-harness",
     retrieval: rag.retrievalMode(),
     materialKinds: Object.entries(svc.MATERIAL_KINDS).map(([id, label]) => ({ id, label })),
-    inputTypes: Object.keys(INPUT_TYPES),
+    inputTypes: Object.keys(svc.MATERIAL_KINDS),
     industries: checklists.industries,
     categories: CATEGORIES,
     fileTypes: SUPPORTED,
@@ -233,20 +233,12 @@ post("/api/projects/:id/questions/:qid/apply", ({ id, qid }, body) => svc.applyA
 // chat (conversational control; every turn is a background job so model calls show progress)
 get("/api/projects/:id/chat", ({ id }) => {
   const state = collaboration.collaborationView(id);
-  return { messages: chat.chatHistory(id), suggestions: chat.suggestions(svc.projectView(id)), collaboration: state, job: activeJob(id) };
+  return { messages: chat.chatHistory(id), collaboration: state, job: activeJob(id) };
 });
 post("/api/projects/:id/chat", async ({ id }, body) => {
   repo.getProject(id);
   const attachment = body.file?.base64 ? { name: String(body.file.name ?? "upload"), text: (await fileText(body)).text } : null;
-  if (!body.actions?.length || body.actions.some((a) => agentGoal(a))) return collaboration.submitCollaboration(id, { ...body, file: undefined, attachment });
-  return job(
-    startJob({
-      projectId: id,
-      kind: "chat",
-      steps: ["理解你的意思"],
-      run: (ctx) => agentChatTurn(id, { text: body.text, attachment, actions: body.actions, label: body.label }, ctx),
-    }),
-  );
+  return collaboration.submitCollaboration(id, { ...body, file: undefined, attachment });
 });
 get("/api/projects/:id/collaboration", ({ id }) => collaboration.collaborationView(id));
 get("/api/projects/:id/collaboration/events", ({ id }, _, query) => ({ events: collaborationEvents(id, query.get("after")) }));
@@ -289,6 +281,11 @@ function serveFile(res, file) {
 }
 
 function serveStatic(res, pathname) {
+  if (pathname.startsWith("/shared/")) {
+    const file = normalize(join(sharedDir, pathname.slice("/shared/".length)));
+    if (file.startsWith(sharedDir) && [".js", ".mjs"].includes(extname(file)) && serveFile(res, file)) return;
+    return send(res, 404, { error: "共享模块不存在" });
+  }
   if (vendor[pathname]) {
     if (serveFile(res, join(nodeModules, vendor[pathname]))) return;
     return send(res, 500, { error: "前端依赖缺失，请在 app 目录运行 npm install" });

@@ -1,12 +1,9 @@
-import { usesSingleLicense } from "./catalog.mjs";
-import { NON_DELIVERABLE } from "./extract.mjs";
+import { usesSingleLicense, DELIVERY_SOURCES as SOURCES } from "./catalog.mjs";
+import { NON_DELIVERABLE } from "./requirements.mjs";
 import { dice, normalize } from "./text.mjs";
-
-export const SOURCES = ["自有产品", "外采", "自研", "服务"];
 
 const NODE_FORMAT = `{"code":"1.1","parent":"1","name":"...","spec":"规格或范围说明","source":"自有产品","product_ref":"P01","matched_capabilities":["逐字复制的产品能力"],"blocked_by":null,"evidence_chunks":["K12"],"capability_ids":["C01"],"req_ids":["R003"],"sizing_rule":null,"qty":null,"qty_quote":"","unit":"","history_ref":["H1"],"basis":"..."}`;
 const BLOCKED_FORMAT = `{"product_ref":"P02","limit":"逐字复制的产品限制"}`;
-const CONFLICT_FORMAT = `{"product_ref":"P08","req_id":"R030","evidence":"逐字复制的产品限制或信创字段原文","reason":"..."}`;
 
 const MATCH_RULES = `匹配产品（最重要）。**从场景中的具体要求（或已有业务能力）匹配产品能力，再确定产品**：
 a. 先确定这一项服务于哪些“业务能力”（capability_ids，填能力编号如 C01）；再到产品目录里找能满足这些业务能力的“产品能力”；最后才确定产品。已经提供场景时，以场景活动及关联需求为依据，不要求另建业务能力，capability_ids可为空。场景中未明确的条件不可默认满足。
@@ -16,33 +13,6 @@ d. 产品“限制”中写明不具备、不包含、需定制的内容，不�
 e. 产品目录里没有相关产品时，按实际填外采、自研或服务，blocked_by 填 null。
 f. 解决方案由当前客户项目按场景和需求自由组合产品，不存在产品库中的预设方案或固定组合。已提供的项目方案只是本项目草稿，不能扩展为其他客户的需求。组合产品已经包含的BOM组成项不得重复列入PBS报价。标为待研发或待验证的能力必须说明缺口，不可当作现成覆盖。
 g. “检索到的产品资料”是从产品库和产品手册中按业务能力和需求检索出的片段，编号形如 K12。叶子的判断用到了哪些片段，就把编号填进 evidence_chunks；没用到就给空数组。`;
-
-const SYSTEM = `你是资深解决方案架构师，负责把客户需求拆成可报价的产品清单（PBS），并为每一项匹配公司已有产品。
-
-规则：
-1. 一级分类只能用模板给出的 code。模板中标注“必须”的分类一定要有叶子。
-2. 只输出二级叶子，code 形如 "1.1"，parent 为一级 code。每个叶子必须能单独报价，不要把多件事塞进一个叶子。
-3. ${MATCH_RULES}
-3a. 每个叶子的 capability_ids 必须来自“业务能力清单”，不得编造。服务、培训、运维等配套项如果不对应具体业务能力，capability_ids 给空数组，并在 basis 中说明配套原因。
-4. source 只能取：${SOURCES.join("、")}。
-5. req_ids 填该叶子满足的需求 ID。每条“必须”需求（背景、商务、资质、范围外类除外）都要被至少一个叶子覆盖。不要为“范围外”需求建叶子。
-6. sizing_rule：可用测算规则中有对应该叶子的规则时填规则 ID，否则填 null。标注“附加授权”的规则要单独成为一个叶子，不能挂在产品本身的叶子上。同一个规则只能用一次。
-7. 数量：不要自己估算。挂了测算规则的由规则计算，qty 填 null；原文明确写出数量的填 qty，并在 qty_quote 中逐字引用原文；其余 qty 填 null。
-8. conflicts：逐个检查用到的自有产品是否违反硬约束类需求（环境、信创、安全、部署方式、资质许可等）。违反时列出 ${CONFLICT_FORMAT}，evidence 必须逐字复制自该产品的“限制”或“信创”字段。没有就给空数组。
-9. history_ref 填参考了的历史项目 ID，没有就空数组。basis 用一句话说明为什么需要这个叶子。
-
-只输出 JSON：
-{"nodes":[${NODE_FORMAT}],"conflicts":[${CONFLICT_FORMAT}]}`;
-
-const REPAIR_SYSTEM = `你是资深解决方案架构师。自动检查发现下面这些“必须”需求没有被任何 PBS 叶子承接。
-
-对每条需求二选一：
-1. 已有叶子能满足：在 links 中给出 {"req_id","code","reason"}。约束类需求（例如“不得……”“须部署于……”）通常由已有叶子的产品或部署方式满足，优先用 links。
-2. 已有叶子都不能满足：在 new_nodes 中新增叶子，req_ids 写上该需求。字段格式与已有叶子一致；parent 只能取模板一级分类的 code；sizing_rule 填 null。
-${MATCH_RULES}
-
-只输出 JSON：
-{"links":[{"req_id":"R037","code":"1.4","reason":"..."}],"new_nodes":[${NODE_FORMAT}]}`;
 
 const REMATCH_SYSTEM = `你是资深解决方案架构师。用户要求重新判断 PBS 中的一项：它该用哪个自有产品，还是需要外采、自研或服务。
 
@@ -449,105 +419,6 @@ export function checkConflicts(raw, leaves, ctx) {
 
 // ---------- model steps ----------
 
-function historyText(similar) {
-  return similar
-    .filter((p) => p.selected)
-    .map((p) => `${p.id} ${p.name}（${p.industry}，${p.year}，${p.amount_wan} 万）\n${p.pbs.map((i) => `  - [${i.category}] ${i.name} ${i.qty}${i.unit}（${i.source}）`).join("\n")}\n  经验：${p.lessons}`)
-    .join("\n");
-}
-
-/**
- * candidates: products to show in full (chosen by retrieval); chunks: retrieved product/manual
- * passages (numbered K<id>); kept: lines a person edited, which the model must not duplicate.
- */
-export async function generatePbs({ doc, requirements, template, candidates, chunks = [], similar, sizing, kept = [], capabilities = [], scenarioContext = null, llm }) {
-  const reqList = requirements.filter((r) => !NON_DELIVERABLE.has(r.category)).map(reqLine).join("\n");
-  const keptText = kept.length
-    ? `\n\n已由人工确认的项（保留不变，不要重复输出，但可以在 req_ids 覆盖检查时视为已承接）：\n${kept.map((l) => `- ${l.code} ${l.name}（${l.source}${l.product_ref ? " " + l.product_ref : ""}）承接 ${l.req_ids.join("、") || "无"}`).join("\n")}`
-    : "";
-
-  const user = `场景性需求、适用约束及未解决事项：
-${scenarioContext ? JSON.stringify(scenarioContext) : "尚未建立场景，生成兼容草稿并保留复核"}
-场景中的业务活动是产品能力匹配的需求依据，不必另建独立业务能力。按场景具体要求匹配真实产品能力；未明确的条件保持待确认，禁止默认满足、默认接口开放或生成未知数量。范围外、背景和商务资质不能转成采购项。已知约束和服务仍需响应。
-
-项目：${doc.title || "（未命名）"}
-
-PBS 模板一级分类：
-${templateText(template)}
-
-产品目录（按需求检索出的候选产品）：
-${candidates.map(productText).join("\n")}
-
-检索到的产品资料：
-${contextText(chunks)}
-
-相似历史项目：
-${historyText(similar) || "（无）"}
-
-可用测算规则：
-${rulesText(sizing)}
-
-业务能力清单（先确定服务于哪些能力，再匹配产品能力和产品）：
-${capabilityText(capabilities)}
-
-需求清单（用于追溯原文，每个叶子仍需填写承接的需求）：
-${reqList}${keptText}`;
-
-  const data = await llm.json({ step: "pbs", system: SYSTEM, user, maxTokens: 12000 });
-  return { nodes: data.nodes ?? [], conflicts: data.conflicts ?? [] };
-}
-
-export async function repairCoverage({ leaves, uncovered, template, candidates, chunks = [], capabilities = [], scenarioContext = null, llm, ctx }) {
-  const scenarioNote = scenarioContext ? `场景、约束与待确认事项：${JSON.stringify(scenarioContext)}\n未知内容不得默认满足。` : "";
-  const leafList = leaves
-    .map((l) => `${l.code} ${l.name}（${l.source}${l.product_ref ? " " + l.product_ref : ""}）${l.spec ? "：" + l.spec : ""}`)
-    .join("\n");
-  const user = `${scenarioNote}
-PBS 模板一级分类：
-${templateText(template)}
-
-已有叶子：
-${leafList}
-
-产品目录：
-${candidates.map(productText).join("\n")}
-
-检索到的产品资料：
-${contextText(chunks)}
-
-业务能力清单：
-${capabilityText(capabilities)}
-
-未被承接的需求：
-${uncovered.map(reqLine).join("\n")}`;
-  const data = await llm.json({ step: "repair", system: REPAIR_SYSTEM, user, maxTokens: 5000 });
-
-  const repairs = [];
-  const byCode = new Map(leaves.map((l) => [l.code, l]));
-  const target = new Set(uncovered.map((r) => r.id));
-  for (const link of data.links ?? []) {
-    const leaf = byCode.get(String(link.code));
-    if (!leaf || !target.has(link.req_id)) continue;
-    if (leaf.edited || leaf.confirmed || leaf.reviewed) {
-      note(ctx, "人工关联待复核", `${link.req_id} 建议关联人工处理过的 ${leaf.code}，请人工核对后关联`, [link.req_id, leaf.code]);
-      continue;
-    }
-    if (!leaf.req_ids.includes(link.req_id)) leaf.req_ids.push(link.req_id);
-    leaf.repairs.push(link.req_id);
-    repairs.push({ target: link.req_id, code: leaf.code, action: "关联到已有项", reason: String(link.reason ?? ""), refs: [link.req_id, leaf.code] });
-  }
-  for (const raw of data.new_nodes ?? []) {
-    const leaf = normalizeLeaf({ ...raw, code: "", sizing_rule: null, origin: "repair" }, ctx);
-    if (!leaf) continue;
-    leaf.repairs = leaf.req_ids.filter((id) => target.has(id));
-    leaf.code = nextCode(leaves, leaf.parent);
-    leaves.push(leaf);
-    repairs.push({ target: leaf.repairs.join("、"), code: leaf.code, action: "新增项", reason: leaf.basis, refs: [...leaf.req_ids, leaf.code] });
-  }
-  return repairs;
-}
-
-/** Re-decide source / product for one line. Returns a normalised leaf; the caller enforces and saves it. */
 export async function rematchLeaf({ leaf, requirements, template, candidates, chunks = [], capabilities = [], sizing, instruction = "", llm, ctx }) {
   const reqs = leaf.req_ids.map((id) => requirements.find((r) => r.id === id)).filter(Boolean);
   const user = `当前场景需求：${JSON.stringify([...(ctx.scenarioById?.values() ?? [])])}
@@ -572,25 +443,7 @@ ${contextText(chunks)}
 ${rulesText(sizing)}`;
   const data = await llm.json({ step: "rematch", system: REMATCH_SYSTEM, user, maxTokens: 2500 });
   const raw = data.node ?? data;
-  return normalizeLeaf({ ...raw, id: leaf.id, code: leaf.code, parent: raw.parent ?? leaf.parent, req_ids: raw.req_ids?.length ? raw.req_ids : leaf.req_ids, origin: "rematch" }, ctx);
-}
-
-export function addRuleLeaves({ leaves, missing, ctx }) {
-  const repairs = [];
-  for (const { rule, reason } of missing) {
-    // A product line already exists for this rule's product: attach the rule instead of adding a line.
-    const owner = !rule.addon && rule.product_ref ? leaves.find((l) => l.product_ref === rule.product_ref && !l.sizing_rule && !l.edited) : null;
-    if (owner) {
-      owner.sizing_rule = rule.id;
-      continue;
-    }
-    const leaf = ruleLeaf(rule, ctx, `${reason}，按测算规则 ${rule.id} 补充`);
-    leaf.code = nextCode(leaves, leaf.parent);
-    leaf.repairs = [rule.id];
-    leaves.push(leaf);
-    repairs.push({ target: `${rule.id}（${rule.name}）`, code: leaf.code, action: "按规则新增项", reason, refs: [leaf.code] });
-  }
-  return repairs;
+  return normalizeLeaf({ ...raw, id: leaf.id, code: leaf.code, parent: raw.parent ?? leaf.parent, req_ids: leaf.req_ids, origin: "rematch" }, ctx);
 }
 
 export function findUncovered(requirements, leaves) {

@@ -8,7 +8,7 @@ import { approveUnderstanding, assertApproval, approvalPreview } from "./collabo
 import { createCollaboration, pauseCollaboration, receiveMessage, runCollaboration } from "./collaboration.mjs";
 import { activeJob, startJob } from "./jobs.mjs";
 import { HttpError } from "./errors.mjs";
-import { parseMentions } from "../web/mentions.mjs";
+import { parseMentions } from "../shared/mentions.mjs";
 import { latestReview, offerUnderstanding, ensureChangeReviews } from "./conversation-review.mjs";
 import * as conversation from "./conversation-store.mjs";
 
@@ -29,6 +29,9 @@ export function collaborationView(projectId) {
 }
 export function submitCollaboration(projectId, body) {
   repo.getProject(projectId);
+  // Old generation buttons may submit one intent, never an executable action batch.
+  const legacyIntents = { analyze: "理解客户材料", generate_scenarios: "整理客户场景与待澄清事项", generate_capabilities: "根据客户场景归纳业务活动", generate_pbs: "编制PBS草稿", resume_agent: "继续处理" };
+  if (body.actions !== undefined && (!Array.isArray(body.actions) || body.actions.length > 1 || body.actions.some(a => !a || !Object.hasOwn(legacyIntents, a.type)))) throw new HttpError(400, "旧版操作指令已停用，请直接在对话中说明需求，或在工作区编辑");
   const requestId = body.requestId ?? store.uid();
   if (typeof requestId !== "string" || requestId.length > 160) throw new HttpError(400, "消息编号无效");
   const key = `collaboration-request:${projectId}:${requestId}`, fingerprint = hash(body);
@@ -50,7 +53,7 @@ export function submitCollaboration(projectId, body) {
     const isMaterial = body.attachment || (!job && text.length > 400 && /(?:^|\n)(?:#{1,3}|第[一二三四五六七八九十\d]+章|\d+\.\d+[.、\s])/.test(text));
     let materialId;
     if (isMaterial) materialId = svc.addMaterial(projectId, { title: body.attachment?.name?.replace(/\.[^.]+$/, ""), fileName: body.attachment?.name, text: body.attachment?.text ?? text, description: body.attachment ? text : "" });
-    const label = text || (body.attachment ? `上传了文件 ${body.attachment.name}` : ({ analyze: "理解客户材料", generate_pbs: "编制PBS草稿", resume_agent: "继续处理" }[action] ?? "请继续处理本轮任务"));
+    const label = text || (body.attachment ? `上传了文件 ${body.attachment.name}` : legacyIntents[action]);
     const targets = mentions.targets.length ? mentions.targets : body.target ? [body.target] : [];
     if (action === "resume_agent" && latest && !job && !text) {
       result = launch(latest);

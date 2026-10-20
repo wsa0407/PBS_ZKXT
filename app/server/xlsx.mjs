@@ -1,5 +1,5 @@
 // Excel import/export via exceljs.
-import { exportReview, auditLevelLabel, questionStatusLabel, requirementStatusLabel, impactLabel } from "../web/presentation.js";
+import { exportReview, auditLevelLabel, questionStatusLabel, requirementStatusLabel, impactLabel } from "../shared/presentation.js";
 async function excel() {
   try {
     return (await import("exceljs")).default;

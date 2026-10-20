@@ -5,8 +5,8 @@ import { scenarioFieldLabel, scenarioValue } from "../ui.js";
 
 import { ExpertDetails, expertLabels } from "../collaboration-ui.js";
 
-import { mentionQuery, parseMentions } from "../mentions.mjs";
-import { isConversationMessage } from "../chat-events.mjs";
+import { mentionQuery, parseMentions } from "../../shared/mentions.mjs";
+import { isConversationMessage } from "../../shared/chat-events.mjs";
 
 const KIND_LABEL = { tender: "招标文件", minutes: "会议纪要", oral: "用户描述", other: "其他材料" };
 const CHANGE_LABEL = { set_param: "设定参数", update_requirement: "修改需求", add_requirement: "新增需求", remove_requirement: "删除需求", update_scenario: "修改场景" };

@@ -9,7 +9,7 @@ import { createCollaboration, receiveMessage, runCollaboration } from "../server
 import { offerUnderstanding, review, latestReview, explicitReviewReply, validateReviewReply } from "../server/conversation-review.mjs";
 import { assertApproval } from "../server/collaboration-approval.mjs";
 import { collaborationAdapter } from "../server/collaboration-tools.mjs";
-import { parseMentions, mentionQuery } from "../web/mentions.mjs";
+import { parseMentions, mentionQuery } from "../shared/mentions.mjs";
 import { setAgentRuntimeFactory } from "../server/agent-runner.mjs";
 import { createServer } from "../server/index.mjs";
 import { getJob } from "../server/jobs.mjs";

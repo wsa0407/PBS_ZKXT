@@ -3,7 +3,7 @@ import * as store from "./collaboration-store.mjs";
 import * as inbox from "./conversation-store.mjs";
 import { approvalPreview, approveUnderstanding } from "./collaboration-approval.mjs";
 import { resolveCard } from "./chat.mjs";
-import { parseMentions } from "../web/mentions.mjs";
+import { parseMentions } from "../shared/mentions.mjs";
 import * as repo from "./repo.mjs";
 
 const decode = row => row && ({ ...row, data: parse(row.data, {}) });

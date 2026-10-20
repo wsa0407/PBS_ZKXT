@@ -1,10 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { TOOLS } from "../../agents/pbs/contracts/tools.mjs";
-import { localAgentAdapter } from "./agent-adapter.mjs";
-import { getDb, json, now } from "./db.mjs";
 import { selectedModel } from "./models.mjs";
+import { ROLES } from "../../agents/pbs/roles.mjs";
 
 const stateRoot = fileURLToPath(new URL("../../runtime/.state/", import.meta.url));
 const labels = { project_state: "读取项目现状", list_document_sections: "检查材料目录", read_document_batch: "阅读材料原文", read_evidence: "回查原文", search_evidence: "检索证据", list_requirements: "读取需求", list_scenarios: "读取场景", list_pbs: "读取PBS明细", submit_requirements: "校验并保存需求", submit_scenarios: "校验并保存场景", submit_questions: "保存澄清问题", read_product: "核对产品与BOM", submit_pbs: "校验PBS组合", submit_solutions: "保存项目解决方案", run_report: "检查覆盖与待办", propose_change: "整理人工变更建议", finish_task: "记录工作结果", submit_result: "校验分析结果" };
@@ -20,7 +18,7 @@ async function infrastructure() {
 }
 
 async function withRuntime({ projectId, role, goal, tools, execute, onTool, onUsage = () => {}, signal, model = selectedModel(), maxTokens, sessionId, onSession }, run) {
-  if (runtimeFactory) return runtimeFactory({ projectId, role, goal, tools, execute, onTool, signal, model, maxTokens, sessionId, onSession }, run);
+  if (runtimeFactory) return runtimeFactory({ projectId, role, goal, tools, execute, onTool, onUsage, signal, model, maxTokens, sessionId, onSession }, run);
   signal?.throwIfAborted();
   const { createHost, serveTools } = await infrastructure();
   let host, timeout, closePromise, budgetError;
@@ -33,7 +31,7 @@ async function withRuntime({ projectId, role, goal, tools, execute, onTool, onUs
     onTool?.(call);
     const errors = call.result?.error ? [call.result.error.message] : call.result?.data?.errors?.map((e) => e.message) ?? [];
     if (!errors.length) return;
-    const signature = json({ name: call.name, errors });
+    const signature = JSON.stringify({ name: call.name, errors });
     const count = (failures.get(signature) ?? 0) + 1;
     failures.set(signature, count);
     if (count >= 5) { budgetError = new Error("同类校验错误重复5次，已停止自动尝试，请复核已保存草稿"); budgetError.code = "REPEATED_VALIDATION_FAILURE"; abort(); }
@@ -86,48 +84,11 @@ async function withRuntime({ projectId, role, goal, tools, execute, onTool, onUs
 
 /** One role activation. Routing and durable work live outside the official SDK loop. */
 export async function runRole(options) {
+  if (!ROLES[options.role]) throw new Error("角色活动必须指定有效专家");
   return withRuntime(options, ({ session, observe }) => session.run(options.goal, { onNotification: observe }));
 }
 
-/** Primary PBS execution path: the official loop chooses and revises business tool calls. */
-export async function runAgent(projectId, goal, { progress, signal, resume = false, resumeRunId, onCall = () => {} } = {}) {
-  const runId = randomUUID();
-  const previous = resume ? (resumeRunId
-    ? getDb().prepare("SELECT session_id,goal FROM agent_runs WHERE project_id=? AND id=?").get(projectId, resumeRunId)
-    : getDb().prepare("SELECT session_id,goal FROM agent_runs WHERE project_id=? AND status IN ('failed','interrupted','budget_exhausted','cancelled') ORDER BY created_at DESC LIMIT 1").get(projectId)) : null;
-  if (resume && !previous) throw new Error("没有找到当前项目可恢复的任务，请重新指定处理目标");
-  if (previous) goal = `继续原任务：${previous.goal}\n${goal}`;
-  getDb().prepare("INSERT INTO agent_runs(id,project_id,goal,status,created_at) VALUES (?,?,?,'running',?)").run(runId, projectId, goal, now());
-  const adapter = localAgentAdapter(projectId, { signal, onProgress: (name) => progress?.detail(toolProgressLabel(name)) });
-  const trace = [];
-  const cards = [];
-  progress?.setSteps(["Agent理解与执行", "校验成果与待办"]);
-  progress?.step(0);
-  try {
-    const result = await withRuntime({ projectId, goal, tools: TOOLS, execute: adapter.execute, signal, sessionId: previous?.session_id,
-      onSession: (id) => getDb().prepare("UPDATE agent_runs SET session_id=? WHERE id=?").run(id, runId),
-      onTool: (call) => {
-        trace.push({ name: call.name, ok: call.ok, ms: call.ms, errors: call.result?.data?.errors?.length ?? 0 });
-        const card = call.result?.data?.card;
-        if (card && !cards.some((c) => json(c) === json(card))) cards.push(card);
-        getDb().prepare("UPDATE agent_runs SET stats=? WHERE id=?").run(json({ tools: trace }), runId);
-      },
-      onUsage: (u) => onCall({ ...u, step: "agent", cached: false, ms: 0, ok: true }),
-    }, ({ session, observe }) => session.run(goal, { onNotification: observe }));
-    progress?.step(1);
-    const report = adapter.report();
-    const status = adapter.finished?.state ?? "needs_review";
-    const saved = { runId, sessionId: result.sessionId, reply: result.finalResponse, status, report, tools: trace, cards };
-    getDb().prepare("UPDATE agent_runs SET status=?,result=?,finished_at=? WHERE id=?").run(status, json(saved), now(), runId);
-    return saved;
-  } catch (error) {
-    getDb().prepare("UPDATE agent_runs SET status=?,error=?,finished_at=? WHERE id=?").run(signal?.aborted ? "cancelled" : error.code === "BUDGET_EXHAUSTED" ? "budget_exhausted" : "failed", error.message.slice(0, 600), now(), runId);
-    error.agentRunId = runId;
-    throw error;
-  }
-}
-
-/** Transitional typed-analysis boundary: even legacy domain saves use the official dsh loop. */
+/** Bounded analysis for product manuals and clarification answers; no business write tools. */
 export function createHarnessLlm({ model, onCall = () => {}, signal, projectId = null } = {}) {
   const usage = { calls: 0, cached: 0, promptTokens: 0, completionTokens: 0, steps: [] };
   return { model, usage, async json({ step, system, user, maxTokens = 8000, validate = () => {} }) {

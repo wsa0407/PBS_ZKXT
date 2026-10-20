@@ -1,7 +1,8 @@
 import { listModels } from "../lib/bai_client.mjs";
-import { appModel } from "../engine/llm.mjs";
 import { getDb } from "./db.mjs";
 import { badRequest } from "./errors.mjs";
+
+const appModel = () => process.env.APP_MODEL || "gpt-5.4-mini";
 
 /**
  * Which chat model the app uses. The choice is stored in the database so it survives restarts and

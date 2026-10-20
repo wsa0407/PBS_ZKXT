@@ -91,36 +91,3 @@ export function segmentText(raw) {
 
 // Bound both segment count and input size for every document, including numbered tenders.
 // Large source segments keep their original ID so quotes still trace to the unchanged source.
-export function batchSegments(doc, size = 18, maxChars = 3500) {
-  if (!Number.isInteger(size) || size < 1 || !Number.isInteger(maxChars) || maxChars < 1) throw new Error("分批大小必须为正整数");
-  const batches = [];
-  let current = [];
-  let chars = 0;
-  let chapter = null;
-  const parts = doc.segments.flatMap((seg) => {
-    const pieces = [];
-    let text = seg.text;
-    while (text.length > maxChars) {
-      const prefix = text.slice(0, maxChars);
-      const boundary = Math.max(prefix.lastIndexOf("\n"), prefix.lastIndexOf("。"), prefix.lastIndexOf("；"));
-      const end = boundary >= maxChars / 2 ? boundary + 1 : maxChars;
-      pieces.push({ ...seg, text: text.slice(0, end) });
-      text = text.slice(end);
-    }
-    pieces.push({ ...seg, text });
-    return pieces;
-  });
-  for (const seg of parts) {
-    const split = seg.chapter !== chapter || current.length >= size || chars + seg.text.length > maxChars;
-    if (current.length && split) {
-      batches.push(current);
-      current = [];
-      chars = 0;
-    }
-    chapter = seg.chapter;
-    current.push(seg);
-    chars += seg.text.length;
-  }
-  if (current.length) batches.push(current);
-  return batches;
-}

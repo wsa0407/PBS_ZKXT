@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { extractRequirements, collectParams } from "../engine/extract.mjs";
+import { collectParams } from "../engine/requirements.mjs";
+import { localAgentAdapter } from "../server/agent-adapter.mjs";
 import { runAudit } from "../engine/audit.mjs";
-import { exportReview, findingTarget } from "../web/presentation.js";
+import { exportReview, findingTarget } from "../shared/presentation.js";
 import { resetDb } from "../server/db.mjs";
 import * as repo from "../server/repo.mjs";
 import * as svc from "../server/services.mjs";
@@ -20,11 +21,19 @@ test("review links navigate to existing requirements, scenes, questions and evid
 });
 
 test("a rejected quantity parameter leaves the requirement intact and explains why the value was not used", async () => {
+  resetDb();
   const text = "★ 投标人应具有不少于2个无人机项目经验。";
-  const doc = { fullText: text, segments: [{ id: "1.1", text, star: true }] };
-  const result = await extractRequirements({ doc, params: { pilots: { label: "飞手人数", unit: "人" } }, inputType: "tender", llm: {
-    json: async () => ({ requirements: [{ seg_id: "1.1", quote: text, text, category: "资质", params: [{ name: "pilots", value: 2, quote: "2个无人机项目" }] }] }),
-  } });
+  const id = repo.createProject({ name: "数量与符号含义" }).id;
+  svc.addMaterial(id, { title: "标记要求", text });
+  const adapter = localAgentAdapter(id);
+  const state = (await adapter.execute("project_state", {})).data;
+  const source = (await adapter.execute("read_document_batch", { document_id: state.documents[0].document_id })).data.items[0];
+  const response = await adapter.execute("submit_requirements", { operation_id: "extract", document_id: source.document_id, document_version: source.document_version, requirements: [{ evidence_id: source.evidence_id, quote: text, text, category: "资质", priority: "重要", params: [{ name: "pilots", value: 2, quote: "2个无人机项目" }] }] });
+  assert.equal(response.ok, true); assert.deepEqual(response.data.errors, []);
+  assert.equal(repo.listRequirements(id)[0].priority, "重要", "a symbol alone cannot upgrade requirement strength");
+  const stateAfter = svc.computeState(id);
+  const result = { requirements: stateAfter.engineReqs, missedSegments: [] };
+  const doc = { fullText: text, segments: [{ id: source.evidence_id, text, star: true }] };
   assert.equal(result.requirements.length, 1);
   assert.equal(result.requirements[0].quoteVerified, true);
   assert.equal(result.requirements[0].params.length, 0);

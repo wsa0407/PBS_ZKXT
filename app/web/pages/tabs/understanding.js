@@ -4,7 +4,7 @@ import { ApprovalDialog } from "../../collaboration-ui.js";
 import Requirements from "./requirements.js";
 import Scenarios from "./scenarios.js";
 import Questions from "./questions.js";
-import { understandingAction } from "../../understanding.js";
+import { understandingAction } from "../../../shared/understanding.js";
 
 export default defineComponent({
   components: { Requirements, Scenarios, Questions, ApprovalDialog },

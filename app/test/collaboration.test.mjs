@@ -35,8 +35,11 @@ async function seedRequirement(execute) {
 test("stage handoff requires a human-approved immutable scope before PBS, and rejects stale approval", async () => {
   const roles = [];
   scripted(async ({ role, execute }) => { roles.push(role); if (role === "materials") await seedRequirement(execute); });
-  const t = createCollaboration(id, { role: "materials", flow: "analyze", goal: "理解材料" });
+  const t = createCollaboration(id, { role: "materials", goal: "理解材料" });
   await runCollaboration(t.id);
+  assert.deepEqual(roles, ["materials"]);
+  const understanding = createCollaboration(id, { role: "understanding", goal: "整理当前需求" });
+  await runCollaboration(understanding.id);
   assert.deepEqual(roles, ["materials", "understanding"]);
   assert.equal(store.task(t.id).status, "awaiting_confirmation");
   const p = createCollaboration(id, { role: "pbs", goal: "编制" });

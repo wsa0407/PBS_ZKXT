@@ -1,7 +1,7 @@
 import { computed, defineComponent, inject, onMounted, ref } from "vue";
 import { ElMessageBox } from "element-plus";
 import { api, call, fmtTime } from "../../api.js";
-import { exportReview, findingTarget } from "../../presentation.js";
+import { exportReview, findingTarget } from "../../../shared/presentation.js";
 
 export default defineComponent({
   setup() {

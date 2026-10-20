@@ -157,7 +157,7 @@ export function collaborationAdapter(t, activation, { signal, onProgress } = {})
       const valid = receipts.filter((r) => r && parse(r.result, {}).ok);
       if (args.outcome === "adjusted" && !valid.some((r) => ["submit_requirements", "submit_scenarios", "submit_pbs", "submit_solutions"].includes(r.tool) && (parse(r.result, {}).data?.accepted?.length || parse(r.result, {}).data?.solutions?.length || parse(r.result, {}).data?.saved_items?.length))) fail("没有本次实际保存成果的记录，不能声称已据此调整");
       if (args.outcome === "requires_confirmation" && !valid.some((r) => r.tool === "propose_change")) fail("需要先提交可审阅的变更建议，再记录需人工确认");
-      if (args.outcome !== "read_only") {
+      if (args.outcome !== "read_only" && !(role === "pbs" && args.outcome === "adjusted")) {
         // Conservative invalidation until the affected range has been explicitly reviewed.
         const before = changeVersion(t.project_id);
         getDb().prepare("UPDATE pbs_items SET stale='人工补充已影响本轮理解，请复核',confirmed=0 WHERE project_id=?").run(t.project_id);

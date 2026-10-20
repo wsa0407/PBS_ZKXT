@@ -5,7 +5,7 @@ import { router } from "../router.js";
 import Chat from "./chat.js";
 import Materials from "./tabs/materials.js";
 import Understanding from "./tabs/understanding.js";
-import { workspaceTarget } from "../understanding.js";
+import { workspaceTarget } from "../../shared/understanding.js";
 import Pbs from "./tabs/pbs.js";
 import Finish from "./tabs/finish.js";
 

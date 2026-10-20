@@ -4,7 +4,7 @@ import { resetDb } from "../server/db.mjs";
 import * as repo from "../server/repo.mjs";
 import * as svc from "../server/services.mjs";
 import { localAgentAdapter } from "../server/agent-adapter.mjs";
-import { workspaceTarget, questionPending, questionUnlinked, questionsForRequirement, questionActions, questionLinkLabel, understandingAction, approvalSelectionIssue } from "../web/understanding.js";
+import { workspaceTarget, questionPending, questionUnlinked, questionsForRequirement, questionActions, questionLinkLabel, understandingAction, approvalSelectionIssue } from "../shared/understanding.js";
 import { approvalPreview } from "../server/collaboration-approval.mjs";
 
 test("materials accept an upload without a category and keep uploader context separate from evidence", async () => {

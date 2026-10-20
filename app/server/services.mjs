@@ -1,27 +1,22 @@
 import { readFileSync } from "node:fs";
-import { NON_DELIVERABLE, collectParams, extractRequirements } from "../engine/extract.mjs";
-import { buildClarifications, isDuplicate, paramQuestions } from "../engine/clarify.mjs";
+import { NON_DELIVERABLE, collectParams } from "../engine/requirements.mjs";
 import { proposeChanges } from "../engine/answer.mjs";
 import { draftProductFromManual } from "../engine/product_doc.mjs";
 import {
-  addRuleLeaves,
   assignCodes,
   basisLevel,
   checkConflicts,
   createContext,
   enforceLeaves,
   findUncovered,
-  generatePbs,
   matchOf,
   normalizeLeaf,
   rematchLeaf,
-  repairCoverage,
 } from "../engine/pbs.mjs";
 import { segmentText } from "../engine/segment.mjs";
 import { normalize } from "../engine/text.mjs";
-import { applySizing, CONFIRMED, missingRules, resolveParams } from "../engine/sizing.mjs";
+import { applySizing, CONFIRMED, resolveParams } from "../engine/sizing.mjs";
 import { assignReviewTiers, runAudit } from "../engine/audit.mjs";
-import { buildCapabilities } from "../engine/capability.mjs";
 import { hash } from "../engine/scenario.mjs";
 import { usesSingleLicense, DELIVERY_SOURCES } from "../engine/catalog.mjs";
 import * as catalog from "./catalog.mjs";
@@ -31,9 +26,9 @@ import { badRequest, HttpError } from "./errors.mjs";
 import * as repo from "./repo.mjs";
 import * as rag from "./rag.mjs";
 import * as scenarios from "./scenarios.mjs";
+import { assertProjectApproval } from "./understanding-scope.mjs";
 
 export const MATERIAL_KINDS = { tender: "招标文件", minutes: "会议纪要", oral: "用户描述", other: "其他材料" };
-const KIND_TO_INPUT = { tender: "tender", minutes: "minutes", oral: "oral", other: "oral" };
 
 // ---------- adapters between DB rows and engine shapes ----------
 
@@ -88,102 +83,6 @@ export function addMaterial(projectId, { kind, title, text, fileName, descriptio
   const id = repo.addMaterial(projectId, { kind, title: name, fileName, text: clean, doc });
   repo.logEvent(projectId, "材料", `添加材料「${name}」（${MATERIAL_KINDS[kind]}，${doc.segments.length} 个片段）`);
   return id;
-}
-
-// ---------- step 2: requirements ----------
-
-/**
- * Extract requirements from materials that have not been processed yet (or all of them with `all`).
- * Requirements a person touched (confirmed, edited, added, from answers) are never replaced.
- */
-export async function analyzeMaterials(projectId, { all = false, llm, progress }) {
-  const { sizing, checklists } = catalog.runtimeConfig(projectId);
-  const project = repo.getProject(projectId);
-  const materials = repo.listMaterials(projectId).filter((m) => all || !m.extracted_at);
-  if (!materials.length) throw badRequest("没有需要处理的新材料");
-  const segments = repo.listSegments(projectId);
-
-  progress.step(0, `${materials.length} 份材料`);
-  let done = 0;
-  const results = [];
-  // Each material already has a bounded worker pool; do not multiply it by the material count.
-  for (const m of materials) {
-    const mine = segments.filter((s) => s.material_id === m.id);
-    const doc = { title: m.title, numbered: m.numbered, segments: mine.map((s) => ({ id: s.seg_id, chapter: s.chapter, text: s.text, star: s.star, triangle: s.triangle })) };
-    const out = await extractRequirements({ doc, params: sizing.params, inputType: KIND_TO_INPUT[m.kind], llm,
-      onBatch: (count, total) => progress.detail(`材料 ${done + 1}/${materials.length}：已处理 ${count}/${total} 批`),
-    });
-    done += 1;
-    progress.detail(`${done}/${materials.length} 份材料`);
-    results.push({ material: m, mine, ...out });
-  }
-
-  progress.step(1);
-  tx(() => {
-    for (const { material, mine, requirements } of results) {
-      const uids = new Set(mine.map((s) => s.uid));
-      const existing = repo.listRequirements(projectId).filter((r) => !r.retired && uids.has(r.seg_uid));
-      // Keep anything a person touched; replace untouched system output.
-      const keep = existing.filter((r) => r.edited || r.status !== "待确认" || r.origin !== "系统");
-      const keepKeys = new Set(keep.map((r) => `${r.seg_uid}|${r.text}`));
-      const untouched = existing.filter((r) => !keep.includes(r));
-      const reused = new Set();
-      const ordOf = new Map(mine.map((s) => [s.seg_id, s.ord]));
-      requirements.forEach((r, i) => {
-        const segUid = `M${material.no}:${r.seg_id}`;
-        if (keepKeys.has(`${segUid}|${r.text}`)) return;
-        const previous = untouched.find((old) => !reused.has(old.code) && old.seg_uid === segUid && old.text === r.text);
-        const fields = {
-          seg_uid: segUid,
-          text: r.text,
-          quote: r.quote,
-          quote_verified: r.quoteVerified,
-          category: r.category,
-          priority: r.priority,
-          inferred: r.inferred,
-          star: r.star,
-          triangle: r.triangle,
-          params: r.params,
-          rejected_params: r.rejectedParams,
-          ord: (ordOf.get(r.seg_id) ?? 0) * 10 + (i % 10),
-        };
-        if (previous) {
-          reused.add(previous.code);
-          if (JSON.stringify(previous.params) !== JSON.stringify(fields.params) || previous.quote !== fields.quote || previous.category !== fields.category || previous.priority !== fields.priority) {
-            fields.revision = previous.revision + 1;
-            scenarios.markAffected(projectId, [previous.code], "需求重新抽取后依据或条件发生变化");
-          }
-          repo.updateRequirement(projectId, previous.code, fields);
-        } else repo.insertRequirement(projectId, fields);
-      });
-      const retired = untouched.filter((r) => !reused.has(r.code));
-      retired.forEach((r) => repo.deleteRequirement(projectId, r.code));
-      scenarios.markAffected(projectId, retired.map((r) => r.code), "关联需求已被重新抽取结果替代");
-      repo.markExtracted(material.id);
-    }
-  });
-  const count = results.reduce((s, r) => s + r.requirements.length, 0);
-  repo.logEvent(projectId, "需求", `从 ${results.length} 份材料抽取 ${count} 条需求`);
-
-  progress.step(2);
-  const state = computeState(projectId);
-  const existing = repo.listQuestions(projectId);
-  const questions = await buildClarifications({
-    doc: { title: project.name, fullText: state.fullText },
-    industry: project.industry,
-    requirements: state.engineReqs,
-    resolved: state.resolved,
-    leaves: state.leaves,
-    conflicts: state.conflicts,
-    checklists,
-    sizing,
-    llm,
-    existing: existing.filter((q) => q.status !== "已忽略"),
-  });
-  questions.forEach((q) => repo.insertQuestion(projectId, q));
-  if (questions.length) repo.logEvent(projectId, "澄清", `新增 ${questions.length} 个澄清问题`);
-  repo.touchProject(projectId);
-  return { requirements: count, questions: questions.length };
 }
 
 // ---------- recompute: pure rules, runs after every change ----------
@@ -593,17 +492,13 @@ export function applyAnswer(projectId, id, accepted, resolutionNote = "") {
   return { applied: chosen.length };
 }
 
-// ---------- step 4: PBS ----------
-
-function pbsInputState(projectId) {
-  return { project: repo.getProject(projectId), requirements: repo.listRequirements(projectId), scenarios: scenarios.scenarioView(projectId), questions: repo.listQuestions(projectId), items: repo.listItems(projectId), products: repo.listProducts(), params: repo.listOverrides(projectId) };
-}
+// ---------- PBS validation and manual operations ----------
 
 function rematchVersion(projectId, item) {
   return hash({ item, requirements: repo.listRequirements(projectId).filter((r) => item.req_ids.includes(r.code)), scenarios: scenarios.listScenarios(projectId).filter((s) => item.scenario_ids.includes(s.code)), products: repo.listProducts() });
 }
 
-/** Retrieval for a set of requirements: candidate products (with scores), context chunks, similar projects. */
+/** Retrieve candidate products and evidence for the requested requirements. */
 async function retrieve(reqs, { keepProducts = [], topProducts = 12, topChunks = 40 } = {}) {
   const products = repo.listProducts().filter((p) => p.metadata.active !== false);
   const productById = new Map(products.map((p) => [p.id, p]));
@@ -628,58 +523,9 @@ async function retrieve(reqs, { keepProducts = [], topProducts = 12, topChunks =
   return { candidates, chunks, productScore: Object.fromEntries(ranked.map((id) => [id, Math.round(productScore.get(id) * 1000) / 1000])) };
 }
 
-async function similarProjects(reqs, industry) {
-  const { history } = catalog.runtimeConfig();
-  const query = reqs.map((r) => r.text).join("；").slice(0, 2000);
-  const [hits] = await rag.search([query], { kinds: ["history"], topK: 4 });
-  const ranked = hits.map((h) => h.chunk.history_id);
-  return history
-    .map((p) => {
-      const rank = ranked.indexOf(p.id);
-      const score = (rank >= 0 ? 1 / (rank + 1) : 0) + (industry && p.industry === industry ? 0.3 : 0);
-      return { ...p, score: Math.round(score * 100) / 100 };
-    })
-    .sort((a, b) => b.score - a.score)
-    .map((p, i) => ({ ...p, selected: i < 2 && p.score > 0.3 }));
-}
-
 // ---------- business capabilities (between requirements and products) ----------
 
 const capText = (c) => `${c.name} ${c.description} ${c.activity}`;
-
-/**
- * Derive business capabilities from the live requirements. People's work is kept: confirmed, edited
- * or manually added capabilities stay, untouched system ones are replaced.
- */
-export async function generateCapabilities(projectId, { llm, progress }) {
-  const project = repo.getProject(projectId);
-  const state = computeState(projectId);
-  if (!state.engineReqs.length) throw badRequest("还没有需求，请先抽取或添加需求");
-  const existing = repo.listCapabilities(projectId);
-  const keep = existing.filter((c) => c.edited || c.status !== "待确认" || c.origin !== "系统");
-
-  progress.step(0, `${state.engineReqs.length} 条需求`);
-  const result = await buildCapabilities({
-    project,
-    requirements: state.engineReqs,
-    products: repo.listProducts(),
-    existing: keep.filter((c) => c.status !== "已删除"),
-    llm,
-  });
-
-  progress.step(1);
-  tx(() => {
-    existing.filter((c) => !keep.includes(c)).forEach((c) => repo.deleteCapability(projectId, c.code));
-    result.capabilities.forEach((c, i) => repo.insertCapability(projectId, { ...c, ord: 1000 + i }));
-    const meta = repo.getProject(projectId).pbs_meta ?? {};
-    repo.updateProject(projectId, {
-      pbs_meta: { ...meta, capabilities: { scenes: result.scenes, uncovered: result.uncovered, notes: result.notes, generatedAt: new Date().toISOString() } },
-    });
-  });
-  repo.logEvent(projectId, "能力", `归纳业务能力 ${result.capabilities.length} 条（保留人工处理过的 ${keep.length} 条）${result.uncovered.length ? `，${result.uncovered.length} 条必须需求没有对应能力` : ""}`);
-  repo.touchProject(projectId);
-  return { capabilities: result.capabilities.length, kept: keep.length, uncovered: result.uncovered.length };
-}
 
 function markItemsStaleByCapability(projectId, codes, message) {
   if (!codes.length) return;
@@ -758,107 +604,6 @@ export function confirmCapabilities(projectId, codes) {
   tx(() => codes.forEach((code) => repo.updateCapability(projectId, code, { status: "已确认" })));
   repo.logEvent(projectId, "能力", `确认 ${codes.length} 条业务能力`);
   repo.touchProject(projectId);
-}
-
-export async function generateProjectPbs(projectId, { llm, progress }) {
-  const { template, sizing, history } = catalog.runtimeConfig(projectId);
-  const project = repo.getProject(projectId);
-  const state = computeState(projectId);
-  const inputVersion = hash(pbsInputState(projectId));
-  const reqs = state.engineReqs;
-  if (!reqs.length) throw badRequest("还没有需求，请先生成或添加需求");
-  const deliverable = reqs.filter((r) => !NON_DELIVERABLE.has(r.category));
-  const items = repo.listItems(projectId);
-  const kept = items.filter((i) => i.edited || i.confirmed || i.reviewed).map(leafFromItem);
-
-  const scenarioContext = scenarios.scenarioView(projectId);
-  const liveScenarios = scenarioContext.scenarios.filter((s) => s.status !== "已归档");
-  scenarioContext.scenarios = liveScenarios;
-  scenarioContext.solution_designs = projectSolutions.solutionContext(projectId);
-  scenarioContext.questions = repo.listQuestions(projectId).filter((q) => ["待处理", "待答复", "已答复"].includes(q.status));
-  const capabilities = repo.listCapabilities(projectId, { includeDeleted: false });
-  // Retrieve by business capability when there are any: it uses the business's words, so a requirement
-  // like "see accidents at night" can still reach "infrared thermal imaging". Requirements fill the gaps.
-  const queries = liveScenarios.length ? [...liveScenarios.map((s) => ({ text: `${s.name} ${s.goal} ${s.activities.map((a) => a.text).join("；")}` })), ...deliverable] : capabilities.length
-    ? [...capabilities.map((c) => ({ text: capText(c) })), ...deliverable.filter((r) => !capabilities.some((c) => c.req_ids.includes(r.id)))]
-    : deliverable;
-
-  progress.step(0, liveScenarios.length ? `${liveScenarios.length} 条场景需求及其约束` : `${deliverable.length} 条原始需求（兼容草稿）`);
-  const retrieval = await retrieve(queries, { keepProducts: kept.map((l) => l.product_ref).filter(Boolean) });
-  const similar = await similarProjects(deliverable, project.industry);
-
-  progress.step(1, `${retrieval.candidates.length} 个候选产品，${retrieval.chunks.length} 段资料`);
-  const segments = engineSegments(repo.listSegments(projectId));
-  const ctx = createContext({ requirements: deliverable, segments, template, products: repo.listProducts(), sizing, history, chunks: retrieval.chunks, capabilities, scenarios: liveScenarios });
-  const draft = await generatePbs({ doc: { title: project.name }, requirements: reqs, template, candidates: retrieval.candidates, chunks: retrieval.chunks, similar, sizing, kept, capabilities, scenarioContext, llm });
-
-  progress.step(2);
-  const keptCodes = new Set(kept.map((l) => l.code));
-  const sameLine = (a, b) =>
-    normalize(a.name) === normalize(b.name) || (a.product_ref && a.product_ref === b.product_ref && !ctx.ruleById.get(a.sizing_rule)?.addon && !ctx.ruleById.get(b.sizing_rule)?.addon);
-  const dropped = [];
-  const fresh = draft.nodes
-    .map((raw) => normalizeLeaf({ ...raw, code: keptCodes.has(String(raw.code)) ? "" : raw.code }, ctx))
-    .filter(Boolean)
-    .filter((leaf) => {
-      const twin = kept.find((k) => sameLine(k, leaf));
-      if (twin) dropped.push(`「${leaf.name}」与你改过的「${twin.code} ${twin.name}」重复，已保留你的版本`);
-      return !twin;
-    });
-  dropped.forEach((message) => ctx.issues.push({ type: "生成结果修正", message, refs: [] }));
-  const leaves = [...kept, ...fresh];
-  assignCodes(leaves);
-  enforceLeaves(leaves, ctx, state.fullText);
-  const repairs = addRuleLeaves({ leaves, missing: missingRules(state.fullText, state.resolved, sizing, leaves), ctx });
-  const uncovered = findUncovered(reqs, leaves);
-  if (uncovered.length) {
-    progress.detail(`补漏 ${uncovered.length} 条必须需求`);
-    repairs.push(...(await repairCoverage({ leaves, uncovered, template, candidates: retrieval.candidates, chunks: retrieval.chunks, capabilities, scenarioContext, llm, ctx })));
-  }
-  enforceLeaves(leaves, ctx, state.fullText);
-  assignCodes(leaves);
-  const conflicts = checkConflicts(draft.conflicts, leaves, ctx);
-
-  for (const leaf of leaves) {
-    if (!kept.some((k) => k.id && k.id === leaf.id)) leaf.scenario_ids = liveScenarios.filter((s) => s.links.some((l) => leaf.req_ids.includes(l.req_id))).map((s) => s.code);
-    const pending = liveScenarios.filter((s) => leaf.scenario_ids.includes(s.code) && (s.status !== "已确认" || s.open_questions.length));
-    if (pending.length) { leaf.stale = `场景 ${pending.map((s) => s.code).join("、")} 或其关联问题尚待复核`; leaf.confirmed = false; }
-  }
-  if (!liveScenarios.length) ctx.issues.push({ type: "场景需求待建立", message: "当前为按原始需求生成的兼容草稿，请建立场景需求后复核", refs: [] });
-  progress.step(3);
-  tx(() => {
-    if (hash(pbsInputState(projectId)) !== inputVersion) throw new HttpError(409, "生成期间项目或产品内容已变化，原 PBS 已保留，请重新生成");
-    repo.deleteItems(
-      projectId,
-      items.filter((i) => !kept.some((k) => k.id === i.id)).map((i) => i.id),
-    );
-    const toSave = leaves.map((l) => ({ ...l, id: kept.some((k) => k.id === l.id) ? l.id : null, qty_basis: l.qtyBasis, stale: l.stale || "", confirmed: kept.some((k) => k.id === l.id) ? l.confirmed : false }));
-    repo.saveItems(projectId, toSave);
-    repo.updateProject(projectId, {
-      pbs_meta: {
-        ...repo.getProject(projectId).pbs_meta,
-        generatedAt: new Date().toISOString(),
-        conflicts,
-        issues: ctx.issues,
-        repairs,
-        similar: similar.map(({ pbs: _p, ...rest }) => rest),
-        retrieval: {
-          mode: rag.retrievalMode().kind,
-          candidates: retrieval.candidates.map((p) => ({ id: p.id, name: p.name, score: retrieval.productScore[p.id] ?? 0 })),
-          chunks: retrieval.chunks.length,
-        },
-      },
-    });
-  });
-  // New rules in use may need parameters that nobody asked about yet.
-  const after = computeState(projectId);
-  const existing = repo.listQuestions(projectId).filter((q) => q.status !== "已忽略");
-  const extra = paramQuestions({ resolved: after.resolved, leaves: after.leaves, sizing, text: after.fullText }).filter((q) => !isDuplicate(q.question, existing));
-  extra.forEach((q) => repo.insertQuestion(projectId, q));
-
-  repo.logEvent(projectId, "PBS", `生成 PBS：${leaves.length} 项（保留人工修改 ${kept.length} 项），检索模式 ${rag.retrievalMode().kind === "hybrid" ? "混合检索" : "关键词检索"}`);
-  repo.touchProject(projectId);
-  return { items: leaves.length, kept: kept.length, conflicts: conflicts.length };
 }
 
 const ITEM_EDITABLE = ["name", "spec", "source", "product_ref", "matched_capabilities", "blocked_by", "req_ids", "capability_ids", "parent", "basis", "unit", "sizing_rule"];
@@ -1007,20 +752,23 @@ export function deleteItem(projectId, id) {
 
 /** Ask the model to re-decide one line; the result is returned as a suggestion and saved only when accepted. */
 export async function rematchItem(projectId, id, { instruction = "", llm }) {
+  const item = repo.getItem(projectId, id);
+  const approved = assertProjectApproval(projectId, item);
   const { template, sizing, history } = catalog.runtimeConfig(projectId);
   const state = computeState(projectId);
-  const item = repo.getItem(projectId, id);
+  const requirements = state.engineReqs.filter(r => approved.snapshot.requirements.some(a => a.code === r.id));
   const leaf = leafFromItem(item);
   const inputVersion = rematchVersion(projectId, item);
   const reqs = state.engineReqs.filter((r) => leaf.req_ids.includes(r.id));
-  const capabilities = repo.listCapabilities(projectId, { includeDeleted: false });
+  const capabilities = repo.listCapabilities(projectId, { includeDeleted: false }).filter(c => c.req_ids.every(id => requirements.some(r => r.id === id)));
   const own = capabilities.filter((c) => leaf.capability_ids.includes(c.code));
   const query = own.length ? own.map((c) => ({ text: capText(c) })) : reqs.length ? reqs : [{ text: `${item.name} ${item.spec}` }];
   const retrieval = await retrieve(query, { topProducts: 8, topChunks: 16 });
-  const ctx = createContext({ requirements: state.engineReqs, segments: [], template, products: repo.listProducts(), sizing, history, chunks: retrieval.chunks, capabilities, scenarios: scenarios.listScenarios(projectId).filter((s) => s.status !== "已归档") });
-  const next = await rematchLeaf({ leaf, requirements: state.engineReqs, template, candidates: retrieval.candidates, chunks: retrieval.chunks, capabilities, sizing, instruction, llm, ctx });
+  const ctx = createContext({ requirements, segments: [], template, products: repo.listProducts(), sizing, history, chunks: retrieval.chunks, capabilities, scenarios: approved.snapshot.scenarios });
+  const next = await rematchLeaf({ leaf, requirements, template, candidates: retrieval.candidates, chunks: retrieval.chunks, capabilities, sizing, instruction, llm, ctx });
+  if (assertProjectApproval(projectId, item).id !== approved.id) throw new HttpError(409, "确认范围已变化，请重新匹配");
   if (!next) throw new HttpError(502, "模型没有给出有效结果，请重试");
-  enforceLeaves([next], ctx, state.fullText);
+  enforceLeaves([next], ctx, requirements.map(r => r.quote).join("\n"));
   const taken = repo.listItems(projectId).find((o) => o.id !== id && next.sizing_rule && o.sizing_rule === next.sizing_rule);
   if (taken) {
     next.sizing_rule = item.sizing_rule === next.sizing_rule ? next.sizing_rule : null;
@@ -1029,7 +777,7 @@ export async function rematchItem(projectId, id, { instruction = "", llm }) {
   next.basis_level = basisLevel(next, new Map(state.engineReqs.map((r) => [r.id, r])));
   next.match = matchOf(next, new Map(repo.listProducts().map((p) => [p.id, p])));
   return {
-    suggestion: { ...next, input_version: inputVersion },
+    suggestion: { ...next, input_version: inputVersion, approval_id: approved.id },
     chunks: Object.fromEntries(rag.getChunks(next.evidence_chunks).map((c) => [c.id, c])),
     notes: ctx.issues.map((i) => i.message),
   };
@@ -1037,13 +785,15 @@ export async function rematchItem(projectId, id, { instruction = "", llm }) {
 
 export function acceptRematch(projectId, id, suggestion) {
   const item = repo.getItem(projectId, id);
+  const approved = assertProjectApproval(projectId, item);
+  if (approved.id !== suggestion.approval_id) throw new HttpError(409, "选型建议的确认范围已过期，请重新匹配");
   if (suggestion.input_version !== rematchVersion(projectId, item)) throw new HttpError(409, "PBS 或其依据已变化，请重新匹配后再采纳");
   const next = { ...item };
   for (const k of ["name", "spec", "source", "product_ref", "matched_capabilities", "blocked_by", "evidence_chunks", "capability_ids", "scenario_ids", "basis", "parent", "unit", "sizing_rule"]) {
     if (suggestion[k] !== undefined) next[k] = suggestion[k];
   }
   next.parent = String(next.parent);
-  next.scenario_ids = scenarios.listScenarios(projectId).filter((s) => s.status !== "已归档" && s.links.some((l) => item.req_ids.includes(l.req_id))).map((s) => s.code);
+  next.scenario_ids = approved.snapshot.scenarios.filter(s => s.links.some(l => item.req_ids.includes(l.req_id))).map(s => s.code);
   next.sizing_rule = next.sizing_rule || null;
   validateItem(next, repo.listItems(projectId), projectId);
   if (next.parent !== item.parent) next.code = nextItemCode(repo.listItems(projectId), next.parent, id);

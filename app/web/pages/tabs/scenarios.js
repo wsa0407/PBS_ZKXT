@@ -2,7 +2,7 @@ import { computed, defineComponent, inject, ref, watch } from "vue";
 import { ElMessageBox } from "element-plus";
 import { api, call } from "../../api.js";
 import { SCENARIO_FIELD_LABELS, scenarioFieldLabel, questionStatusLabel, requirementStatusLabel, originLabel } from "../../ui.js";
-import { questionLinkLabel } from "../../understanding.js";
+import { questionLinkLabel } from "../../../shared/understanding.js";
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 const empty = () => ({ name: "", goal: "", actors: [], context: "", trigger: "", activities: [], outcomes: [], boundaries: [], assumptions: [], links: [], evidence: [], supersedes: [] });

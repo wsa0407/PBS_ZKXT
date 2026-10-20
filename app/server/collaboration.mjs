@@ -15,14 +15,14 @@ const stageGoal = {
   understanding: "基于已保存需求组织客户场景、共性约束和澄清；需要原文解释时咨询材料专家。保存成果并请求人工审阅，不编制PBS。",
   pbs: "依据已确认需求理解包编制PBS与客户方案，按需向需求理解专家或材料专家多轮求证，保存待人工审阅草稿。",
 };
-export function createCollaboration(projectId, { goal, role = "understanding", flow = "single", approvalId = null, mode = "main" }) {
+export function createCollaboration(projectId, { goal, role = "understanding", approvalId = null, mode = "main" }) {
   if (!ROLES[role]) throw new HttpError(400, "专家不存在");
   return tx((db) => {
     const id = store.uid();
     db.prepare("INSERT INTO collaboration_tasks(id,project_id,goal,stage,status,approval_id,created_at,updated_at) VALUES (?,?,?,?,'running',?,?,?)")
       .run(id, projectId, goal, ["discussion", "conversation"].includes(mode) ? "discussion" : roleStage[role], approvalId, now(), now());
     const t = store.task(id);
-    if (mode !== "conversation") store.enqueue(t, role, mode, { goal, flow });
+    if (mode !== "conversation") store.enqueue(t, role, mode, { goal });
     return t;
   });
 }
@@ -266,7 +266,6 @@ export async function runCollaboration(taskId, ctx = {}) {
           if (a.role === "pbs") { try { assertApproval(store.task(taskId)); stage = "pbs"; } catch { /* Ask about the current scope below. */ } }
           store.updateTask(taskId, { stage });
         }
-        if (a.input.materialIds?.length && !a.input.work_mode) store.enqueue(t, "understanding", "main", { goal: "根据补充材料重新核对需求理解", flow: "single" });
         if (!conversation.inbox(taskId).length && !store.pendingInputs(taskId).length && store.interventions(taskId).some((i) => i.revision <= t.revision && ["requires_confirmation", "needs_clarification"].includes(i.result?.outcome))) {
           store.updateTask(taskId, { status: "awaiting_confirmation" });
           return { taskId, status: "awaiting_confirmation" };
@@ -274,13 +273,6 @@ export async function runCollaboration(taskId, ctx = {}) {
       } else {
         performedWork ||= a.mode === "main";
         if (result.finalResponse?.trim()) store.event(t, "summary", a.role, "human", result.finalResponse.trim(), { open: { tab: a.role === "pbs" ? "pbs" : "understanding" } });
-        const awaiting = mine.some((c) => c.caller === a.role && c.state === "waiting");
-        if (!awaiting && a.role === "materials" && a.input.flow === "analyze") {
-          store.updateTask(taskId, { stage: "understanding" });
-          const report = adapter.report();
-          store.event(t, "handoff", "materials", "understanding", "已交接当前保存的需求与原文依据，请组织客户场景并核对疑点。", { coverage: report.documents.map(({ title, total_sections, remaining }) => ({ title, total_sections, remaining })), open: { tab: "understanding" } });
-          store.enqueue(t, "understanding", "main", { goal: stageGoal.understanding });
-        }
       }
     }
     t = store.task(taskId);

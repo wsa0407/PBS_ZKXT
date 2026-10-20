@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { isDuplicate } from "../engine/clarify.mjs";
-import { unitMatches } from "../engine/extract.mjs";
+import { unitMatches } from "../engine/requirements.mjs";
 import { assignCodes, checkConflicts, createContext, enforceLeaves, normalizeLeaf } from "../engine/pbs.mjs";
 import { segmentText } from "../engine/segment.mjs";
 import { applySizing, missingRules, resolveParams } from "../engine/sizing.mjs";

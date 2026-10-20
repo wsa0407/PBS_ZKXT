@@ -1,4 +1,4 @@
-import { CATEGORIES, NON_DELIVERABLE } from "./extract.mjs";
+import { CATEGORIES, NON_DELIVERABLE } from "./requirements.mjs";
 import { normalize } from "./text.mjs";
 import { validFieldPath } from "./scenario.mjs";
 

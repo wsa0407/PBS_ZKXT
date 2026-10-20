@@ -151,36 +151,6 @@ export async function listModels({ timeoutMs = 8000 } = {}) {
   return payload.data.map((item) => item.id);
 }
 
-export async function chatCompletion({ messages, model, maxTokens = 16000, temperature, retries = 3, jsonMode = false }) {
-  const body = { model, messages, max_tokens: maxTokens };
-  if (jsonMode) {
-    body.response_format = { type: "json_object" };
-    // DeepSeek defaults to thinking, which shares max_tokens with the final JSON answer.
-    if (/^deepseek/i.test(model)) body.thinking = { type: "disabled" };
-  }
-  if (temperature !== undefined) body.temperature = temperature;
-  let lastError;
-  for (let attempt = 0; attempt <= retries; attempt += 1) {
-    try {
-      const payload = await request("POST", "/chat/completions", body);
-      const choice = payload.choices?.[0];
-      return {
-        content: choice?.message?.content ?? "",
-        finishReason: choice?.finish_reason,
-        reasoningTokens: payload.usage?.completion_tokens_details?.reasoning_tokens ?? 0,
-        usage: payload.usage ?? {},
-        model: payload.model ?? model,
-      };
-    } catch (error) {
-      lastError = error;
-      const status = Number(String(error.message).match(/HTTP (\d+)/)?.[1] ?? 0);
-      if (status && status < 500 && status !== 429) throw error;
-      await new Promise((done) => setTimeout(done, 1500 * (attempt + 1)));
-    }
-  }
-  throw lastError;
-}
-
 export async function embeddings({ input, model }) {
   const payload = await request("POST", "/embeddings", { model, input });
   const rows = [...(payload.data ?? [])].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
