@@ -61,7 +61,7 @@ main { max-width: 1680px; margin: 0 auto; padding: 18px 24px 40px; }
 .ops { display: flex; gap: 12px; align-items: center; white-space: nowrap; }
 .ops .ghost { visibility: hidden; }
 /* Element Plus adds margin-left between adjacent buttons; flex containers already space them with gap */
-:is(.actions, .ops, .toolbar, .row, .mc-actions, .samples, .quick, .draft-item, .change, .compare) .el-button + .el-button { margin-left: 0; }
+:is(.actions, .ops, .toolbar, .row, .mc-actions, .samples, .draft-item, .change, .compare) .el-button + .el-button { margin-left: 0; }
 .el-table .el-table__cell { vertical-align: top; }
 
 /* job dialog */
@@ -161,9 +161,6 @@ main { max-width: 1680px; margin: 0 auto; padding: 18px 24px 40px; }
 .chat-foot { border-top: 1px solid var(--line); padding: 8px 12px 12px; background: #fff; }
 .chat-activity { display:flex; align-items:center; gap:8px; color:#667085; font-size:12px; padding:2px 0 8px; }
 .chat-activity .spin { flex:none; }
-.quick { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
-.quick button { border: 1px solid #b2d1f5; background: var(--accent-wash); color: #1c5cab; border-radius: 14px; padding: 2px 12px; font-size: 12px; cursor: pointer; }
-.quick button:hover { background: #d7e7fa; }
 .chat-foot .input { display: flex; gap: 8px; align-items: flex-end; }
 .attach { cursor: pointer; padding: 4px 6px; font-size: 18px; }
 .file-chip { display: inline-flex; gap: 8px; align-items: center; background: var(--accent-wash); color: #1c5cab; padding: 3px 10px; border-radius: 6px; margin-bottom: 6px; }

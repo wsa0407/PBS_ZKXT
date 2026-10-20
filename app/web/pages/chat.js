@@ -17,7 +17,6 @@ export default defineComponent({
   setup(props) {
     const { id, view, reload } = inject("project");
     const messages = ref([]);
-    const suggestions = ref([]);
     const text = ref("");
     const file = ref(null);
     const busy = ref(false);
@@ -55,7 +54,6 @@ export default defineComponent({
         const conversationMessages = data.messages.filter(isConversationMessage);
         if (!atBottom) unread.value += conversationMessages.filter(m => !existing.has(m.id)).length;
         messages.value = conversationMessages;
-        suggestions.value = data.suggestions;
         collaboration.value = data.collaboration;
         progress.value = data.job;
         busy.value = Boolean(data.job);
@@ -136,13 +134,6 @@ export default defineComponent({
       if (f) file.value = f;
     };
 
-    const quick = (s) => {
-      if (s.actions) return send({ actions: s.actions }, s.label);
-      if (s.ui === "samples") return;
-      if (s.ui === "export") return props.open("finish");
-      if (s.ui?.startsWith("open:")) return props.open(s.ui.slice(5));
-    };
-
     const useSample = (s) => {
       text.value = s.text;
     };
@@ -218,7 +209,7 @@ export default defineComponent({
       return "";
     });
 
-    return { id, collaboration, composer, mention, mentionIndex, recipients, updateMention, chooseMention, sending, resuming, expanded, unread, onScroll, showLatest, resume, expertLabels, view, messages, suggestions, text, file, busy, progress, currentStep, scroller, samples, empty, hint, modelState, modelGroups, refreshModels, changeModel, send, submit, onKey, onFile, onDrop, quick, useSample, question, cardDone, productName, describeChange, clear, KIND_LABEL, CHANGE_LABEL, meta, jobState, scenarioFieldLabel, scenarioValue };
+    return { id, collaboration, composer, mention, mentionIndex, recipients, updateMention, chooseMention, sending, resuming, expanded, unread, onScroll, showLatest, resume, expertLabels, view, messages, text, file, busy, progress, currentStep, scroller, samples, empty, hint, modelState, modelGroups, refreshModels, changeModel, send, submit, onKey, onFile, onDrop, useSample, question, cardDone, productName, describeChange, clear, KIND_LABEL, CHANGE_LABEL, meta, jobState, scenarioFieldLabel, scenarioValue };
   },
   template: `
   <div class="chat" @dragover.prevent @drop.prevent="onDrop">
@@ -323,9 +314,6 @@ export default defineComponent({
       <div v-if="progress" class="chat-activity" role="status" aria-live="polite"><i class="spin"></i><span>{{ currentStep?.name || '正在处理' }}<template v-if="currentStep?.detail"> · {{ currentStep.detail }}</template>…</span></div>
       <div v-if="!busy && ['paused','failed'].includes(collaboration.task?.status)" class="task-resume"><span>{{ collaboration.task.status === 'paused' ? '任务已暂停，补充会先保存' : '协作尚未完成，已有成果保留' }}</span><el-button size="small" :loading="resuming" @click="resume">继续处理</el-button></div>
       <div class="composer-hint">{{ recipients.length ? '已 @ ' + recipients.map(r => expertLabels[r]).join('、') : '发到专家群，由相关专家认领；输入 @ 可指定专家' }}</div>
-      <div class="quick" v-if="suggestions.length && !busy">
-        <button v-for="s in suggestions.filter((x) => x.ui !== 'samples')" :key="s.label" @click="quick(s)">{{ s.label }}</button>
-      </div>
       <div v-if="file" class="file-chip">📄 {{ file.name }} <el-button link type="danger" size="small" @click="file = null">移除</el-button></div>
       <div class="input">
         <div class="composer-field">
