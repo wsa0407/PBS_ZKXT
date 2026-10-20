@@ -4,7 +4,7 @@ import * as chat from "./chat.mjs";
 import { runAgent } from "./agent-runner.mjs";
 
 const GOALS = {
-  analyze: "读取待处理材料，完整抽取原始需求，检查原文引用与文档覆盖，并提出有依据的澄清问题。保留人工成果。此次不生成PBS。",
+  analyze: "理解客户材料：完整读取待处理材料，整理有原文依据的需求条目，并结合客户目标组织业务场景，发现遗漏、冲突及待澄清事项。需求条目、业务场景、澄清事项是同一次需求理解的关联成果，可迭代完善。已有主体明确但细节待澄清的需求可以形成场景草稿；不必等待全部确认。不强造场景，保留部署、安全、服务、商务等约束的处理去向。检查引用和材料覆盖，保留人工成果，不自动确认、不代答客户。此次不生成PBS。",
   generate_scenarios: "从当前原始需求归纳场景需求与澄清事项，建立条款来源映射，保留人工成果。此次不生成PBS。",
   generate_capabilities: "从当前原始需求归纳场景需求与业务活动，保留人工成果。",
   generate_pbs: "基于客户场景与需求，检索产品能力、限制及BOM，生成项目PBS组合草稿并检查覆盖。保留人工成果。",
@@ -22,9 +22,8 @@ export async function agentChatTurn(projectId, body, ctx) {
   const isMaterial = body.attachment || (text.length > 400 && /(?:^|\n)(?:#{1,3}|第[一二三四五六七八九十\d]+章|\d+\.\d+[.、\s])/.test(text));
   if (isMaterial) {
     const materialText = body.attachment?.text ?? text;
-    const kind = body.attachment && /\.pdf$/i.test(body.attachment.name) ? "tender" : "oral";
-    const id = svc.addMaterial(projectId, { kind, title: body.attachment?.name?.replace(/\.[^.]+$/, ""), fileName: body.attachment?.name, text: materialText });
-    goal = `用户提供了材料 material:${id}，已保存。请理解并完整抽取原始需求、检查引用与覆盖，提出需要确认的事项。用户补充说明：${body.attachment ? text : "直接粘贴的客户材料"}`;
+    const id = svc.addMaterial(projectId, { title: body.attachment?.name?.replace(/\.[^.]+$/, ""), fileName: body.attachment?.name, text: materialText, description: body.attachment ? text : "" });
+    goal = `用户提供了材料 material:${id}，已保存。${GOALS.analyze}`;
   }
   if (body.actions?.length) {
     if (body.actions.some((a) => !agentGoal(a))) throw new Error("请分别执行生成任务与人工确认操作");
@@ -34,7 +33,7 @@ export async function agentChatTurn(projectId, body, ctx) {
     const resume = body.actions?.find((a) => a.type === "resume_agent");
     const result = await runAgent(projectId, goal, { ...ctx, resume: Boolean(resume), resumeRunId: resume?.run_id });
     const view = svc.projectView(projectId);
-    const tab = /PBS/i.test(goal) ? "pbs" : /场景/.test(goal) ? "scenarios" : /抽取|材料/.test(goal) ? "requirements" : null;
+    const tab = body.actions?.some((a) => a.type === "generate_pbs") || (!body.actions?.length && !isMaterial && /生成|调整|组合/.test(text) && /PBS/i.test(text)) ? "pbs" : /需求|场景|澄清|材料/.test(goal) ? "understanding" : null;
     const messageId = repo.addChat(projectId, "assistant", result.reply || result.report.finished?.summary || "本次工作已记录，请查看成果和待审事项。", { execution: "deepseek-harness", runId: result.runId, cards: result.cards, results: [], open: tab ? { tab } : null, suggestions: chat.suggestions(view) });
     return { messageId, runId: result.runId };
   } catch (error) {

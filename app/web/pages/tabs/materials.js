@@ -7,7 +7,7 @@ export default defineComponent({
     const { id, view, reload } = inject("project");
     const { open } = inject("workspace");
     const samples = ref([]);
-    const form = ref({ kind: "oral", title: "", text: "", file: null });
+    const form = ref({ title: "", description: "", text: "", file: null });
     const preview = ref(null);
     onMounted(async () => (samples.value = (await call(() => api("/samples"))) ?? []));
 
@@ -15,27 +15,32 @@ export default defineComponent({
     const pending = computed(() => materials.value.filter((m) => !m.extracted_at).length);
 
     const useSample = (s) => {
-      form.value = { kind: s.inputType, title: s.label, text: s.text, file: null };
+      form.value = { title: s.label, description: "", text: s.text, file: null };
+    };
+    const chooseFile = (file) => {
+      if (!file) return;
+      form.value.file = file;
+      if (!form.value.title) form.value.title = file.name.replace(/\.[^.]+$/, "");
     };
     const onFile = (e) => {
-      const f = e.target.files[0];
-      if (f) form.value.file = f;
+      chooseFile(e.target.files[0]);
       e.target.value = "";
     };
+    const onDrop = (e) => chooseFile(e.dataTransfer.files[0]);
 
     const add = async () => {
-      const body = { kind: form.value.kind, title: form.value.title };
+      const body = { title: form.value.title, description: form.value.description };
       if (form.value.file) body.file = { name: form.value.file.name, base64: await fileToBase64(form.value.file) };
       else body.text = form.value.text;
       const ok = await call(() => api(`/projects/${id}/materials`, { method: "POST", body }), "材料已添加");
       if (ok) {
-        form.value = { kind: form.value.kind, title: "", text: "", file: null };
+        form.value = { title: "", description: "", text: "", file: null };
         reload();
       }
     };
 
     const remove = async (m) => {
-      await ElMessageBox.confirm(`删除材料「${m.title}」？由它抽取、且没有人工改过的需求会一并删除。`, "删除材料", { type: "warning" });
+      await ElMessageBox.confirm(`移除材料「${m.title}」？已有需求和历史依据会保留，关联内容将提示来源失效、需要复核。`, "移除材料", { type: "warning" });
       await call(() => api(`/projects/${id}/materials/${m.id}`, { method: "DELETE" }), "已删除");
       reload();
     };
@@ -43,39 +48,36 @@ export default defineComponent({
     const show = async (m) => (preview.value = await call(() => api(`/projects/${id}/materials/${m.id}`)));
 
     const analyze = async (all = false) => {
-      const result = await runJob(all ? "重新抽取全部材料的需求" : "从新材料中抽取需求", () => api(`/projects/${id}/analyze`, { method: "POST", body: { all } }));
+      const result = await runJob(all ? "重新理解材料" : "理解新增材料", () => api(`/projects/${id}/analyze`, { method: "POST", body: { all } }));
       if (result) {
         await reload();
-        open("requirements");
+        open("understanding");
       }
     };
 
-    return { view, materials, pending, samples, form, preview, meta, useSample, onFile, add, remove, show, analyze, fmtTime };
+    return { view, materials, pending, samples, form, preview, meta, useSample, onFile, onDrop, add, remove, show, analyze, fmtTime };
   },
   template: `
-  <div class="grid-2">
+  <div class="materials-stack">
     <el-card shadow="never">
-      <template #header><b>添加材料</b><span class="muted" style="margin-left:8px">招标文件、会议纪要、客户口述都可以，后续收到新材料随时追加</span></template>
+      <template #header><b>上传客户材料</b><p class="muted" style="margin:6px 0 0">上传文件或粘贴原文，再补充这份材料的背景和关注点。</p></template>
       <el-form label-position="top">
-        <div class="row">
-          <el-form-item label="类型">
-            <el-radio-group v-model="form.kind">
-              <el-radio-button v-for="k in meta.materialKinds" :key="k.id" :value="k.id">{{ k.label }}</el-radio-button>
-            </el-radio-group>
-          </el-form-item>
-          <el-form-item label="标题" style="flex:1"><el-input v-model="form.title" placeholder="可不填" /></el-form-item>
-        </div>
-        <el-form-item v-if="!form.file" label="内容">
-          <el-input v-model="form.text" type="textarea" :rows="12" placeholder="粘贴材料内容……" />
-        </el-form-item>
-        <div v-else class="file-chip">📄 {{ form.file.name }} <el-button link type="danger" @click="form.file = null">移除</el-button></div>
+        <label v-if="!form.file" class="material-upload" @dragover.prevent @drop.prevent="onDrop">
+          <b>点击上传或将文件拖到这里</b><span class="muted">{{ meta.fileTypes.join(' / ') }}</span>
+          <input type="file" hidden :accept="meta.fileTypes.join(',')" @change="onFile" />
+        </label>
+        <div v-else class="file-chip">📄 {{ form.file.name }} <el-button link type="danger" @click="form.file = null">移除文件</el-button></div>
+        <el-collapse v-if="!form.file" style="margin-bottom:16px"><el-collapse-item title="或粘贴材料原文" name="text">
+          <el-input v-model="form.text" type="textarea" :rows="7" placeholder="粘贴客户原话、会议记录或文件内容……" />
+        </el-collapse-item></el-collapse>
+        <el-form-item label="材料标题（可选）"><el-input v-model="form.title" placeholder="上传文件后自动填入，也可以修改" /></el-form-item>
+        <el-form-item label="补充说明（可选）"><el-input v-model="form.description" type="textarea" :rows="2" placeholder="例如：这是客户最新补充，重点关注部署要求。" /></el-form-item>
         <div class="row" style="margin-top:8px">
-          <label class="el-button">上传文件（{{ meta.fileTypes.join(' / ') }}）<input type="file" hidden :accept="meta.fileTypes.join(',')" @change="onFile" /></label>
           <el-dropdown v-if="samples.length" @command="useSample">
             <el-button>填入示例</el-button>
             <template #dropdown><el-dropdown-menu><el-dropdown-item v-for="s in samples" :key="s.id" :command="s">{{ s.label }}</el-dropdown-item></el-dropdown-menu></template>
           </el-dropdown>
-          <el-button type="primary" style="margin-left:auto" :disabled="!form.file && form.text.trim().length < 20" @click="add">添加材料</el-button>
+          <el-button type="primary" style="margin-left:auto" :disabled="!form.file && form.text.trim().length < 20" @click="add">保存材料</el-button>
         </div>
       </el-form>
     </el-card>
@@ -83,8 +85,8 @@ export default defineComponent({
     <el-card shadow="never">
       <template #header>
         <div class="row"><b>已添加的材料（{{ materials.length }}）</b><span style="flex:1"></span>
-          <el-button v-if="materials.length && !pending" @click="analyze(true)">全部重新抽取</el-button>
-          <el-button type="primary" :disabled="!pending" @click="analyze(false)">{{ pending ? '抽取需求（' + pending + ' 份新材料）' : '没有新材料' }}</el-button>
+          <el-button v-if="materials.length && !pending" :disabled="view.job?.status === '处理中'" @click="analyze(true)">重新理解</el-button>
+          <el-button type="primary" :disabled="!pending || view.job?.status === '处理中'" @click="analyze(false)">{{ pending ? '理解材料（' + pending + ' 份待处理）' : '没有待处理材料' }}</el-button>
         </div>
       </template>
       <div v-if="!materials.length" class="empty">先在左边添加材料</div>
@@ -92,10 +94,11 @@ export default defineComponent({
         <div class="material-head">
           <el-tag size="small" type="info">材料{{ m.no }}</el-tag>
           <b class="clickable title" :title="m.title" @click="show(m)">{{ m.title }}</b>
-          <el-tag size="small" :type="m.extracted_at ? 'success' : 'warning'">{{ m.extracted_at ? '已抽取' : '未处理' }}</el-tag>
+          <el-tag size="small" :type="m.extracted_at ? 'success' : 'warning'">{{ m.extracted_at ? '原文已处理' : '待理解' }}</el-tag>
           <el-button link type="danger" @click="remove(m)">删除</el-button>
         </div>
-        <div class="muted">{{ m.kindLabel }}{{ m.file_name ? ' · ' + m.file_name : '' }} · {{ m.segments }} 个片段{{ m.numbered ? '（按条款号切分）' : '（按句切分）' }} · {{ fmtTime(m.created_at) }}</div>
+        <div class="muted">{{ m.file_name || '粘贴的原文' }} · {{ fmtTime(m.created_at) }}</div>
+        <div v-if="m.meta.description" class="material-description">{{ m.meta.description }}</div>
       </div>
       <el-alert v-if="materials.length" type="info" :closable="false" style="margin-top:12px"
         title="已经人工确认、修改或新增的需求，重新抽取时不会被覆盖。" />
@@ -103,6 +106,6 @@ export default defineComponent({
   </div>
 
   <el-drawer :model-value="!!preview" @close="preview = null" :title="preview?.title" size="50%">
-    <pre class="pre" v-if="preview">{{ preview.text }}</pre>
+    <template v-if="preview"><p v-if="preview.meta.description" class="material-description">补充说明：{{ preview.meta.description }}</p><pre class="pre">{{ preview.text }}</pre></template>
   </el-drawer>`,
 });

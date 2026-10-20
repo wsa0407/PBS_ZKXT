@@ -72,11 +72,17 @@ function projectText(projectId, reqs) {
 
 // ---------- materials ----------
 
-export function addMaterial(projectId, { kind, title, text, fileName }) {
-  if (!MATERIAL_KINDS[kind]) throw badRequest("请选择材料类型");
+export function addMaterial(projectId, { kind, title, text, fileName, description = "" }) {
   const clean = String(text ?? "").trim();
   if (clean.length < 20) throw badRequest("材料内容太短，请至少输入 20 个字");
+  const inferred = !kind;
+  if (inferred) {
+    const heading = `${title ?? ""}\n${clean.slice(0, 2000)}`;
+    kind = /招标文件|投标人须知|采购需求|招标需求/.test(heading) ? "tender" : /会议纪要|访谈纪要|会议记录/.test(heading) ? "minutes" : "other";
+  }
+  if (!MATERIAL_KINDS[kind]) throw badRequest("材料类型无效");
   const doc = segmentText(clean);
+  doc.meta = { ...doc.meta, description: String(description).trim(), kind_inferred: inferred };
   if (!doc.segments.length) throw badRequest("没有识别到任何文字内容");
   const name = String(title ?? "").trim() || fileName?.replace(/\.[^.]+$/, "") || doc.title || MATERIAL_KINDS[kind];
   const id = repo.addMaterial(projectId, { kind, title: name, fileName, text: clean, doc });

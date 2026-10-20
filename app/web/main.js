@@ -9,7 +9,7 @@ import ProductsPage from "./pages/products.js";
 
 setRoutes([
   [/^\/projects$/, ProjectList],
-  [/^\/projects\/([\w-]+)(?:\/(\w+))?$/, ProjectPage, ["id", "tab"]],
+  [/^\/projects\/([\w-]+)(?:\/(\w+))?(?:\/(\w+))?$/, ProjectPage, ["id", "tab", "view"]],
   [/^\/products$/, ProductsPage],
 ]);
 window.addEventListener("hashchange", resolve);

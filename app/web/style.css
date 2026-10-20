@@ -152,6 +152,25 @@ main { max-width: 1680px; margin: 0 auto; padding: 18px 24px 40px; }
 .seg-line .id { color: var(--muted); font-size: 12px; margin-right: 6px; }
 
 /* questions */
+.materials-stack { display: grid; gap: 16px; }
+.material-upload { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 28px 16px; margin-bottom: 12px; border: 1px dashed var(--line); border-radius: 8px; background: #f7f9fc; cursor: pointer; text-align: center; }
+.material-upload:hover { border-color: var(--accent); }
+.material-description { margin: 8px 0; padding: 8px 10px; border-left: 3px solid var(--line); color: var(--ink-2); background: #fafaf8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.understanding-header { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.understanding-header p { margin: 6px 0 0; }
+.understanding-views { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
+.understanding-views button { padding: 12px 10px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--ink-2); cursor: pointer; text-align: left; }
+.understanding-views button.active { border-color: var(--accent); color: var(--brand); background: #f0f6ff; }
+.understanding-views b, .understanding-views small { display: block; }
+.understanding-views small { margin-top: 6px; font-size: 12px; line-height: 1.5; }
+.understanding-views span { margin-left: 6px; font-size: 18px; }
+.understanding-params { margin-bottom: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+.requirement-state { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.requirement-review { flex: none; padding: 1px 6px; border: 1px solid #cdd5df; border-radius: 4px; color: #445163; background: #f3f5f8; font-size: 12px; line-height: 20px; }
+.requirement-review.confirmed { border-color: #b8d9c9; color: #176447; background: #edf7f1; }
+.requirement-questions { border-left: 2px solid #e0ad57; padding-left: 8px; margin-top: 8px; }
+.requirement-questions .el-button { height: auto; text-align: left; white-space: normal; line-height: 1.6; }
+.question-focus { border-color: var(--accent); background: #f5f9ff; }
 .q-card { margin-bottom: 10px; }
 .q-text { font-size: 15px; margin: 6px 0; }
 .answer { background: #f0f7ff; border-radius: 6px; padding: 6px 10px; margin-top: 6px; }

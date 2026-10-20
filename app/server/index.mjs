@@ -184,7 +184,7 @@ get("/api/projects/:id/export.xlsx", ({ id }) => {
 post("/api/projects/:id/materials", async ({ id }, body) => {
   repo.getProject(id);
   const { text, fileName } = await fileText(body);
-  return { id: svc.addMaterial(id, { kind: body.kind, title: body.title, text, fileName }) };
+  return { id: svc.addMaterial(id, { kind: body.kind, title: body.title, description: body.description, text, fileName }) };
 });
 get("/api/projects/:id/materials/:mid", ({ id, mid }) => repo.getMaterial(id, Number(mid)));
 del("/api/projects/:id/materials/:mid", ({ id, mid }) => {

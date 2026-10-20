@@ -326,19 +326,19 @@ export function suggestions(view) {
   const s = view.steps;
   const out = [];
   if (!s.materials.count) return [{ label: "用示例试试", ui: "samples" }];
-  if (s.materials.pending) out.push({ label: `抽取 ${s.materials.pending} 份新材料的需求`, actions: [{ type: "analyze" }] });
+  if (s.materials.pending) out.push({ label: `理解 ${s.materials.pending} 份待处理材料`, actions: [{ type: "analyze" }] });
   const batchable = view.requirements.filter((r) => r.status === "待确认" && r.review === "批量确认").length;
   if (batchable) out.push({ label: `确认 ${batchable} 条低风险需求`, actions: [{ type: "confirm_requirements", scope: "batchable" }] });
   if (s.requirements.mustReview) out.push({ label: `看 ${s.requirements.mustReview} 条必审需求`, ui: "open:requirements" });
   if (s.questions.answered) out.push({ label: `应用 ${s.questions.answered} 条已答复`, ui: "open:questions" });
-  if (s.requirements.total && !s.scenarios.active) out.push({ label: "拆分场景需求", actions: [{ type: "generate_scenarios" }] });
-  if (s.scenarios.pending) out.push({ label: `审阅 ${s.scenarios.pending} 条场景需求`, ui: "open:scenarios" });
+  if (!s.materials.pending && s.requirements.total && !s.scenarios.active) out.push({ label: "继续需求理解", actions: [{ type: "analyze" }] });
+  if (s.scenarios.pending) out.push({ label: `审阅 ${s.scenarios.pending} 个业务场景`, ui: "open:scenarios" });
+  if (s.questions.open) out.push({ label: `${s.questions.open} 项待澄清`, ui: "open:questions" });
   if (s.requirements.total && !s.pbs.items) out.push({ label: "生成 PBS", actions: [{ type: "generate_pbs" }] });
   if (s.pbs.items) {
     if (s.pbs.stale) out.push({ label: `复核 ${s.pbs.stale} 项变化`, ui: "open:pbs" });
     if (s.pbs.conflicts) out.push({ label: `看 ${s.pbs.conflicts} 个约束冲突`, ui: "open:pbs" });
     if (s.pbs.pendingQty) out.push({ label: `${s.pbs.pendingQty} 项数量待估`, ui: "open:pbs" });
-    if (s.questions.open) out.push({ label: `${s.questions.open} 个澄清问题待处理`, ui: "open:questions" });
     out.push({ label: "导出 Excel", ui: "export" });
     if (!view.project.done && !s.pbs.blockers && !s.pbs.uncovered) out.push({ label: "标记完成", actions: [{ type: "finish" }] });
   }

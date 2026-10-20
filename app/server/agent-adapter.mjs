@@ -28,7 +28,7 @@ const docId = (id) => `material:${id}`;
 export function localAgentAdapter(projectId, { signal, onProgress = () => {}, maxCalls = 500 } = {}) {
   repo.getProject(projectId);
   let calls = 0; let finished = null;
-  const documents = () => repo.listMaterials(projectId).map((m) => ({ document_id: docId(m.id), document_version: hash(repo.getMaterial(projectId, m.id).text), title: m.title, kind: m.kind, size: m.size, extracted: Boolean(m.extracted_at) }));
+  const documents = () => repo.listMaterials(projectId).map((m) => ({ document_id: docId(m.id), document_version: hash(repo.getMaterial(projectId, m.id).text), title: m.title, kind: m.kind, kind_inferred: Boolean(m.meta.kind_inferred), description: m.meta.description ?? "", size: m.size, extracted: Boolean(m.extracted_at) }));
   const document = (id) => {
     const d = documents().find((d) => d.document_id === id);
     if (!d) throw new Error("文档不存在或不属于当前项目");

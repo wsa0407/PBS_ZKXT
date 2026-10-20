@@ -3,30 +3,35 @@ import { api, call, shell, jobState } from "../api.js";
 import { router } from "../router.js";
 import Chat from "./chat.js";
 import Materials from "./tabs/materials.js";
-import Requirements from "./tabs/requirements.js";
-import Questions from "./tabs/questions.js";
-import Scenarios from "./tabs/scenarios.js";
+import Understanding from "./tabs/understanding.js";
+import { workspaceTarget } from "../understanding.js";
 import Pbs from "./tabs/pbs.js";
 import Finish from "./tabs/finish.js";
 
 const TABS = [
   { key: "materials", label: "材料" },
-  { key: "requirements", label: "需求" },
-  { key: "scenarios", label: "场景需求" },
-  { key: "questions", label: "澄清" },
+  { key: "understanding", label: "需求理解" },
   { key: "pbs", label: "PBS" },
   { key: "finish", label: "导出" },
 ];
 
 export default defineComponent({
-  components: { Chat, Materials, Requirements, Scenarios, Questions, Pbs, Finish },
+  components: { Chat, Materials, Understanding, Pbs, Finish },
   setup() {
     const id = router.params.id;
     const view = ref(null);
     const error = ref("");
-    const tab = ref(router.params.tab && TABS.some((t) => t.key === router.params.tab) ? router.params.tab : "");
+    const initial = workspaceTarget(router.params.tab, router.params.view);
+    const tab = ref(router.params.tab ? initial.tab : "");
+    const understandingPane = ref(initial.pane);
     const focus = ref(null);
     const wide = ref(false);
+    watch(() => [router.params.tab, router.params.view], ([key, pane]) => {
+      const target = workspaceTarget(key, pane);
+      tab.value = target.tab;
+      understandingPane.value = target.pane;
+      focus.value = null;
+    });
 
     const reload = async () => {
       try {
@@ -60,16 +65,18 @@ export default defineComponent({
       const s = view.value?.steps;
       if (!s) return "materials";
       if (s.pbs.items) return "pbs";
-      if (s.requirements.total) return "requirements";
+      if (s.requirements.total || s.questions.total) return "understanding";
       return "materials";
     }
     // The conversation drives the workspace: it opens the tab where the result of an action lives.
     const open = (key, focusId = null) => {
-      tab.value = key === "export" ? "finish" : key === "capabilities" ? "scenarios" : key;
+      const target = workspaceTarget(key, understandingPane.value);
+      tab.value = target.tab;
+      if (target.tab === "understanding") understandingPane.value = target.pane;
       focus.value = focusId;
-      history.replaceState(null, "", `#/projects/${id}/${tab.value}`);
+      history.replaceState(null, "", `#/projects/${id}/${tab.value}${tab.value === "understanding" ? `/${understandingPane.value}` : ""}`);
     };
-    provide("workspace", { open, focus });
+    provide("workspace", { open, focus, understandingPane });
 
     const badges = computed(() => {
       const s = view.value?.steps;
@@ -77,9 +84,6 @@ export default defineComponent({
       const b = (n, tip) => (n ? { n, tip } : null);
       return {
         materials: b(s.materials.pending, "份新材料未处理"),
-        requirements: b(s.requirements.pending, `条待确认（必审 ${s.requirements.mustReview}）`),
-        scenarios: b(s.scenarios.pending + s.scenarios.unmapped.length, "项场景或需求去向待审阅"),
-        questions: b(s.questions.open + s.questions.answered, `个待处理（已答复待应用 ${s.questions.answered}）`),
         pbs: b(s.pbs.uncovered + s.pbs.stale + s.pbs.conflicts, `项待处理：未覆盖 ${s.pbs.uncovered}，待复核 ${s.pbs.stale}，冲突 ${s.pbs.conflicts}`),
       };
     });
@@ -102,9 +106,7 @@ export default defineComponent({
         </div>
         <div class="work-body">
           <Materials v-if="tab === 'materials'" />
-          <Requirements v-else-if="tab === 'requirements'" />
-          <Scenarios v-else-if="tab === 'scenarios'" />
-          <Questions v-else-if="tab === 'questions'" />
+          <Understanding v-else-if="tab === 'understanding'" />
           <Pbs v-else-if="tab === 'pbs'" />
           <Finish v-else-if="tab === 'finish'" />
         </div>

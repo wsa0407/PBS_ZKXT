@@ -1,6 +1,6 @@
 import { computed, defineComponent, inject, ref, watch } from "vue";
 import { ElMessageBox } from "element-plus";
-import { api, call, runJob } from "../../api.js";
+import { api, call } from "../../api.js";
 import { SCENARIO_FIELD_LABELS, scenarioFieldLabel } from "../../ui.js";
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -85,10 +85,6 @@ export default defineComponent({
     watch(() => focus.value, (code) => { if (typeof code === "string" && code.startsWith("SC")) detailCode.value = code; }, { immediate: true });
     watch(detailCode, () => { historyRows.value = []; });
 
-    const generate = async () => {
-      const request_id = crypto.randomUUID();
-      if (await runJob("拆分场景需求", () => api(`/projects/${id}/scenarios/generate`, { method: "POST", body: { request_id } }))) await reload();
-    };
     const startEdit = (scene) => { editing.value = { mode: scene ? "edit" : "add", originals: scene ? [{ code: scene.code, revision: scene.revision }] : [], parts: [clone(scene ?? empty())] }; };
     const confirm = async (scene) => {
       if (await call(() => api(`/projects/${id}/scenarios/confirm`, { method: "POST", body: { scenarios: [{ code: scene.code, revision: scene.revision }] } }), "已确认当前版本，未解决问题仍会保留")) await reload();
@@ -134,21 +130,14 @@ export default defineComponent({
       if (await call(() => api(`/projects/${id}/requirements/${d.req_id}/disposition`, { method: "PUT", body: d }), "处理去向已保存")) { dispositionEdit.value = null; await reload(); }
     };
     const history = async () => { const result = await call(() => api(`/projects/${id}/scenarios/${detailCode.value}`)); if (result) historyRows.value = result.revisions; };
-    return { view, scenarioFieldLabel, open, pane, filter, rows, selected, detailCode, detail, editing, dispositionEdit, question, historyRows, requirements, sources, req, typeOf, dispositions, clone, empty, textFields, arrayFields, generate, startEdit, confirm, archive, restore, merge, split, save, ask, addQuestion, saveDisposition, history };
+    return { view, scenarioFieldLabel, open, pane, filter, rows, selected, detailCode, detail, editing, dispositionEdit, question, historyRows, requirements, sources, req, typeOf, dispositions, clone, empty, textFields, arrayFields, startEdit, confirm, archive, restore, merge, split, save, ask, addQuestion, saveDisposition, history };
   },
   template: `
-  <el-alert :closable="false" type="info" title="从客户业务目标拆分场景。引用有效、内容已确认、问题已解决和产品已响应分别展示。" style="margin-bottom:12px" />
-  <div class="summary-row">
-    <div class="tile"><div class="v">{{ view.scenarioCoverage.active }}</div><div class="l">有效场景</div></div>
-    <div class="tile"><div class="v">{{ view.scenarioCoverage.confirmed }}</div><div class="l">已确认描述</div></div>
-    <div class="tile warn"><div class="v">{{ view.scenarioCoverage.pending }}</div><div class="l">待审阅场景</div></div>
-    <div class="tile" :class="{ warn: view.scenarioCoverage.unmapped.length }"><div class="v">{{ view.scenarioCoverage.unmapped.length }}</div><div class="l">待归类原始需求</div></div>
-  </div>
+  <el-alert :closable="false" type="info" title="按客户要完成的工作组织需求。主体明确、细节待澄清的要求也可以形成场景草稿，描述确认与问题解决分别记录。" style="margin-bottom:12px" />
   <div class="toolbar">
-    <el-radio-group v-model="pane" size="small"><el-radio-button value="scenes">场景需求</el-radio-button><el-radio-button value="dispositions">原始需求去向 {{ view.scenarioCoverage.classified }}/{{ view.scenarioCoverage.total }}</el-radio-button></el-radio-group>
+    <el-radio-group v-model="pane" size="small"><el-radio-button value="scenes">业务场景</el-radio-button><el-radio-button value="dispositions">要求去向与约束 {{ view.scenarioCoverage.classified }}/{{ view.scenarioCoverage.total }}</el-radio-button></el-radio-group>
     <span style="flex:1"></span>
     <el-button size="small" @click="startEdit(null)">新增场景</el-button>
-    <el-button size="small" type="primary" :disabled="!view.steps.requirements.total" @click="generate">{{ view.scenarios.length ? '重新生成草稿' : '生成场景草稿' }}</el-button>
   </div>
   <el-alert v-for="note in view.scenarioNotes" :key="note" :title="note" :closable="false" type="warning" style="margin-bottom:8px" />
   <template v-if="pane === 'scenes'">
@@ -157,10 +146,10 @@ export default defineComponent({
       <el-button size="small" :disabled="selected.length < 2" @click="merge">合并所选</el-button>
       <span class="muted">人工编辑和确认内容会保留；重生成替代的草稿可在归档中查看。</span>
     </div>
-    <el-table :data="rows" row-key="code" @selection-change="(v) => selected = v" empty-text="尚未建立场景需求，可从原始需求生成草稿或手动新增">
+    <el-table :data="rows" row-key="code" @selection-change="(v) => selected = v" empty-text="尚未建立业务场景，可使用上方理解材料入口逐步完善，或手动新增">
       <el-table-column type="selection" width="38" :selectable="(s) => s.status !== '已归档'" />
       <el-table-column label="编号" prop="code" width="70" />
-      <el-table-column label="场景与目标" min-width="220"><template #default="{ row }"><el-button link type="primary" @click="detailCode = row.code">{{ row.name }}</el-button><div class="muted">{{ row.goal || '业务目标未明确' }}</div></template></el-table-column>
+      <el-table-column label="场景、目标与活动" min-width="280"><template #default="{ row }"><el-button link type="primary" @click="detailCode = row.code">{{ row.name }}</el-button><div>{{ row.goal || '业务目标未明确' }}</div><div v-if="row.context" class="muted">{{ row.context }}</div><div v-for="(a, n) in row.activities.slice(0, 2)" :key="n" class="muted">{{ n + 1 }}. {{ a.text }}</div><el-button v-if="row.open_questions.length" link type="warning" @click="open('questions', row.open_questions[0])">{{ row.open_questions.length }} 项待澄清</el-button></template></el-table-column>
       <el-table-column label="要求" width="50"><template #default="{ row }">{{ row.links.length }}</template></el-table-column>
       <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag size="small" :type="typeOf(row.status)">{{ row.status }}</el-tag><div class="muted">版本 {{ row.revision }}</div></template></el-table-column>
       <el-table-column label="问题" width="50"><template #default="{ row }">{{ row.open_questions.length }}</template></el-table-column>
@@ -192,8 +181,7 @@ export default defineComponent({
       <div v-if="!detail.evidence.length" class="muted">当前为人工描述，尚未关联字段原文。</div>
       <h3>推断与待确认事项</h3>
       <div v-for="(a, n) in detail.assumptions" :key="n" class="chunk"><b>分析推断：</b>{{ a.text }}<div class="muted">{{ a.reason }}</div></div>
-      <div v-for="q in view.questions.filter((q) => q.scenario_ids.includes(detail.code))" :key="q.id" class="chunk"><el-tag size="small">{{ q.status }}</el-tag> {{ q.question }}<div v-if="q.answer">答复：{{ q.answer }}</div></div>
-      <el-button link type="primary" @click="open('questions')">进入澄清工作区</el-button>
+      <div v-for="q in view.questions.filter((q) => q.scenario_ids.includes(detail.code))" :key="q.id" class="chunk"><el-tag size="small">{{ q.status }}</el-tag> {{ q.question }}<div v-if="q.answer">答复：{{ q.answer }}</div><el-button link type="primary" @click="open('questions', q.id)">处理此项澄清</el-button></div>
       <h3>下游 PBS</h3><div v-for="i in view.items.filter((i) => i.scenario_ids.includes(detail.code))" :key="i.id"><el-button link type="primary" @click="open('pbs', i.id)">{{ i.code }} {{ i.name }}</el-button> {{ i.stale }}</div>
       <el-divider /><el-button @click="history">查看修改记录</el-button>
       <el-collapse><el-collapse-item v-for="r in historyRows" :key="r.revision" :title="'版本 ' + r.revision + ' · ' + r.reason"><div>{{ r.at }}</div><div>{{ r.snapshot.name }} · {{ r.snapshot.status }}</div><div>{{ r.snapshot.goal }}</div><div>关联要求：{{ r.snapshot.links.map((l) => l.req_id).join('、') }}</div></el-collapse-item></el-collapse>

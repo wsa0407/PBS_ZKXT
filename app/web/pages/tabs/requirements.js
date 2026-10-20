@@ -1,24 +1,33 @@
-import { computed, defineComponent, inject, ref } from "vue";
+import { computed, defineComponent, inject, ref, watch } from "vue";
 import { ElMessageBox } from "element-plus";
 import { api, call, meta } from "../../api.js";
 import { highlight, TIER_TYPE } from "../../ui.js";
+import Questions from "./questions.js";
+import { questionPending, questionsForRequirement } from "../../understanding.js";
 
 export default defineComponent({
+  components: { Questions },
   setup() {
     const { id, view, reload } = inject("project");
-    const { open } = inject("workspace");
-    const filter = ref({ status: "待确认", tier: "", category: "", kw: "" });
+    const { open, focus } = inject("workspace");
+    const filter = ref({ status: "", tier: "", category: "", kw: "", needsClarification: false });
     const selected = ref([]);
     const source = ref(null);
     const editing = ref(null);
     const adding = ref(null);
     const paramEdit = ref(null);
+    const clarifying = ref(null);
+    const clarifiedRequirement = computed(() => view.value.requirements.find((r) => r.code === clarifying.value));
+    const relatedQuestions = computed(() => new Map(view.value.requirements.map((r) => [r.code, questionsForRequirement(r, view.value.questions)])));
+    const pendingQuestions = (r) => (relatedQuestions.value.get(r.code) ?? []).filter(questionPending);
 
     const segByUid = computed(() => new Map([...view.value.sourceSnapshots, ...view.value.segments].map((s) => [s.uid, s])));
     const rows = computed(() =>
       view.value.requirements.filter((r) => {
         const f = filter.value;
         if (f.status && r.status !== f.status) return false;
+        if (!f.status && r.status === "已删除") return false;
+        if (f.needsClarification && !pendingQuestions(r).length) return false;
         if (f.tier && r.review !== f.tier) return false;
         if (f.category && r.category !== f.category) return false;
         if (f.kw && !r.text.includes(f.kw)) return false;
@@ -43,6 +52,13 @@ export default defineComponent({
       const i = siblings.indexOf(s);
       source.value = { req: r, seg: s, context: siblings.slice(Math.max(0, i - 2), i + 3) };
     };
+    watch(() => focus.value, (code) => {
+      const r = view.value.requirements.find((r) => r.code === code);
+      if (!r) return;
+      filter.value = { status: r.status === "已删除" ? "已删除" : "", tier: "", category: "", kw: "", needsClarification: false };
+      if (r.seg_uid) openSource(r);
+      else clarifying.value = r.code;
+    }, { immediate: true });
 
     const confirm = async (codes) => {
       if (!codes.length) return;
@@ -80,19 +96,15 @@ export default defineComponent({
       reload();
     };
 
-    return { view, filter, rows, counts, selected, source, editing, adding, paramEdit, usedParams, meta, open, segLabel, openSource, confirm, confirmBatchable, save, remove, restore, add, saveParam, highlight, TIER_TYPE };
+    return { view, filter, rows, counts, selected, source, editing, adding, paramEdit, usedParams, meta, open, clarifying, clarifiedRequirement, pendingQuestions, segLabel, openSource, confirm, confirmBatchable, save, remove, restore, add, saveParam, highlight, TIER_TYPE };
   },
   template: `
   <div v-if="!view.requirements.length" class="empty">
-    还没有需求。<el-button link type="primary" @click="open('materials')">去添加材料并抽取需求</el-button>，或
+    还没有需求条目。<el-button link type="primary" @click="open('materials')">去添加材料并开始理解</el-button>，或
     <el-button link type="primary" @click="adding = { text: '', category: '功能', priority: '重要', source_note: '' }">手动新增一条</el-button>
   </div>
   <template v-else>
-    <div class="summary-row with-params">
-      <div class="tile"><div class="v">{{ view.steps.requirements.total }}</div><div class="l">有效需求</div></div>
-      <div class="tile"><div class="v">{{ view.steps.requirements.confirmed }}</div><div class="l">已确认</div></div>
-      <div class="tile warn"><div class="v">{{ view.steps.requirements.mustReview }}</div><div class="l">必审未处理</div></div>
-      <div class="tile params">
+    <div v-if="usedParams.length" class="understanding-params">
         <div class="l">测算参数 <span class="muted">（点击修改）</span></div>
         <div class="param-list">
           <span v-for="p in usedParams" :key="p.name" class="param" :class="{ unconfirmed: !p.confirmed }" @click="paramEdit = { ...p, input: p.value }">
@@ -100,15 +112,14 @@ export default defineComponent({
           </span>
           <span v-if="!usedParams.length" class="muted">没有识别到测算参数</span>
         </div>
-      </div>
     </div>
 
     <div class="toolbar">
       <el-radio-group v-model="filter.status" size="small">
-        <el-radio-button value="待确认">待确认 {{ counts['待确认'] }}</el-radio-button>
-        <el-radio-button value="已确认">已确认 {{ counts['已确认'] }}</el-radio-button>
+        <el-radio-button value="">全部有效</el-radio-button>
+        <el-radio-button value="待确认">待审阅 {{ counts['待确认'] }}</el-radio-button>
+        <el-radio-button value="已确认">描述已确认 {{ counts['已确认'] }}</el-radio-button>
         <el-radio-button value="已删除">已删除 {{ counts['已删除'] || 0 }}</el-radio-button>
-        <el-radio-button value="">全部</el-radio-button>
       </el-radio-group>
       <el-select v-model="filter.tier" placeholder="审核分级" clearable size="small" style="width:120px">
         <el-option v-for="t in ['必审', '抽检', '批量确认']" :key="t" :value="t" :label="t" />
@@ -117,11 +128,11 @@ export default defineComponent({
         <el-option v-for="c in meta.categories" :key="c" :value="c" :label="c" />
       </el-select>
       <el-input v-model="filter.kw" placeholder="搜索" clearable size="small" style="width:160px" />
+      <el-checkbox v-model="filter.needsClarification">只看仍需澄清</el-checkbox>
       <span style="flex:1"></span>
       <el-button size="small" :disabled="!selected.length" @click="confirm(selected.map((r) => r.code))">确认所选（{{ selected.length }}）</el-button>
       <el-button size="small" type="success" plain @click="confirmBatchable">一键确认“批量确认”级</el-button>
       <el-button size="small" @click="adding = { text: '', category: '功能', priority: '重要', source_note: '' }">新增需求</el-button>
-      <el-button size="small" type="primary" @click="open('scenarios')">下一步：场景需求 →</el-button>
     </div>
 
     <el-card shadow="never" body-style="padding:0">
@@ -131,6 +142,15 @@ export default defineComponent({
         <el-table-column label="需求" min-width="320">
           <template #default="{ row }">
             <span :class="{ deleted: row.status === '已删除' }">{{ row.text }}</span>
+            <div v-if="row.status !== '已删除'" class="requirement-state">
+              <span class="requirement-review" :class="{ confirmed: row.status === '已确认' }">{{ row.status === '已确认' ? '描述已确认' : '描述待审阅' }}</span>
+              <el-button v-if="pendingQuestions(row).length" link type="warning" @click="clarifying = row.code">仍有 {{ pendingQuestions(row).length }} 项待澄清</el-button>
+              <span v-else class="muted">暂无待澄清事项</span>
+            </div>
+            <div v-if="pendingQuestions(row).length" class="requirement-questions">
+              <div v-for="q in pendingQuestions(row).slice(0, 2)" :key="q.id"><el-button link type="primary" @click="clarifying = row.code">Q{{ q.id }} · {{ q.question }}</el-button></div>
+              <el-button link type="primary" @click="clarifying = row.code">录入答复 / 处理澄清</el-button>
+            </div>
             <el-tag v-if="row.star" type="danger" size="small" effect="plain">★ 废标项</el-tag>
             <el-tag v-if="row.triangle" type="warning" size="small" effect="plain">▲</el-tag>
             <el-tag v-if="row.inferred" type="warning" size="small">推断</el-tag>
@@ -170,6 +190,7 @@ export default defineComponent({
                 <el-button v-if="row.status === '待确认'" link type="success" @click="confirm([row.code])">确认</el-button>
                 <el-button v-else link class="ghost" disabled tabindex="-1">确认</el-button>
                 <el-button link type="primary" @click="editing = { ...row }">修改</el-button>
+                <el-button link type="primary" @click="clarifying = row.code">澄清</el-button>
                 <el-button link type="danger" @click="remove(row)">删除</el-button>
               </template>
             </div>
@@ -178,6 +199,14 @@ export default defineComponent({
       </el-table>
     </el-card>
   </template>
+
+  <el-drawer :model-value="!!clarifiedRequirement" @close="clarifying = null" :title="clarifying + ' · 需求与澄清'" size="85%">
+    <template v-if="clarifiedRequirement">
+      <p><b>{{ clarifiedRequirement.text }}</b></p>
+      <div class="toolbar"><el-tag :type="clarifiedRequirement.status === '已确认' ? 'success' : 'info'">{{ clarifiedRequirement.status === '已确认' ? '描述已确认' : '描述待审阅' }}</el-tag><span class="muted">描述审核与澄清处理分别记录</span><el-button v-if="clarifiedRequirement.seg_uid" link type="primary" @click="openSource(clarifiedRequirement)">查看原文依据</el-button></div>
+      <Questions :requirement-code="clarifying" embedded />
+    </template>
+  </el-drawer>
 
   <el-drawer :model-value="!!source" @close="source = null" title="原文" size="45%">
     <template v-if="source">
