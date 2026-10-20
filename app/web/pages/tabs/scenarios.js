@@ -161,7 +161,7 @@ export default defineComponent({
     <el-table-column label="关联场景" min-width="125"><template #default="{ row }"><el-button v-for="code in row.linked_scenarios" :key="code" link type="primary" @click="detailCode = code">{{ code }}</el-button><div v-if="row.kinds.includes('跨场景约束')" class="muted">适用：{{ row.scenario_ids.join('、') || '整个项目' }}</div></template></el-table-column>
     <el-table-column label="操作" width="85"><template #default="{ row }"><el-button link @click="dispositionEdit = clone(row)">调整归类</el-button></template></el-table-column>
   </el-table>
-  <el-drawer :model-value="!!detail" @close="detailCode = null" :title="detail ? detail.code + ' ' + detail.name : ''" size="65%">
+  <el-drawer :model-value="!!detail" @close="detailCode = null" :title="detail ? detail.code + ' ' + detail.name : ''" size="960px">
     <template v-if="detail">
       <div class="toolbar"><el-tag :type="typeOf(detail.status)">{{ requirementStatusLabel(detail.status) }}</el-tag><span class="muted">版本 {{ detail.revision }} · {{ originLabel(detail.origin) }}</span><el-button v-if="detail.status !== '已归档'" @click="startEdit(detail)">修改</el-button><el-button v-else @click="restore(detail)">恢复为待审阅</el-button><el-button v-if="detail.status !== '已归档'" link type="danger" @click="archive(detail)">归档</el-button></div>
       <el-alert v-if="detail.review_reason" :title="detail.review_reason" type="warning" :closable="false" />
@@ -186,7 +186,7 @@ export default defineComponent({
       <el-collapse><el-collapse-item v-for="r in historyRows" :key="r.revision" :title="'版本 ' + r.revision + ' · ' + r.reason"><div>{{ r.at }}</div><div>{{ r.snapshot.name }} · {{ r.snapshot.status }}</div><div>{{ r.snapshot.goal }}</div><div>关联要求：{{ r.snapshot.links.map((l) => l.req_id).join('、') }}</div></el-collapse-item></el-collapse>
     </template>
   </el-drawer>
-  <el-dialog :model-value="!!editing" @close="editing = null" :title="editing?.mode === 'split' ? '拆分场景' : editing?.mode === 'merge' ? '合并场景' : editing?.mode === 'add' ? '新增业务场景' : '编辑业务场景'" width="800px">
+  <el-dialog :model-value="!!editing" @close="editing = null" :title="editing?.mode === 'split' ? '拆分场景' : editing?.mode === 'merge' ? '合并场景' : editing?.mode === 'add' ? '新增业务场景' : '编辑业务场景'" width="960px">
     <template v-if="editing">
       <el-alert :closable="false" type="info" title="保存后需确认描述。合并或拆分会归档原场景并保留历史，必须关联原场景的全部需求；未知内容可留空。" />
       <div v-for="(draft, n) in editing.parts" :key="n" style="margin-top:16px"><h3 v-if="editing.parts.length > 1">新场景 {{ n + 1 }}</h3><ScenarioForm :draft="draft" :requirements="requirements" :sources="sources" /><el-divider /></div>
@@ -194,7 +194,7 @@ export default defineComponent({
     </template>
     <template #footer><span v-if="!canSave" class="muted">每个场景需填写名称并关联有效需求。</span><el-button @click="editing = null">取消</el-button><el-button type="primary" :disabled="!canSave" @click="save">保存草稿</el-button></template>
   </el-dialog>
-  <el-dialog :model-value="!!dispositionEdit" @close="dispositionEdit = null" title="调整要求归类与适用范围" width="550px">
+  <el-dialog :model-value="!!dispositionEdit" @close="dispositionEdit = null" title="调整要求归类与适用范围" width="560px">
     <el-form v-if="dispositionEdit" label-position="top"><p>{{ req(dispositionEdit.req_id)?.text }}</p><el-form-item label="要求归类"><el-select v-model="dispositionEdit.kinds" multiple style="width:100%"><el-option v-for="kind in dispositions" :key="kind" :value="kind" /></el-select></el-form-item><el-form-item label="跨场景约束适用范围（留空表示整个项目）"><el-select v-model="dispositionEdit.scenario_ids" multiple style="width:100%"><el-option v-for="s in view.scenarios.filter((s) => s.status !== '已归档')" :key="s.code" :value="s.code" :label="s.code + ' ' + s.name" /></el-select></el-form-item><el-form-item label="说明"><el-input v-model="dispositionEdit.note" type="textarea" /></el-form-item></el-form>
     <template #footer><el-button @click="dispositionEdit = null">取消</el-button><el-button type="primary" @click="saveDisposition">保存</el-button></template>
   </el-dialog>

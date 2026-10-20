@@ -78,11 +78,11 @@ export default defineComponent({
     <el-card shadow="never">
       <template #header><b>上传客户材料</b><p class="muted" style="margin:6px 0 0">上传文件或粘贴原文，再补充这份材料的背景和关注点。</p></template>
       <el-form label-position="top">
-        <label v-if="!form.file" class="material-upload" @dragover.prevent @drop.prevent="onDrop">
-          <b>点击上传或拖入一个文件</b><span class="muted">{{ meta.fileTypes.join(' / ') }}</span>
-          <input type="file" hidden :accept="meta.fileTypes.join(',')" @change="onFile" />
-        </label>
-        <div v-else class="file-chip">📄 {{ form.file.name }} <el-button link type="danger" @click="form.file = null">移除文件</el-button></div>
+        <input ref="materialPicker" type="file" hidden :accept="meta.fileTypes.join(',')" @change="onFile" />
+        <button v-if="!form.file" type="button" class="material-upload" @click="$refs.materialPicker.click()" @dragover.prevent @drop.prevent="onDrop">
+          <span class="upload-glyph"><UiIcon name="upload" /></span><b>选择文件或拖入上传</b><small>{{ meta.fileTypes.join(' / ') }}</small>
+        </button>
+        <div v-else class="file-chip"><UiIcon name="file" /><span>{{ form.file.name }}</span><el-button link type="danger" @click="form.file = null">移除文件</el-button></div>
         <el-collapse v-if="!form.file" style="margin-bottom:16px"><el-collapse-item title="或粘贴材料原文" name="text">
           <el-input v-model="form.text" type="textarea" :rows="7" placeholder="粘贴客户原话、会议记录或文件内容（至少 20 字）……" />
         </el-collapse-item></el-collapse>
@@ -121,7 +121,7 @@ export default defineComponent({
     </el-card>
   </div>
 
-  <el-drawer :model-value="!!preview" @close="preview = null" :title="preview?.title" size="50%">
+  <el-drawer :model-value="!!preview" @close="preview = null" :title="preview?.title" size="760px">
     <template v-if="preview"><div v-if="evidence" class="exchange-evidence"><b>引用位置 · {{ evidence.uid }} {{ evidence.chapter }}</b><blockquote>{{ evidence.text }}</blockquote><hr></div><p v-if="preview.meta.description" class="material-description">补充说明：{{ preview.meta.description }}</p><pre class="pre">{{ preview.text }}</pre></template>
   </el-drawer>`,
 });

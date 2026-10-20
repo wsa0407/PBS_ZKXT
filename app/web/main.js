@@ -6,6 +6,7 @@ import { resolve, router, setRoutes } from "./router.js";
 import ProjectList from "./pages/projects.js";
 import ProjectPage from "./pages/project.js";
 import ProductsPage from "./pages/products.js";
+import UiIcon from "./icons.js";
 
 setRoutes([
   [/^\/projects$/, ProjectList],
@@ -19,7 +20,7 @@ window.addEventListener("hashchange", resolve);
 const JobDialog = defineComponent({
   setup: () => ({ jobState }),
   template: `
-  <el-dialog v-model="jobState.visible" :title="jobState.title" width="480px" :close-on-click-modal="false" :show-close="['失败','已取消'].includes(jobState.job?.status)">
+  <el-dialog v-model="jobState.visible" :title="jobState.title" width="560px" :close-on-click-modal="false" :show-close="['失败','已取消'].includes(jobState.job?.status)">
     <div class="job-steps" v-if="jobState.job">
       <div v-for="s in jobState.job.steps" :key="s.name" class="job-step" :class="s.state">
         <span class="ic"><template v-if="s.state === 'done'">✓</template><template v-else-if="s.state === 'failed'">!</template></span>
@@ -40,20 +41,20 @@ const Shell = defineComponent({
   template: `
   <el-config-provider :locale="zhCn">
     <header class="topbar">
-      <a class="brand" href="#/projects"><span class="logo">PBS</span> 智能拆解</a>
-      <nav>
-        <a href="#/projects" :class="{ active: router.path === '/projects' }">项目</a>
-        <a href="#/products" :class="{ active: router.path.startsWith('/products') }">产品库</a>
+      <a class="brand" href="#/projects" aria-label="PBS Studio 项目首页"><span class="logo"><UiIcon name="orbit" /></span><span>PBS <strong>Studio</strong></span></a>
+      <nav aria-label="主导航">
+        <a href="#/projects" :class="{ active: router.path.startsWith('/projects') }" :aria-current="router.path.startsWith('/projects') ? 'page' : undefined"><UiIcon name="grid" />项目</a>
+        <a href="#/products" :class="{ active: router.path.startsWith('/products') }" :aria-current="router.path.startsWith('/products') ? 'page' : undefined"><UiIcon name="box" />产品库</a>
       </nav>
       <div class="crumb-bar" v-if="shell.project && router.path.startsWith('/projects/')">
         <span class="sep">/</span>
-        <b class="title">{{ shell.project.name }}</b>
+        <b class="title" :title="shell.project.name">{{ shell.project.name }}</b>
         <span class="muted-light">{{ [shell.project.customer, shell.project.industry].filter(Boolean).join(' · ') }}</span>
         <el-tag v-if="shell.project.done" type="success" size="small">本轮已完成</el-tag>
-        <a href="#" class="rename" @click.prevent="shell.rename && shell.rename()">改名</a>
+        <button class="rename" @click="shell.rename && shell.rename()">重命名</button>
       </div>
     </header>
-    <main v-if="meta.loaded"><component :is="router.component" :key="router.params.id || router.path" /></main>
+    <main v-if="meta.loaded" :class="{ 'project-main': router.path.startsWith('/projects/') }"><component :is="router.component" :key="router.params.id || router.path" /></main>
     <JobDialog />
   </el-config-provider>`,
   data: () => ({ zhCn }),
@@ -63,4 +64,4 @@ resolve();
 loadMeta().catch((error) => {
   document.getElementById("app").innerHTML = `<div style="padding:40px">无法连接服务：${error.message}</div>`;
 });
-createApp(Shell).use(ElementPlus).mount("#app");
+createApp(Shell).component("UiIcon", UiIcon).use(ElementPlus).mount("#app");

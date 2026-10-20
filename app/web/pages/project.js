@@ -1,4 +1,5 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
+import { ElMessageBox } from "element-plus";
 import { api, call, shell, jobState } from "../api.js";
 import { router } from "../router.js";
 import Chat from "./chat.js";
@@ -9,10 +10,10 @@ import Pbs from "./tabs/pbs.js";
 import Finish from "./tabs/finish.js";
 
 const TABS = [
-  { key: "materials", label: "材料" },
-  { key: "understanding", label: "需求理解" },
-  { key: "pbs", label: "PBS" },
-  { key: "finish", label: "导出" },
+  { key: "materials", label: "材料", icon: "file" },
+  { key: "understanding", label: "需求理解", icon: "layers" },
+  { key: "pbs", label: "PBS", icon: "box" },
+  { key: "finish", label: "导出", icon: "download" },
 ];
 
 export default defineComponent({
@@ -26,6 +27,7 @@ export default defineComponent({
     const understandingPane = ref(initial.pane);
     const focus = ref(null);
     const wide = ref(false);
+    const mobilePane = ref("chat");
     watch(() => [router.params.tab, router.params.view], ([key, pane]) => {
       const target = workspaceTarget(key, pane);
       tab.value = target.tab;
@@ -46,11 +48,13 @@ export default defineComponent({
     watch(() => jobState.visible, (visible) => { if (!visible) reload(); });
 
     const rename = async () => {
-      const name = prompt("项目名称", view.value.project.name);
-      if (name?.trim()) {
-        await call(() => api(`/projects/${id}`, { method: "PUT", body: { name: name.trim() } }));
+      try {
+        const { value } = await ElMessageBox.prompt("为这个项目设置一个清晰的名称。", "重命名项目", {
+          inputValue: view.value.project.name, inputValidator: value => Boolean(value?.trim()) || "请输入项目名称", confirmButtonText: "保存", cancelButtonText: "取消",
+        });
+        await call(() => api(`/projects/${id}`, { method: "PUT", body: { name: value.trim() } }));
         reload();
-      }
+      } catch (reason) { if (reason !== "cancel" && reason !== "close") throw reason; }
     };
     onMounted(() => {
       shell.rename = rename;
@@ -74,6 +78,7 @@ export default defineComponent({
       tab.value = target.tab;
       if (target.tab === "understanding") understandingPane.value = target.pane;
       focus.value = focusId;
+      mobilePane.value = "work";
       history.replaceState(null, "", `#/projects/${id}/${tab.value}${tab.value === "understanding" ? `/${understandingPane.value}` : ""}`);
     };
     provide("workspace", { open, focus, understandingPane });
@@ -88,21 +93,26 @@ export default defineComponent({
       };
     });
 
-    return { view, error, tab, TABS, open, badges, wide };
+    return { view, error, tab, TABS, open, badges, wide, mobilePane };
   },
   template: `
   <div v-if="error" class="empty">{{ error }} <a href="#/projects">返回项目列表</a></div>
   <template v-else-if="view">
-    <div class="split" :class="{ wide }">
-      <section class="pane chat-pane"><Chat :open="open" /></section>
-      <section class="pane work-pane">
-        <div class="stepbar">
-          <button v-for="t in TABS" :key="t.key" :class="{ on: tab === t.key }" @click="open(t.key)">
-            {{ t.label }}
+    <div class="mobile-panes" aria-label="工作区视图">
+      <button :aria-pressed="mobilePane === 'chat'" @click="mobilePane = 'chat'"><UiIcon name="chat" />专家对话</button>
+      <button :aria-pressed="mobilePane === 'work'" @click="mobilePane = 'work'"><UiIcon name="layers" />业务成果</button>
+    </div>
+    <div class="split" :class="{ wide, 'show-work': mobilePane === 'work' }">
+      <section class="pane chat-pane" aria-label="专家对话"><Chat :open="open" /></section>
+      <section class="pane work-pane" aria-label="业务成果">
+        <div class="workspace-head">
+        <nav class="stepbar" aria-label="业务成果导航">
+          <button v-for="t in TABS" :key="t.key" :class="{ on: tab === t.key }" :aria-current="tab === t.key ? 'page' : undefined" @click="open(t.key)">
+            <UiIcon :name="t.icon" />{{ t.label }}
             <el-tooltip v-if="badges[t.key]" :content="badges[t.key].n + ' ' + badges[t.key].tip"><span class="badge">{{ badges[t.key].n }}</span></el-tooltip>
           </button>
-          <span style="flex:1"></span>
-          <el-button link size="small" @click="wide = !wide">{{ wide ? '收窄工作区' : '放宽工作区' }}</el-button>
+        </nav>
+          <button class="icon-button workspace-resize" :aria-label="wide ? '收窄工作区' : '放宽工作区'" :title="wide ? '收窄工作区' : '放宽工作区'" :aria-pressed="wide" @click="wide = !wide"><UiIcon :name="wide ? 'collapse' : 'expand'" /></button>
         </div>
         <div class="work-body">
           <Materials v-if="tab === 'materials'" />

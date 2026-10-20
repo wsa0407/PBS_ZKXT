@@ -127,7 +127,7 @@ export default defineComponent({
   },
   template: `
   <div class="page-head">
-    <div><h2>产品目录</h2><div class="sub">共 {{ shown.length }} 个当前筛选产品。拆解时系统先从这里和产品手册中检索，再让模型匹配；请具体记录能力、边界与适配条件，匹配结果仍需结合客户要求核对。</div></div>
+    <div><h2>产品目录 <span class="muted">{{ shown.length }}</span></h2><div class="sub">维护产品能力、边界与适配条件。</div></div>
     <div class="actions">
       <el-checkbox v-model="includeArchived">显示已归档</el-checkbox>
       <el-input v-model="kw" placeholder="搜索产品" clearable style="width:180px" />
@@ -149,16 +149,16 @@ export default defineComponent({
         <template #default="{ row }"><b>{{ row.name }}</b> <span class="muted">{{ row.id }}</span><div class="muted">{{ row.summary }}</div></template>
       </el-table-column>
       <el-table-column label="能力（匹配依据）" min-width="260">
-        <template #default="{ row }"><el-tag v-for="c in row.capabilities" :key="c" type="success" size="small" class="wrap">{{ c }}</el-tag></template>
+        <template #default="{ row }"><ul class="feature-list"><li v-for="c in row.capabilities" :key="c">{{ c }}</li></ul></template>
       </el-table-column>
       <el-table-column label="能力边界与使用条件" min-width="260">
-        <template #default="{ row }"><el-tag v-for="c in row.limits" :key="c" type="warning" size="small" class="wrap">{{ c }}</el-tag><span v-if="!row.limits.length" class="muted">—</span></template>
+        <template #default="{ row }"><ul v-if="row.limits.length" class="feature-list"><li v-for="c in row.limits" :key="c">{{ c }}</li></ul><span v-else class="muted">—</span></template>
       </el-table-column>
       <el-table-column label="产品属性" width="180"><template #default="{ row }"><el-tag size="small">{{ row.metadata?.delivery_source || '自有产品' }}</el-tag><div>{{ row.metadata?.kind || '未分类' }} · {{ row.metadata?.availability || '待核实' }}</div><div class="muted">{{ row.metadata?.data_kind }}</div><el-tag v-if="row.metadata?.active === false" type="info" size="small">已归档</el-tag></template></el-table-column>
       <el-table-column label="信创适配" prop="xinchuang" width="180"><template #default="{ row }"><span class="muted">{{ row.xinchuang }}</span></template></el-table-column>
       <el-table-column label="手册" width="110">
         <template #default="{ row }">
-          <div v-for="d in docsOf(row.id)" :key="d.id" class="muted" :title="d.name">📄 {{ d.name.slice(0, 8) }}</div>
+          <div v-for="d in docsOf(row.id)" :key="d.id" class="manual-name muted"><UiIcon name="file" />{{ d.name }}</div>
           <el-button v-if="row.metadata?.active !== false" link size="small" @click="uploadManual(row.id)">上传手册</el-button>
         </template>
       </el-table-column>
@@ -182,7 +182,7 @@ export default defineComponent({
     </div>
   </el-collapse-item></el-collapse>
 
-  <el-dialog :model-value="!!editing" @close="editing = null" :title="editing?.id ? '编辑产品 ' + editing.id : '新增产品'" width="720px">
+  <el-dialog :model-value="!!editing" @close="editing = null" :title="editing?.id ? '编辑产品 ' + editing.id : '新增产品'" width="760px">
     <el-form v-if="editing" label-position="top">
       <div class="row"><el-form-item label="产品名称" style="flex:1" required><el-input v-model="editing.name" /></el-form-item><el-form-item label="单位"><el-input v-model="editing.unit" style="width:90px" placeholder="套/台/架" /></el-form-item></div>
       <el-form-item label="简介"><el-input v-model="editing.summary" /></el-form-item>
@@ -206,7 +206,7 @@ export default defineComponent({
     <template #footer><el-button @click="editing = null">取消</el-button><el-button type="primary" :disabled="!editing?.name.trim()" @click="save">保存</el-button></template>
   </el-dialog>
 
-  <el-dialog :model-value="!!draft" @close="draft = null" title="确认模型整理的产品资料" width="820px">
+  <el-dialog :model-value="!!draft" @close="draft = null" title="确认模型整理的产品资料" width="960px">
     <template v-if="draft">
       <el-alert type="info" :closable="false" show-icon style="margin-bottom:10px" :title="'来自《' + draft.doc.name + '》。取消勾选的条目不会入库；带 ⚠ 的条目，模型给出的原文引用在手册里找不到，请对照手册核实。'" />
       <el-form label-position="top">

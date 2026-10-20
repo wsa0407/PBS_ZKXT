@@ -285,7 +285,7 @@ export default defineComponent({
     </el-card>
   </template>
 
-  <el-drawer :model-value="!!editing" @close="editing = null" :title="editing?.id ? '编辑 ' + editing.code : '新增 PBS 项'" size="520px">
+  <el-drawer :model-value="!!editing" @close="editing = null" :title="editing?.id ? '编辑 ' + editing.code : '新增 PBS 项'" size="600px">
     <el-form v-if="editing" label-position="top">
       <el-form-item label="名称"><el-input v-model="editing.name" /></el-form-item>
       <el-form-item label="规格说明"><el-input v-model="editing.spec" type="textarea" :rows="2" /></el-form-item>
@@ -339,7 +339,7 @@ export default defineComponent({
     <template #footer><el-button @click="editing = null">取消</el-button><el-button type="primary" :disabled="!editing?.name.trim()" @click="save">保存</el-button></template>
   </el-drawer>
 
-  <el-dialog :model-value="!!rematch" @close="rematch = null" title="重新匹配产品" width="700px">
+  <el-dialog :model-value="!!rematch" @close="rematch = null" title="重新匹配产品" width="760px">
     <template v-if="rematch">
       <div><b>{{ rematch.item.code }} {{ rematch.item.name }}</b> <span class="muted">{{ rematch.item.source }}</span></div>
       <template v-if="!rematch.result">

@@ -117,25 +117,27 @@ export default defineComponent({
         <el-radio-button value="已确认">描述已确认 {{ counts['已确认'] }}</el-radio-button>
         <el-radio-button value="已删除">已删除 {{ counts['已删除'] || 0 }}</el-radio-button>
       </el-radio-group>
-      <el-select v-model="filter.tier" placeholder="核对提示" clearable size="small" style="width:120px">
-        <el-option v-for="t in ['必审', '抽检', '批量确认']" :key="t" :value="t" :label="reviewLabel(t)" />
-      </el-select>
-      <el-select v-model="filter.category" placeholder="类别" clearable size="small" style="width:110px">
-        <el-option v-for="c in meta.categories" :key="c" :value="c" :label="c" />
-      </el-select>
-      <el-input v-model="filter.kw" placeholder="搜索" clearable size="small" style="width:160px" />
-      <el-checkbox v-model="filter.needsClarification">有关联待处理问题</el-checkbox>
       <span style="flex:1"></span>
       <el-button size="small" :disabled="!selectedCodes.length" @click="confirm(selectedCodes)">确认所选描述（{{ selectedCodes.length }}）</el-button>
       <el-button size="small" @click="adding = { text: '', category: '功能', priority: '重要', source_note: '' }">新增需求</el-button>
+    </div>
+    <div class="toolbar filters">
+      <el-select v-model="filter.tier" aria-label="筛选核对提示" placeholder="核对提示" clearable size="small" style="width:120px">
+        <el-option v-for="t in ['必审', '抽检', '批量确认']" :key="t" :value="t" :label="reviewLabel(t)" />
+      </el-select>
+      <el-select v-model="filter.category" aria-label="筛选需求类别" placeholder="类别" clearable size="small" style="width:110px">
+        <el-option v-for="c in meta.categories" :key="c" :value="c" :label="c" />
+      </el-select>
+      <el-input v-model="filter.kw" aria-label="搜索需求" placeholder="搜索需求" clearable size="small" style="width:160px" />
+      <el-checkbox v-model="filter.needsClarification">有关联待处理问题</el-checkbox>
     </div>
 
     <el-card shadow="never" body-style="padding:0">
       <el-table :data="rows" @selection-change="(v) => (selected = v)" row-key="code" empty-text="没有符合条件的需求">
         <el-table-column type="selection" width="38" :selectable="(r) => r.status === '待确认'" />
-        <el-table-column label="编号" prop="code" width="66" />
-        <el-table-column label="需求" min-width="320">
+        <el-table-column label="需求条目" min-width="340">
           <template #default="{ row }">
+            <div class="record-heading"><span class="record-code">{{ row.code }}</span><el-tooltip v-if="row.review && row.status === '待确认'" :content="REVIEW_HELP[row.review]"><el-tag :type="TIER_TYPE[row.review]" size="small" effect="plain">{{ reviewLabel(row.review) }}</el-tag></el-tooltip></div>
             <span :id="'requirement-' + row.code" :class="{ deleted: row.status === '已删除', 'requirement-focus': focus === row.code }">{{ row.text }}</span>
             <div v-if="row.status !== '已删除'" class="requirement-state">
               <span class="requirement-review" :class="{ confirmed: row.status === '已确认' }">{{ row.status === '已确认' ? '描述已确认' : '描述待审阅' }}</span>
@@ -152,24 +154,18 @@ export default defineComponent({
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="来源" width="150">
+        <el-table-column label="依据与关联" min-width="180">
           <template #default="{ row }">
             <el-button v-if="segByUid.has(row.seg_uid)" link type="primary" @click="openSource(row)">{{ segLabel(row) }}</el-button>
             <span v-else class="muted">{{ segLabel(row) }}</span>
-            <div v-if="row.seg_uid && !row.quote_verified" class="muted" style="color:#b42318">原文引用待核对</div>
+            <div v-if="row.seg_uid && !row.quote_verified" class="muted" style="color:var(--critical)">原文引用待核对</div>
+            <div class="record-context"><el-button v-for="code in row.scenario_ids" :key="code" link type="primary" @click="open('scenarios', code)">{{ code }}</el-button><div class="muted">{{ row.disposition?.kinds.join('、') || '尚未归类' }}</div></div>
+            <div v-if="row.leaves.length" class="record-context"><span class="muted">PBS </span><el-tag v-for="c in row.leaves" :key="c" size="small" type="info">{{ c }}</el-tag></div>
+            <span v-else-if="view.items.length && row.deliverable && row.status !== '已删除'" class="muted">尚未关联 PBS</span>
           </template>
         </el-table-column>
-        <el-table-column label="类别" prop="category" width="64" />
-        <el-table-column label="优先级" prop="priority" width="70" />
-        <el-table-column label="核对提示" width="100">
-          <template #default="{ row }"><el-tooltip v-if="row.review && row.status === '待确认'" :content="REVIEW_HELP[row.review]"><el-tag :type="TIER_TYPE[row.review]" size="small" effect="plain">{{ reviewLabel(row.review) }}</el-tag></el-tooltip><span v-else class="muted">{{ requirementStatusLabel(row.status) }}</span></template>
-        </el-table-column>
-        <el-table-column label="场景与要求归类" width="150"><template #default="{ row }"><el-button v-for="code in row.scenario_ids" :key="code" link type="primary" @click="open('scenarios', code)">{{ code }}</el-button><div class="muted">{{ row.disposition?.kinds.join('、') || '尚未归类' }}</div></template></el-table-column>
-        <el-table-column label="承接 PBS" width="110">
-          <template #default="{ row }">
-            <el-tag v-for="c in row.leaves" :key="c" size="small" type="info">{{ c }}</el-tag>
-            <span v-if="!row.leaves.length && view.items.length && row.deliverable && row.status !== '已删除'" class="muted">尚未关联</span>
-          </template>
+        <el-table-column label="属性" width="90">
+          <template #default="{ row }"><div>{{ row.category }}</div><div class="muted">{{ row.priority }}</div></template>
         </el-table-column>
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
@@ -187,7 +183,7 @@ export default defineComponent({
     </el-card>
   </template>
 
-  <el-drawer :model-value="!!source" @close="source = null" title="原文" size="45%">
+  <el-drawer :model-value="!!source" @close="source = null" title="原文" size="760px">
     <template v-if="source">
       <div class="muted">材料{{ source.seg.material_no }}「{{ source.seg.material_title }}」{{ source.seg.chapter ? ' · ' + source.seg.chapter : '' }}</div>
       <div v-for="s in source.context" :key="s.uid" class="seg-line" :class="{ hit: s.uid === source.seg.uid }">
@@ -200,7 +196,7 @@ export default defineComponent({
   </el-drawer>
 
   <el-dialog :model-value="!!editing" @close="editing = null" title="修改需求" width="560px">
-    <el-form v-if="editing" label-width="64px">
+    <el-form v-if="editing" label-position="top">
       <el-form-item label="内容"><el-input v-model="editing.text" type="textarea" :rows="3" /></el-form-item>
       <el-form-item label="类别"><el-select v-model="editing.category"><el-option v-for="c in meta.categories" :key="c" :value="c" :label="c" /></el-select></el-form-item>
       <el-form-item label="优先级"><el-radio-group v-model="editing.priority"><el-radio-button v-for="p in ['必须', '重要', '一般']" :key="p" :value="p">{{ p }}</el-radio-button></el-radio-group></el-form-item>
@@ -210,7 +206,7 @@ export default defineComponent({
   </el-dialog>
 
   <el-dialog :model-value="!!adding" @close="adding = null" title="新增需求" width="560px">
-    <el-form v-if="adding" label-width="64px">
+    <el-form v-if="adding" label-position="top">
       <el-form-item label="内容"><el-input v-model="adding.text" type="textarea" :rows="3" /></el-form-item>
       <el-form-item label="类别"><el-select v-model="adding.category"><el-option v-for="c in meta.categories" :key="c" :value="c" :label="c" /></el-select></el-form-item>
       <el-form-item label="优先级"><el-radio-group v-model="adding.priority"><el-radio-button v-for="p in ['必须', '重要', '一般']" :key="p" :value="p">{{ p }}</el-radio-button></el-radio-group></el-form-item>
@@ -220,7 +216,7 @@ export default defineComponent({
     <template #footer><el-button @click="adding = null">取消</el-button><el-button type="primary" :disabled="!adding?.text.trim()" @click="add">新增并确认描述</el-button></template>
   </el-dialog>
 
-  <el-dialog :model-value="!!paramEdit" @close="paramEdit = null" :title="'测算参数：' + (paramEdit?.label ?? '')" width="480px">
+  <el-dialog :model-value="!!paramEdit" @close="paramEdit = null" :title="'测算参数：' + (paramEdit?.label ?? '')" width="560px">
     <template v-if="paramEdit">
       <div class="muted" style="margin-bottom:8px">当前取值：{{ paramEdit.value === null ? '暂无可用数值' : paramEdit.value + paramEdit.unit + '（' + paramEdit.status + '）' }}</div>
       <div v-for="c in paramEdit.candidates" :key="c.req_id" class="muted">{{ c.req_id }}：“{{ c.quote }}” → {{ c.value }}</div>

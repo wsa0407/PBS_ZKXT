@@ -1,4 +1,4 @@
-import { defineComponent, ref, onMounted } from "vue";
+import { computed, defineComponent, ref, onMounted } from "vue";
 import { ElMessageBox } from "element-plus";
 import { api, call, fmtTime, meta } from "../api.js";
 import { projectStage } from "../presentation.js";
@@ -8,6 +8,9 @@ export default defineComponent({
     const projects = ref([]);
     const loading = ref(true);
     const dialog = ref(false);
+    const search = ref("");
+    const creating = ref(false);
+    const shown = computed(() => projects.value.filter(p => !search.value.trim() || `${p.name} ${p.customer} ${p.industry}`.toLowerCase().includes(search.value.trim().toLowerCase())));
     const form = ref({ name: "", customer: "", industry: "" });
 
     const load = async () => {
@@ -20,8 +23,12 @@ export default defineComponent({
     const stageOf = projectStage;
 
     const create = async () => {
-      const p = await call(() => api("/projects", { method: "POST", body: form.value }));
-      if (p) location.hash = `#/projects/${p.id}/materials`;
+      if (creating.value || !form.value.name.trim()) return;
+      creating.value = true;
+      try {
+        const p = await call(() => api("/projects", { method: "POST", body: form.value }));
+        if (p) location.hash = `#/projects/${p.id}/materials`;
+      } finally { creating.value = false; }
     };
 
     const remove = async (p) => {
@@ -30,37 +37,29 @@ export default defineComponent({
       load();
     };
 
-    const openProject = (p) => (location.hash = `#/projects/${p.id}`);
-
-    return { projects, loading, dialog, form, meta, create, remove, stageOf, fmtTime, openProject };
+    return { projects, shown, search, loading, creating, dialog, form, meta, create, remove, stageOf, fmtTime };
   },
   template: `
-  <div class="page-head">
-    <div><h1>项目</h1><div class="sub">上传客户材料，理解需求与业务场景，编制 PBS，检查后导出。</div></div>
-    <el-button type="primary" @click="form = { name: '', customer: '', industry: '' }; dialog = true">新建项目</el-button>
-  </div>
-  <el-card shadow="never" body-style="padding:0">
-    <el-table :data="projects" v-loading="loading" empty-text="还没有项目，点右上角新建" @row-click="openProject" row-class-name="clickable">
-      <el-table-column label="项目" min-width="240">
-        <template #default="{ row }"><button class="text-action" @click.stop="openProject(row)">{{ row.name }}</button><div class="muted">{{ row.customer || '—' }}</div></template>
-      </el-table-column>
-      <el-table-column prop="industry" label="行业" width="90" />
-      <el-table-column label="阶段" width="110">
-        <template #default="{ row }"><el-tag :type="stageOf(row).type" size="small">{{ stageOf(row).label }}</el-tag></template>
-      </el-table-column>
-      <el-table-column label="材料" prop="materials" width="70" align="right" />
-      <el-table-column label="需求（描述已确认）" width="160" align="right">
-        <template #default="{ row }">{{ row.requirements }}<span class="muted">（{{ row.confirmed }}）</span></template>
-      </el-table-column>
-      <el-table-column label="待澄清" prop="open_questions" width="80" align="right" />
-      <el-table-column label="PBS 项" prop="pbs_items" width="80" align="right" />
-      <el-table-column label="更新时间" width="130"><template #default="{ row }"><span class="muted">{{ fmtTime(row.updated_at) }}</span></template></el-table-column>
-      <el-table-column label="操作" width="70"><template #default="{ row }"><div class="ops"><el-button link type="danger" @click.stop="remove(row)">删除</el-button></div></template></el-table-column>
-    </el-table>
-  </el-card>
+  <section class="projects-home">
+    <div class="project-list-head">
+      <h1>项目 <span>{{ projects.length }}</span></h1>
+      <div class="actions"><el-input v-model="search" aria-label="搜索项目或客户" placeholder="搜索项目或客户" clearable class="project-search" /><el-button type="primary" @click="form = { name: '', customer: '', industry: '' }; dialog = true"><UiIcon name="plus" />新建项目</el-button></div>
+    </div>
+    <div v-if="loading" class="project-grid" aria-busy="true" aria-label="加载项目"><div v-for="n in 3" :key="n" class="project-card"><el-skeleton :rows="4" animated /></div></div>
+    <div v-else-if="shown.length" class="project-grid">
+      <article v-for="p in shown" :key="p.id" class="project-card">
+        <div class="project-card-top"><span class="project-glyph"><UiIcon name="layers" /></span><el-tag :type="stageOf(p).type" size="small">{{ stageOf(p).label }}</el-tag></div>
+        <a class="project-title" :href="'#/projects/' + p.id"><h3>{{ p.name }}</h3><UiIcon name="arrow" /></a>
+        <p class="project-customer">{{ [p.customer, p.industry].filter(Boolean).join(' · ') || '客户信息待补充' }}</p>
+        <div class="project-metrics"><div><b>{{ p.materials }}</b><span>份材料</span></div><div><b>{{ p.requirements }}</b><span>条需求 · {{ p.confirmed }} 已确认</span></div><div><b>{{ p.pbs_items }}</b><span>PBS 项</span></div></div>
+        <div class="project-card-foot"><div><div v-if="p.open_questions" class="project-pending">{{ p.open_questions }} 项待澄清</div><span class="muted">更新于 {{ fmtTime(p.updated_at) }}</span></div><button class="icon-button delete-project" :aria-label="'删除项目：' + p.name" title="删除项目" @click="remove(p)"><UiIcon name="trash" /></button></div>
+      </article>
+    </div>
+    <div v-else class="empty home-empty"><UiIcon name="layers" /><h3>{{ search ? '没有匹配的项目' : '还没有项目' }}</h3><p>{{ search ? '试试其他项目名称或客户名称。' : '点击“新建项目”，然后添加客户材料。' }}</p></div>
+  </section>
 
-  <el-dialog v-model="dialog" title="新建项目" width="480px">
-    <el-form label-width="80px" @submit.prevent="create">
+  <el-dialog v-model="dialog" title="新建项目" width="560px">
+    <el-form label-position="top" @submit.prevent="create">
       <el-form-item label="项目名称" required><el-input v-model="form.name" placeholder="例如：某市交警支队道路无人机巡逻" autofocus /></el-form-item>
       <el-form-item label="客户"><el-input v-model="form.customer" placeholder="可选" /></el-form-item>
       <el-form-item label="行业">
@@ -69,6 +68,6 @@ export default defineComponent({
         </el-select>
       </el-form-item>
     </el-form>
-    <template #footer><el-button @click="dialog = false">取消</el-button><el-button type="primary" :disabled="!form.name.trim()" @click="create">创建并添加材料</el-button></template>
+    <template #footer><el-button @click="dialog = false">取消</el-button><el-button type="primary" :loading="creating" :disabled="!form.name.trim()" @click="create">创建并添加材料</el-button></template>
   </el-dialog>`,
 });

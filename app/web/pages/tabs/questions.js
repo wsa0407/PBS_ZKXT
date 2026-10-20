@@ -160,7 +160,7 @@ export default defineComponent({
     <template #footer><el-button @click="answering = null">取消</el-button><el-button type="primary" :disabled="!answering?.answer.trim() || view.job?.status === '处理中'" @click="submitAnswer">提交并分析</el-button></template>
   </el-dialog>
 
-  <el-dialog :model-value="!!review" @close="review = null" title="答复带来的变更建议" width="720px">
+  <el-dialog :model-value="!!review" @close="review = null" title="答复带来的变更建议" width="760px">
     <template v-if="review">
       <div class="q-text">{{ review.q.question }}</div>
       <div class="answer"><b>客户答复：</b>{{ review.q.answer }}</div>
@@ -189,7 +189,7 @@ export default defineComponent({
     </template>
   </el-dialog>
 
-  <el-dialog :model-value="!!adding" @close="adding = null" title="添加澄清问题" width="520px">
+  <el-dialog :model-value="!!adding" @close="adding = null" title="添加澄清问题" width="560px">
     <el-form v-if="adding" label-position="top">
       <el-form-item label="问题"><el-input v-model="adding.question" type="textarea" :rows="3" /></el-form-item>
       <el-form-item label="影响"><el-radio-group v-model="adding.impact"><el-radio-button v-for="i in ['影响废标风险', '影响报价', '影响方案']" :key="i" :value="i">{{ impactLabel(i) }}</el-radio-button></el-radio-group></el-form-item>

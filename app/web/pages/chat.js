@@ -214,30 +214,29 @@ export default defineComponent({
   template: `
   <div class="chat" @dragover.prevent @drop.prevent="onDrop">
     <div class="chat-head">
-      <b>专家协作</b>
-      <span style="flex:1"></span>
+      <div class="chat-heading"><span class="chat-mark"><UiIcon name="spark" /></span><b>专家协作</b></div>
+      <el-button class="clear-conversation" link size="small" @click="clear" v-if="messages.length">隐藏历史</el-button>
+      <div class="model-control">
       <el-select v-model="modelState.current" size="small" filterable allow-create class="model-select"
-        title="全局默认模型，后续处理任务将使用此模型" placeholder="选择或输入模型 ID" :disabled="busy || modelState.saving" @change="changeModel" @visible-change="(v) => v && refreshModels()" no-data-text="可输入 BAI 模型 ID">
+        aria-label="专家使用的模型" title="全局默认模型，后续处理任务将使用此模型" placeholder="选择或输入模型 ID" :disabled="busy || modelState.saving" @change="changeModel" @visible-change="(v) => v && refreshModels()" no-data-text="可输入 BAI 模型 ID">
         <el-option-group v-for="g in modelGroups" :key="g.label" :label="g.label">
           <el-option v-for="m in g.models" :key="m" :label="m" :value="m" />
         </el-option-group>
       </el-select>
-      <el-button link size="small" :loading="modelState.loading" :disabled="modelState.saving" @click="refreshModels(true)">刷新模型列表</el-button>
-      <el-button link size="small" @click="clear" v-if="messages.length">隐藏此前对话</el-button>
+      <el-button class="icon-button" link size="small" aria-label="刷新模型列表" title="刷新模型列表" :loading="modelState.loading" :disabled="modelState.saving" @click="refreshModels(true)"><UiIcon v-if="!modelState.loading" name="refresh" /></el-button>
+      </div>
     </div>
     <div v-if="modelState.error" class="model-status" role="status" :title="modelState.error">BAI 模型列表暂不可用，可使用已有选项或输入模型 ID。</div>
 
-    <div class="expert-roster"><span class="materials">材料拆解</span><span class="understanding">需求理解</span><span class="pbs">PBS编制</span></div>
+    <div class="expert-roster" aria-label="项目专家"><span class="materials"><i>材</i>材料拆解</span><span class="understanding"><i>需</i>需求理解</span><span class="pbs"><i>P</i>PBS 编制</span></div>
     <div class="chat-body" ref="scroller" @scroll="onScroll">
       <div v-if="empty" class="chat-welcome">
-        <div class="bot-avatar">PBS</div>
-        <div class="bubble bot">
-          三位专家在这里协作，你可以随时补充信息、纠正方向。<br />{{ hint || '继续说吧，比如“这个项目机场改成 12 个”“为什么要外采 GPU”“再加一条夜间飞行的要求”。' }}
+        <h2>{{ view.steps.materials.count ? '继续讨论项目' : '添加客户材料' }}</h2>
+        <p>{{ hint || '输入问题或补充要求；使用 @ 指定专家。' }}</p>
           <div v-if="samples.length && !view.steps.materials.count" class="samples">
-            <div class="muted" style="margin:8px 0 4px">想先看看效果？选一个示例填入输入框：</div>
+            <div class="muted" style="margin:8px 0 4px">填入示例材料：</div>
             <el-button v-for="s in samples" :key="s.id" size="small" @click="useSample(s)">{{ s.label }}</el-button>
           </div>
-        </div>
       </div>
 
       <div v-for="m in messages" :key="m.id" class="msg" :class="[m.role, m.payload.sender, { 'system-message': m.payload.sender === 'system' }]">
@@ -247,7 +246,7 @@ export default defineComponent({
           <div v-if="m.role === 'user' && m.payload.recipient" class="human-recipient">{{ m.payload.recipients?.length ? m.payload.recipients.map(r => expertLabels[r]).join('、') : expertLabels[m.payload.recipient] || '专家群' }}</div>
           <div class="content">{{ m.payload.collaboration && m.content.length > 220 && !expanded[m.id] ? m.content.slice(0, 220) + '…' : m.content }}</div>
           <button v-if="m.payload.collaboration && m.content.length > 220" class="text-action" @click="expanded[m.id] = !expanded[m.id]">{{ expanded[m.id] ? '收起' : '展开完整内容' }}</button>
-          <div v-if="m.payload.attachment" class="muted">📄 {{ m.payload.attachment.name }}</div>
+          <div v-if="m.payload.attachment" class="message-attachment"><UiIcon name="file" />{{ m.payload.attachment.name }}</div>
 
           <div v-for="(r, k) in (m.payload.results || [])" :key="'r' + k" class="result" :class="{ bad: !r.ok }">{{ r.ok ? '✓' : '✗' }} {{ r.text }}</div>
 
@@ -313,19 +312,23 @@ export default defineComponent({
     <div class="chat-foot">
       <div v-if="progress" class="chat-activity" role="status" aria-live="polite"><i class="spin"></i><span>{{ currentStep?.name || '正在处理' }}<template v-if="currentStep?.detail"> · {{ currentStep.detail }}</template>…</span></div>
       <div v-if="!busy && ['paused','failed'].includes(collaboration.task?.status)" class="task-resume"><span>{{ collaboration.task.status === 'paused' ? '任务已暂停，补充会先保存' : '协作尚未完成，已有成果保留' }}</span><el-button size="small" :loading="resuming" @click="resume">继续处理</el-button></div>
-      <div class="composer-hint">{{ recipients.length ? '已 @ ' + recipients.map(r => expertLabels[r]).join('、') : '发到专家群，由相关专家认领；输入 @ 可指定专家' }}</div>
-      <div v-if="file" class="file-chip">📄 {{ file.name }} <el-button link type="danger" size="small" @click="file = null">移除</el-button></div>
       <div class="input">
+        <div v-if="file" class="file-chip"><UiIcon name="file" /><span>{{ file.name }}</span><el-button link type="danger" size="small" @click="file = null">移除</el-button></div>
         <div class="composer-field">
           <div v-if="mention?.options.length" id="expert-mentions" class="mention-menu" role="listbox" aria-label="选择专家">
             <button v-for="(expert, index) in mention.options" :id="'mention-' + index" :key="expert.id" type="button" role="option" :aria-selected="index === mentionIndex" :class="{ selected: index === mentionIndex }" @mousedown.prevent @click="chooseMention(expert)">@{{ expert.label }}</button>
           </div>
-          <textarea ref="composer" v-model="text" class="chat-composer" rows="1" :disabled="sending" aria-label="给专家发送消息" aria-autocomplete="list" :aria-controls="mention?.options.length ? 'expert-mentions' : undefined" :aria-activedescendant="mention?.options.length ? 'mention-' + mentionIndex : undefined"
+          <textarea ref="composer" v-model="text" class="chat-composer" rows="2" :disabled="sending" aria-label="给专家发送消息" aria-autocomplete="list" :aria-controls="mention?.options.length ? 'expert-mentions' : undefined" :aria-activedescendant="mention?.options.length ? 'mention-' + mentionIndex : undefined"
             placeholder="直接说你的想法，或 @ 专家……" @input="updateMention" @click="updateMention" @keyup.left="updateMention" @keyup.right="updateMention" @keydown="onKey" @blur="mention = null" />
         </div>
-        <label class="attach" title="上传文件"><input type="file" hidden :accept="meta.fileTypes.join(',')" @change="onFile" />📎</label>
-        <el-button type="primary" :loading="sending" :disabled="sending || (!text.trim() && !file)" @click="submit">发送</el-button>
+        <div class="composer-tools">
+          <input ref="filePicker" type="file" hidden :accept="meta.fileTypes.join(',')" @change="onFile" />
+          <button class="icon-button attach" title="添加附件" aria-label="添加附件" :disabled="sending" @click="$refs.filePicker.click()"><UiIcon name="clip" /></button>
+          <span class="composer-shortcut">Enter 发送 · Shift Enter 换行</span>
+          <el-button class="send-button" type="primary" :loading="sending" :disabled="sending || (!text.trim() && !file)" @click="submit"><span>发送</span><UiIcon name="send" /></el-button>
+        </div>
       </div>
+      <div class="composer-hint">{{ recipients.length ? '发送给 ' + recipients.map(r => expertLabels[r]).join('、') : '发送到专家群 · 输入 @ 指定专家' }}</div>
     </div>
   </div>`,
 });

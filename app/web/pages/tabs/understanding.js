@@ -25,15 +25,17 @@ export default defineComponent({
   },
   template: `
   <div class="understanding-header">
-    <div><b>需求理解</b><p class="muted">逐条核对客户要求，按业务场景组织，并持续补全未明确的内容。</p></div>
+    <div><h1>需求理解</h1><p class="muted">核对客户要求，组织业务场景，补全尚未明确的信息。</p></div>
+    <div class="actions">
     <el-button v-if="view.steps.requirements.total" :disabled="starting || view.job?.status === '处理中'" @click="approvalVisible = true">审阅本轮 PBS 输入范围</el-button>
     <el-button v-if="action" type="primary" :loading="starting" :disabled="view.job?.status === '处理中'" @click="analyze">{{ action.label }}</el-button>
+    </div>
   </div>
-  <div class="understanding-views" role="tablist" aria-label="需求理解视图">
-    <button role="tab" :aria-selected="pane === 'requirements'" :class="{ active: pane === 'requirements' }" @click="open('requirements')"><b>需求条目 <span>{{ view.steps.requirements.total }}</span></b><small>具体要求与原文依据</small></button>
-    <button role="tab" :aria-selected="pane === 'scenarios'" :class="{ active: pane === 'scenarios' }" @click="open('scenarios')"><b>业务场景 <span>{{ view.scenarioCoverage.active }}</span></b><small>这些要求支撑什么工作</small></button>
-    <button role="tab" :aria-selected="pane === 'questions'" :class="{ active: pane === 'questions' }" @click="open('questions')"><b>待澄清事项 <span>{{ view.steps.questions.open + view.steps.questions.answered }}</span></b><small>信息缺口与待采纳的答复</small></button>
-  </div>
+  <nav class="understanding-views" aria-label="需求理解视图">
+    <button :aria-current="pane === 'requirements' ? 'page' : undefined" :class="{ active: pane === 'requirements' }" @click="open('requirements')"><b>需求条目 <span>{{ view.steps.requirements.total }}</span></b><small>具体要求与原文依据</small></button>
+    <button :aria-current="pane === 'scenarios' ? 'page' : undefined" :class="{ active: pane === 'scenarios' }" @click="open('scenarios')"><b>业务场景 <span>{{ view.scenarioCoverage.active }}</span></b><small>这些要求支撑什么工作</small></button>
+    <button :aria-current="pane === 'questions' ? 'page' : undefined" :class="{ active: pane === 'questions' }" @click="open('questions')"><b>待澄清事项 <span>{{ view.steps.questions.open + view.steps.questions.answered }}</span></b><small>信息缺口与待采纳的答复</small></button>
+  </nav>
   <Requirements v-if="pane === 'requirements'" />
   <Scenarios v-else-if="pane === 'scenarios'" />
   <Questions v-else />
