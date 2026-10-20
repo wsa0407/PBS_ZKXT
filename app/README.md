@@ -14,6 +14,8 @@ npm run check   # 提交前执行：ESLint + 前端模板编译检查 + 测试
 
 要求 Node ≥ 22.13（使用内置 `node:sqlite`）。模型配置读仓库根目录 `.env`，从 `.env.example` 复制后填写：`BAI_API_KEY`、`BAI_BASE_URL`；`APP_MODEL` 指定对话和拆解用的模型（默认 `gpt-5.4-mini`）；`EMBED_MODEL` 指定向量模型（默认 `text-embedding-3-small`）。
 
+向量服务独立配置：`EMBED_PROVIDER=openai` 使用OpenAI兼容接口（`EMBED_BASE_URL`填API根地址）；`EMBED_PROVIDER=dashscope`使用阿里云原生接口，根地址为 `https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api/v1`，也可填写完整的 `/services/embeddings/text-embedding/text-embedding` 地址。密钥使用 `EMBED_API_KEY`，模型使用 `EMBED_MODEL`（例如 `qwen3.7-text-embedding`），不复用对话密钥。原生接口区分query/document，并按模型批量限制分批；向量缓存按服务地址、模型与编码策略隔离。协议参考[阿里云官方文档](https://www.alibabacloud.com/help/en/model-studio/text-embedding-synchronous-api)。
+
 向量接口不可用时，系统自动退回关键词检索，页面右上角会显示当前检索模式。`APP_EMBED=off` 可强制关闭向量检索，`APP_LLM_CACHE=on` 会缓存相同提示词的模型结果（演示彩排用，默认关闭）。
 
 ## 怎么用

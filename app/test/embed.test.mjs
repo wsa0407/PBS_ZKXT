@@ -21,6 +21,8 @@ globalThis.fetch = async (url, init) => {
 };
 after(() => (globalThis.fetch = realFetch));
 
+process.env.EMBED_PROVIDER = "openai";
+process.env.APP_EMBED = "on";
 process.env.EMBED_BASE_URL = "https://embed.example.com/v1/";
 process.env.EMBED_API_KEY = "sk-test";
 process.env.EMBED_MODEL = "Qwen/Qwen3-Embedding-8B";

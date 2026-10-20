@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { embed, embedModel, listEmbeddingModels } from "./embed.mjs";
+import { embed, embedModel, embeddingCacheKey, listEmbeddingModels } from "./embed.mjs";
 import { normalize } from "../engine/text.mjs";
 import { getDb, tx } from "./db.mjs";
 
@@ -183,6 +183,7 @@ const toBlob = (vector) => new Uint8Array(Float32Array.from(vector).buffer);
 const fromBlob = (blob) => new Float32Array(Uint8Array.from(blob).buffer);
 
 function cosine(a, b) {
+  if (a.length !== b.length) throw new Error("Embedding query and document dimensions do not match");
   let dot = 0;
   let na = 0;
   let nb = 0;
@@ -194,30 +195,22 @@ function cosine(a, b) {
   return dot / (Math.sqrt(na) * Math.sqrt(nb) || 1);
 }
 
-// text-embedding-v2 accepts at most 25 texts per request; stay under it.
-const EMBED_BATCH = 20;
-
-async function embedAll(texts, { query = false } = {}) {
-  const out = [];
-  for (let i = 0; i < texts.length; i += EMBED_BATCH) out.push(...(await embed(texts.slice(i, i + EMBED_BATCH), { query })));
-  return out;
-}
-
-async function chunkVectors(chunks, model) {
+async function chunkVectors(chunks) {
+  const cacheKey = embeddingCacheKey();
   const db = getDb();
   const get = db.prepare("SELECT vector FROM embed_cache WHERE hash = ? AND model = ?");
   const vectors = new Map();
   const missing = [];
   for (const c of chunks) {
-    const row = get.get(c.hash, model);
+    const row = get.get(c.hash, cacheKey);
     if (row) vectors.set(c.id, fromBlob(row.vector));
     else missing.push(c);
   }
   if (missing.length) {
-    const fresh = await embedAll(missing.map((c) => c.text));
+    const fresh = await embed(missing.map((c) => c.text));
     const put = db.prepare("INSERT OR REPLACE INTO embed_cache (hash, model, vector) VALUES (?, ?, ?)");
     missing.forEach((c, i) => {
-      put.run(c.hash, model, toBlob(fresh[i]));
+      put.run(c.hash, cacheKey, toBlob(fresh[i]));
       vectors.set(c.id, Float32Array.from(fresh[i]));
     });
   }
@@ -240,8 +233,8 @@ export async function search(queries, { kinds = PRODUCT_KINDS, topK = 8 } = {}) 
   if (mode.kind === "hybrid") {
     try {
       const pool = index.docs.map((d) => d.chunk).filter(allowed);
-      const vectors = await chunkVectors(pool, mode.model);
-      const qv = await embedAll(queries, { query: true });
+      const vectors = await chunkVectors(pool);
+      const qv = await embed(queries, { query: true });
       vectorLists = qv.map((v) =>
         pool
           .map((chunk) => ({ chunk, score: cosine(v, vectors.get(chunk.id)) }))
