@@ -1,22 +1,26 @@
-import { defineComponent, inject } from "vue";
-import { api, runJob } from "../../api.js";
+import { defineComponent, inject, ref } from "vue";
+import { api, call } from "../../api.js";
+import { ApprovalDialog } from "../../collaboration-ui.js";
 import Requirements from "./requirements.js";
 import Scenarios from "./scenarios.js";
 import Questions from "./questions.js";
 
 export default defineComponent({
-  components: { Requirements, Scenarios, Questions },
+  components: { Requirements, Scenarios, Questions, ApprovalDialog },
   setup() {
     const { id, view, reload } = inject("project");
     const { understandingPane: pane, open } = inject("workspace");
+    const approvalVisible = ref(false);
     const analyze = async () => {
-      if (await runJob("理解客户材料", () => api(`/projects/${id}/analyze`, { method: "POST", body: {} }))) await reload();
+      if (await call(() => api(`/projects/${id}/analyze`, { method: "POST", body: {} }))) await reload();
     };
-    return { view, pane, open, analyze };
+    const started = async () => { await reload(); open("pbs"); };
+    return { id, view, pane, open, analyze, approvalVisible, started };
   },
   template: `
   <div class="understanding-header">
     <div><b>需求理解</b><p class="muted">逐条核对客户要求，按业务场景组织，并持续补全未明确的内容。</p></div>
+    <el-button v-if="view.requirements.length" :disabled="view.job?.status === '处理中'" @click="approvalVisible = true">确认范围并交给 PBS</el-button>
     <el-button type="primary" :disabled="!view.materials.length || view.job?.status === '处理中'" @click="analyze">{{ view.job?.status === '处理中' ? '正在处理材料…' : view.steps.materials.pending ? '理解待处理材料（' + view.steps.materials.pending + '）' : view.requirements.length ? '继续理解与完善' : '开始理解材料' }}</el-button>
   </div>
   <div class="understanding-views" role="tablist" aria-label="需求理解视图">
@@ -26,5 +30,6 @@ export default defineComponent({
   </div>
   <Requirements v-if="pane === 'requirements'" />
   <Scenarios v-else-if="pane === 'scenarios'" />
-  <Questions v-else />`,
+  <Questions v-else />
+  <ApprovalDialog v-model="approvalVisible" :project-id="id" :open="open" @started="started" />`,
 });

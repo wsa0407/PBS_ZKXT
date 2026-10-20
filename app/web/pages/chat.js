@@ -1,12 +1,15 @@
-import { computed, defineComponent, inject, nextTick, onMounted, ref, watch } from "vue";
+import { computed, defineComponent, inject, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { api, call, fileToBase64, jobState, meta } from "../api.js";
 import { scenarioFieldLabel, scenarioValue } from "../ui.js";
+
+import { ApprovalDialog, ExpertDetails, expertLabels } from "../collaboration-ui.js";
 
 const KIND_LABEL = { tender: "招标文件", minutes: "会议纪要", oral: "用户描述", other: "其他材料" };
 const CHANGE_LABEL = { set_param: "设定参数", update_requirement: "修改需求", add_requirement: "新增需求", remove_requirement: "删除需求", update_scenario: "修改场景" };
 
 export default defineComponent({
+  components: { ApprovalDialog, ExpertDetails },
   props: { open: Function },
   setup(props) {
     const { id, view, reload } = inject("project");
@@ -20,76 +23,72 @@ export default defineComponent({
     const scroller = ref(null);
     const samples = ref([]);
 
-    const scrollDown = () => nextTick(() => scroller.value && (scroller.value.scrollTop = scroller.value.scrollHeight));
-    const stop = async () => {
-      if (!progress.value?.id || stopping.value) return;
-      if (await call(() => api(`/jobs/${progress.value.id}/cancel`, { method: "POST" }))) stopping.value = true;
-    };
-    const monitor = async (jobId) => {
-      for (;;) {
-        const job = await api(`/jobs/${jobId}`);
-        progress.value = job;
-        scrollDown();
-        if (["已完成", "失败", "已取消"].includes(job.status)) return job;
-        await new Promise((r) => setTimeout(r, 900));
-      }
-    };
-
+    const collaboration = ref({ task: null, interventions: [] });
+    const target = ref("");
+    const replying = ref(null);
+    const sending = ref(false);
+    const approvalVisible = ref(false);
+    const expanded = ref({});
+    const unread = ref(0);
+    let atBottom = true, stream, disposed = false, loading = false, loadAgain = false, polling, requestDraft;
+    const scrollDown = () => nextTick(() => { if (atBottom && scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight; });
+    const onScroll = () => { const el = scroller.value; atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80; if (atBottom) unread.value = 0; };
+    const showLatest = () => { atBottom = true; unread.value = 0; scrollDown(); };
     const load = async () => {
-      const data = await call(() => api(`/projects/${id}/chat`));
-      if (data) {
+      if (loading) { loadAgain = true; return; }
+      loading = true;
+      try {
+        const data = await api(`/projects/${id}/chat`);
+        if (disposed) return;
+        const existing = new Set(messages.value.map(m => m.id));
+        if (!atBottom) unread.value += data.messages.filter(m => !existing.has(m.id)).length;
         messages.value = data.messages;
         suggestions.value = data.suggestions;
+        collaboration.value = data.collaboration;
+        progress.value = data.job;
+        busy.value = Boolean(data.job);
+        if (!busy.value) stopping.value = false;
         scrollDown();
-      }
+      } finally { loading = false; if (loadAgain && !disposed) { loadAgain = false; load().catch(() => {}); } }
     };
-    watch(view, async () => {
-      if (busy.value) return;
-      const data = await call(() => api(`/projects/${id}/chat`));
-      if (data) suggestions.value = data.suggestions;
-    });
+    const refresh = async () => { await load(); await reload(); };
+    const stop = async () => {
+      if (stopping.value) return;
+      const endpoint = collaboration.value.task && progress.value?.kind === "collaboration" ? `/projects/${id}/collaboration/pause` : `/jobs/${progress.value.id}/cancel`;
+      if (await call(() => api(endpoint, { method: "POST" }))) { stopping.value = true; await load(); }
+    };
+    const resume = async () => { if (await call(() => api(`/projects/${id}/collaboration/resume`, { method: "POST" }))) await load(); };
+    const replyTo = (m) => { replying.value = m; target.value = m.payload.sender; };
+    const approve = () => { if (busy.value) return ElMessage.info("请先暂停当前任务，再审阅并确认范围。"); approvalVisible.value = true; };
+    const started = async () => { await refresh(); props.open("pbs"); };
+    watch(view, () => { load().catch(() => {}); });
     onMounted(async () => {
-      await load();
+      await call(load);
       samples.value = (await call(() => api("/samples"))) ?? [];
-      if (view.value.job?.status === "处理中") {
-        busy.value = true;
-        try { await monitor(view.value.job.id); } finally { busy.value = false; progress.value = null; await reload(); await load(); }
-      }
+      stream = new EventSource(`/api/projects/${id}/collaboration/stream?after=${collaboration.value.seq || 0}`);
+      stream.onmessage = () => { load().catch(() => {}); };
+      // Status changes and old non-agent jobs also refresh; events are always durable.
+      polling = setInterval(() => { load().catch(() => {}); if (busy.value) reload().catch(() => {}); }, 2500);
     });
+    onUnmounted(() => { disposed = true; stream?.close(); clearInterval(polling); });
 
-    // Pending text shown immediately; the real message arrives with the job result.
     const send = async (body, label) => {
-      if (busy.value) return;
-      busy.value = true;
-      stopping.value = false;
-      messages.value.push({ id: `tmp${Date.now()}`, role: "user", content: label || body.text || (body.file ? `（上传了文件 ${body.file.name}）` : ""), payload: {} });
-      progress.value = { steps: [{ name: "理解你的意思", state: "running" }] };
-      scrollDown();
-      try {
-        const { jobId } = await api(`/projects/${id}/chat`, { method: "POST", body: { ...body, label } });
-        const job = await monitor(jobId);
-        if (job.status === "失败") {
-            messages.value.push({ id: `err${Date.now()}`, role: "assistant", content: `这一步没成功：${job.error}`, payload: { error: true } });
-        }
-      } catch (error) {
-        messages.value.push({ id: `err${Date.now()}`, role: "assistant", content: `出错了：${error.message}`, payload: { error: true } });
-      }
-      progress.value = null;
-      busy.value = false;
-      await reload();
-      await load();
-      const last = messages.value.at(-1);
-      if (last?.payload?.open) props.open(last.payload.open.tab, last.payload.open.focus);
+      const result = await call(() => api(`/projects/${id}/chat`, { method: "POST", body: { ...body, label } }));
+      if (result) { atBottom = true; await load(); }
+      return result;
     };
-
     const submit = async () => {
-      const body = {};
-      if (file.value) body.file = { name: file.value.name, base64: await fileToBase64(file.value) };
-      if (text.value.trim()) body.text = text.value.trim();
-      if (!body.text && !body.file) return;
-      text.value = "";
-      file.value = null;
-      send(body);
+      if (sending.value || (!text.value.trim() && !file.value)) return;
+      sending.value = true;
+      try {
+        const body = { text: text.value.trim(), target: target.value || undefined,
+          consultationId: replying.value?.payload.taskId === collaboration.value.task?.id ? replying.value?.payload.consultationId : undefined };
+        if (file.value) body.file = { name: file.value.name, base64: await fileToBase64(file.value) };
+        const fingerprint = JSON.stringify(body);
+        if (requestDraft?.fingerprint !== fingerprint) requestDraft = { fingerprint, id: crypto.randomUUID() };
+        body.requestId = requestDraft.id;
+        if (await send(body)) { text.value = ""; file.value = null; replying.value = null; requestDraft = null; }
+      } finally { sending.value = false; }
     };
     const onKey = (e) => {
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
@@ -164,7 +163,7 @@ export default defineComponent({
     const cardDone = (c) => c.state !== "pending";
 
     const clear = async () => {
-      await ElMessageBox.confirm("清空这个项目的对话记录？项目数据不受影响。", "清空对话", { type: "warning" });
+      await ElMessageBox.confirm("隐藏此前对话？专家交流、人工确认与证据记录仍保留，便于追溯和继续任务。", "隐藏此前对话", { type: "warning" });
       await call(() => api(`/projects/${id}/chat`, { method: "DELETE" }));
       load();
     };
@@ -220,12 +219,12 @@ export default defineComponent({
       return "";
     });
 
-    return { view, messages, suggestions, text, file, busy, progress, stopping, stop, scroller, samples, empty, hint, modelState, modelGroups, refreshModels, changeModel, send, submit, onKey, onFile, onDrop, quick, useSample, card, question, proposalAccepted, toggleChange, applyProposal, applyRematch, resolve, cardDone, productName, describeChange, clear, KIND_LABEL, CHANGE_LABEL, meta, jobState, scenarioFieldLabel, scenarioValue };
+    return { id, collaboration, target, replying, sending, approvalVisible, expanded, unread, onScroll, showLatest, resume, replyTo, approve, started, expertLabels, view, messages, suggestions, text, file, busy, progress, stopping, stop, scroller, samples, empty, hint, modelState, modelGroups, refreshModels, changeModel, send, submit, onKey, onFile, onDrop, quick, useSample, card, question, proposalAccepted, toggleChange, applyProposal, applyRematch, resolve, cardDone, productName, describeChange, clear, KIND_LABEL, CHANGE_LABEL, meta, jobState, scenarioFieldLabel, scenarioValue };
   },
   template: `
   <div class="chat" @dragover.prevent @drop.prevent="onDrop">
     <div class="chat-head">
-      <b>和助手对话</b>
+      <b>专家协作</b>
       <span style="flex:1"></span>
       <el-select v-model="modelState.current" size="small" filterable allow-create class="model-select"
         title="全局默认模型，后续处理任务将使用此模型" placeholder="选择或输入模型 ID" :disabled="busy || modelState.saving" @change="changeModel" @visible-change="(v) => v && refreshModels()" no-data-text="可输入 BAI 模型 ID">
@@ -234,15 +233,16 @@ export default defineComponent({
         </el-option-group>
       </el-select>
       <el-button link size="small" :loading="modelState.loading" :disabled="modelState.saving" @click="refreshModels(true)">刷新模型列表</el-button>
-      <el-button link size="small" @click="clear" v-if="messages.length">清空对话</el-button>
+      <el-button link size="small" @click="clear" v-if="messages.length">隐藏此前对话</el-button>
     </div>
     <div v-if="modelState.error" class="model-status" role="status" :title="modelState.error">BAI 模型列表暂不可用，可使用已有选项或输入模型 ID。</div>
 
-    <div class="chat-body" ref="scroller">
+    <div class="expert-roster"><span class="materials">材料拆解</span><span class="understanding">需求理解</span><span class="pbs">PBS编制</span></div>
+    <div class="chat-body" ref="scroller" @scroll="onScroll">
       <div v-if="empty" class="chat-welcome">
         <div class="bot-avatar">PBS</div>
         <div class="bubble bot">
-          你好，我是 PBS 拆解助手。<br />{{ hint || '继续说吧，比如“这个项目机场改成 12 个”“为什么要外采 GPU”“再加一条夜间飞行的要求”。' }}
+          三位专家在这里协作，你可以随时补充信息、纠正方向。<br />{{ hint || '继续说吧，比如“这个项目机场改成 12 个”“为什么要外采 GPU”“再加一条夜间飞行的要求”。' }}
           <div v-if="samples.length && !view.steps.materials.count" class="samples">
             <div class="muted" style="margin:8px 0 4px">想先看看效果？选一个示例填入输入框：</div>
             <el-button v-for="s in samples" :key="s.id" size="small" @click="useSample(s)">{{ s.label }}</el-button>
@@ -250,10 +250,13 @@ export default defineComponent({
         </div>
       </div>
 
-      <div v-for="m in messages" :key="m.id" class="msg" :class="m.role">
-        <div v-if="m.role === 'assistant'" class="bot-avatar">PBS</div>
+      <div v-for="m in messages" :key="m.id" class="msg" :class="[m.role, m.payload.sender, { 'system-message': m.payload.sender === 'system' }]">
+        <div v-if="m.role === 'assistant' && m.payload.sender !== 'system'" class="bot-avatar" :class="m.payload.sender">{{ ({materials: '材', understanding: '需', pbs: 'P'})[m.payload.sender] || 'P' }}</div>
         <div class="bubble" :class="[m.role === 'user' ? 'me' : 'bot', { error: m.payload.error }]">
-          <div class="content">{{ m.content }}</div>
+          <div v-if="m.role === 'assistant'" class="expert-name" :class="m.payload.sender">{{ expertLabels[m.payload.sender] || 'PBS助手' }}<span v-if="m.payload.recipient && m.payload.recipient !== 'human'" class="recipient"> → @{{ expertLabels[m.payload.recipient] }}</span></div>
+          <div v-if="m.role === 'user' && m.payload.recipient" class="human-recipient">给 {{ expertLabels[m.payload.recipient] }}</div>
+          <div class="content">{{ m.payload.collaboration && m.content.length > 220 && !expanded[m.id] ? m.content.slice(0, 220) + '…' : m.content }}</div>
+          <button v-if="m.payload.collaboration && m.content.length > 220" class="text-action" @click="expanded[m.id] = !expanded[m.id]">{{ expanded[m.id] ? '收起' : '展开完整内容' }}</button>
           <div v-if="m.payload.attachment" class="muted">📄 {{ m.payload.attachment.name }}</div>
 
           <div v-for="(r, k) in (m.payload.results || [])" :key="'r' + k" class="result" :class="{ bad: !r.ok }">{{ r.ok ? '✓' : '✗' }} {{ r.text }}</div>
@@ -323,6 +326,7 @@ export default defineComponent({
             </div>
           </template>
 
+          <ExpertDetails v-if="m.payload.collaboration" :message="m" :open="$props.open" @reply="replyTo" @approve="approve" @resume="resume" />
           <div v-if="m.payload.open" class="open-link"><el-button link type="primary" size="small" @click="$props.open(m.payload.open.tab, m.payload.open.focus)">在右侧查看 →</el-button></div>
         </div>
       </div>
@@ -334,22 +338,28 @@ export default defineComponent({
             <span class="ic"><template v-if="s.state === 'done'">✓</template><template v-else-if="s.state === 'running'"><i class="spin"></i></template></span>
             <span>{{ s.name }}</span><span class="muted" v-if="s.detail">{{ s.detail }}</span>
           </div>
-          <el-button size="small" :disabled="!progress.id || stopping" @click="stop">{{ stopping ? '正在停止…' : '停止处理' }}</el-button>
+          <el-button size="small" :disabled="!progress.id || stopping" @click="stop">{{ stopping ? '正在暂停…' : '暂停任务' }}</el-button>
         </div>
       </div>
     </div>
 
+    <button v-if="unread" class="new-messages" @click="showLatest">{{ unread }} 条新消息 ↓</button>
     <div class="chat-foot">
+      <div v-if="['paused','failed'].includes(collaboration.task?.status)" class="task-resume"><span>{{ collaboration.task.status === 'paused' ? '任务已暂停，补充会先保存' : '协作尚未完成，已有成果保留' }}</span><el-button size="small" @click="resume">继续处理</el-button></div>
+      <div v-if="collaboration.task?.status === 'awaiting_confirmation' && !busy" class="task-resume"><span>本轮理解待你审阅</span><el-button size="small" @click="approve">确认范围并交给 PBS</el-button></div>
+      <div v-if="replying" class="reply-context"><span>补充 {{ expertLabels[replying.payload.sender] }} 的讨论：{{ replying.content.slice(0, 44) }}…</span><button @click="replying = null; target = ''">取消</button></div>
+      <div class="recipient-picker"><span>发送给</span><select v-model="target" aria-label="发送给哪位专家"><option value="">当前任务</option><option value="materials">材料拆解专家</option><option value="understanding">需求理解专家</option><option value="pbs">PBS专家</option></select><small v-if="busy">处理中也可补充</small></div>
       <div class="quick" v-if="suggestions.length && !busy">
         <button v-for="s in suggestions.filter((x) => x.ui !== 'samples')" :key="s.label" @click="quick(s)">{{ s.label }}</button>
       </div>
       <div v-if="file" class="file-chip">📄 {{ file.name }} <el-button link type="danger" size="small" @click="file = null">移除</el-button></div>
       <div class="input">
-        <el-input v-model="text" type="textarea" :autosize="{ minRows: 1, maxRows: 8 }" resize="none" :disabled="busy"
-          placeholder="说需求、粘贴材料、改数量、问依据……（Enter 发送，Shift+Enter 换行）" @keydown="onKey" />
+        <el-input v-model="text" type="textarea" :autosize="{ minRows: 1, maxRows: 8 }" resize="none" :disabled="sending"
+          placeholder="补充信息、纠正思路，或询问依据……" @keydown="onKey" />
         <label class="attach" title="上传文件"><input type="file" hidden :accept="meta.fileTypes.join(',')" @change="onFile" />📎</label>
-        <el-button type="primary" :disabled="busy || (!text.trim() && !file)" @click="submit">发送</el-button>
+        <el-button type="primary" :loading="sending" :disabled="sending || (!text.trim() && !file)" @click="submit">发送</el-button>
       </div>
     </div>
+    <ApprovalDialog v-model="approvalVisible" :project-id="id" :open="$props.open" @started="started" />
   </div>`,
 });

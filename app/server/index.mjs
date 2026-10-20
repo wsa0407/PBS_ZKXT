@@ -11,8 +11,9 @@ import * as chat from "./chat.mjs";
 import * as models from "./models.mjs";
 import { badRequest, HttpError } from "./errors.mjs";
 import { activeJob, cancelJob, failInterruptedJobs, getJob, llmCalls, startJob } from "./jobs.mjs";
-import { runAgent } from "./agent-runner.mjs";
 import { agentChatTurn, agentGoal } from "./agent-chat.mjs";
+import * as collaboration from "./collaboration-api.mjs";
+import { events as collaborationEvents, recoverCollaboration } from "./collaboration-store.mjs";
 import * as rag from "./rag.mjs";
 import * as repo from "./repo.mjs";
 import * as svc from "./services.mjs";
@@ -195,7 +196,7 @@ del("/api/projects/:id/materials/:mid", ({ id, mid }) => {
 
 // requirements
 post("/api/projects/:id/analyze", ({ id }, body) =>
-  job(startJob({ projectId: id, kind: "analyze", steps: ["整理并核对业务成果"], run: (ctx) => runAgent(id, agentGoal({ type: "analyze" }) + (body.all ? "回查全部材料，保持人工成果。" : ""), ctx) })),
+  collaboration.submitCollaboration(id, { text: body.all ? "回查全部材料，保留人工成果" : "理解客户材料", actions: [{ type: "analyze" }] }),
 );
 post("/api/projects/:id/requirements", ({ id }, body) => ({ code: svc.addRequirement(id, body) }));
 put("/api/projects/:id/requirements/:code", ({ id, code }, body) => (svc.editRequirement(id, code, body), { ok: true }));
@@ -203,7 +204,7 @@ post("/api/projects/:id/requirements/confirm", ({ id }, body) => (svc.confirmReq
 put("/api/projects/:id/params/:name", ({ id, name }, body) => (svc.setParam(id, name, body), { ok: true }));
 
 // Scenario requirements: every mutation uses the same versioned service as chat.
-post("/api/projects/:id/scenarios/generate", ({ id }) => job(startJob({ projectId: id, kind: "scenarios", steps: ["整理并核对业务成果"], run: (ctx) => runAgent(id, agentGoal({ type: "generate_scenarios" }), ctx) })));
+post("/api/projects/:id/scenarios/generate", ({ id }) => collaboration.submitCollaboration(id, { text: "继续整理客户场景与待澄清事项", target: "understanding" }));
 post("/api/projects/:id/scenarios", ({ id }, body) => scenarios.addScenario(id, body));
 get("/api/projects/:id/scenarios/:code", ({ id, code }) => ({ scenario: scenarios.getScenario(id, code), revisions: scenarios.revisions(id, code) }));
 put("/api/projects/:id/scenarios/:code", ({ id, code }, body) => scenarios.editScenario(id, code, body));
@@ -214,7 +215,7 @@ put("/api/projects/:id/requirements/:code/disposition", ({ id, code }, body) => 
 
 // business capabilities
 post("/api/projects/:id/capabilities/generate", ({ id }) =>
-  job(startJob({ projectId: id, kind: "capability", steps: ["整理并核对业务成果"], run: (ctx) => runAgent(id, agentGoal({ type: "generate_capabilities" }), ctx) })),
+  collaboration.submitCollaboration(id, { text: "根据客户场景归纳业务活动", target: "understanding" }),
 );
 post("/api/projects/:id/capabilities", ({ id }, body) => ({ code: svc.addCapability(id, body) }));
 put("/api/projects/:id/capabilities/:code", ({ id, code }, body) => (svc.editCapability(id, code, body), { ok: true }));
@@ -230,10 +231,11 @@ post("/api/projects/:id/questions/:qid/answer", ({ id, qid }, body) =>
 post("/api/projects/:id/questions/:qid/apply", ({ id, qid }, body) => svc.applyAnswer(id, Number(qid), body.accepted ?? [], body.resolution_note ?? ""));
 
 // chat (conversational control; every turn is a background job so model calls show progress)
-get("/api/projects/:id/chat", ({ id }) => ({ messages: chat.chatHistory(id), suggestions: chat.suggestions(svc.projectView(id)) }));
+get("/api/projects/:id/chat", ({ id }) => ({ messages: chat.chatHistory(id), suggestions: chat.suggestions(svc.projectView(id)), collaboration: collaboration.collaborationView(id), job: activeJob(id) }));
 post("/api/projects/:id/chat", async ({ id }, body) => {
   repo.getProject(id);
   const attachment = body.file?.base64 ? { name: String(body.file.name ?? "upload"), text: (await fileText(body)).text } : null;
+  if (!body.actions?.length || body.actions.some((a) => agentGoal(a))) return collaboration.submitCollaboration(id, { ...body, file: undefined, attachment });
   return job(
     startJob({
       projectId: id,
@@ -243,12 +245,18 @@ post("/api/projects/:id/chat", async ({ id }, body) => {
     }),
   );
 });
+get("/api/projects/:id/collaboration", ({ id }) => collaboration.collaborationView(id));
+get("/api/projects/:id/collaboration/events", ({ id }, _, query) => ({ events: collaborationEvents(id, query.get("after")) }));
+get("/api/projects/:id/collaboration/approval", ({ id }) => collaboration.approvalPreview(id));
+post("/api/projects/:id/collaboration/confirm", ({ id }, body) => collaboration.confirmAndStart(id, body));
+post("/api/projects/:id/collaboration/pause", ({ id }) => collaboration.pauseProject(id));
+post("/api/projects/:id/collaboration/resume", ({ id }) => collaboration.resumeProject(id));
 post("/api/projects/:id/chat/:mid/cards/:ci", ({ id, mid, ci }, body) => chat.resolveCard(id, Number(mid), Number(ci), body.decision === "accept" ? "accept" : "dismiss"));
 del("/api/projects/:id/chat", ({ id }) => (repo.clearChat(id), { ok: true }));
 
 // PBS
 post("/api/projects/:id/pbs/generate", ({ id }) =>
-  job(startJob({ projectId: id, kind: "pbs", steps: ["整理并核对业务成果"], run: (ctx) => runAgent(id, agentGoal({ type: "generate_pbs" }), ctx) })),
+  collaboration.submitCollaboration(id, { text: "编制PBS草稿", actions: [{ type: "generate_pbs" }] }),
 );
 post("/api/projects/:id/pbs", ({ id }, body) => ({ id: svc.saveItem(id, null, body) }));
 put("/api/projects/:id/pbs/:iid", ({ id, iid }, body) => ({ id: svc.saveItem(id, Number(iid), body) }));
@@ -294,6 +302,20 @@ export function createServer() {
     const pathname = decodeURIComponent(url.pathname);
     try {
       if (!pathname.startsWith("/api/")) return serveStatic(res, pathname);
+      const stream = pathname.match(/^\/api\/projects\/([^/]+)\/collaboration\/stream$/);
+      if (req.method === "GET" && stream) {
+        repo.getProject(stream[1]);
+        res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive", "X-Accel-Buffering": "no" });
+        let cursor = Number(req.headers["last-event-id"] || url.searchParams.get("after")) || 0;
+        const flush = () => {
+          for (const e of collaborationEvents(stream[1], cursor)) { res.write(`id: ${e.seq}\ndata: ${JSON.stringify(e)}\n\n`); cursor = e.seq; }
+        };
+        flush();
+        const timer = setInterval(flush, 800);
+        const heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 15000);
+        res.on("close", () => { clearInterval(timer); clearInterval(heartbeat); });
+        return;
+      }
       for (const r of routes) {
         if (r.method !== req.method) continue;
         const m = pathname.match(r.re);
@@ -315,6 +337,7 @@ export async function boot({ port = Number(process.env.PORT || 8765), host = pro
   openDb();
   catalog.installDefaultCatalog();
   failInterruptedJobs();
+  recoverCollaboration();
   svc.rebuildIndex();
   svc.seedManuals();
   const mode = await rag.probeEmbeddings();

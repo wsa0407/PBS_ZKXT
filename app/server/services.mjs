@@ -218,10 +218,16 @@ export function computeState(projectId, { reason = "", persist = true } = {}) {
   }));
   const before = new Map(leaves.map((l) => [l.id, l.qty]));
   applySizing(
-    leaves.filter((l) => !l.manual_qty),
+    leaves.filter((l) => !l.manual_qty && !l.input_scope?.length),
     resolved,
     sizing,
   );
+  const scopeParams = new Map();
+  for (const leaf of leaves.filter((l) => !l.manual_qty && l.input_scope?.length)) {
+    const key = leaf.input_scope.join(",");
+    if (!scopeParams.has(key)) scopeParams.set(key, resolveParams(collectParams(engineReqs.filter((r) => leaf.input_scope.includes(r.id))), sizing, repo.listOverrides(projectId)));
+    applySizing([leaf], scopeParams.get(key), sizing);
+  }
 
   // Persist rule-computed quantities; when a change was caused by an edit or an answer, flag the line.
   const changed = leaves.filter((l) => !l.manual_qty && l.sizing_rule && before.get(l.id) !== l.qty);
@@ -852,7 +858,7 @@ export async function generateProjectPbs(projectId, { llm, progress }) {
 const ITEM_EDITABLE = ["name", "spec", "source", "product_ref", "matched_capabilities", "blocked_by", "req_ids", "capability_ids", "parent", "basis", "unit", "sizing_rule"];
 
 /** Agent planning uses the same deterministic product/quantity rules as manual PBS operations. */
-export function submitAgentPbs(projectId, { expected_version, items: rawItems }) {
+export function submitAgentPbs(projectId, { expected_version, items: rawItems, approved_scope }) {
   if (expected_version !== projectSolutions.projectInputHash(projectId)) throw new HttpError(409, "项目已变化，请重新读取project_state的pbs_version");
   const { template, sizing, history } = catalog.runtimeConfig(projectId);
   const state = computeState(projectId);
@@ -883,7 +889,14 @@ export function submitAgentPbs(projectId, { expected_version, items: rawItems })
   const untouched = current.filter((i) => !kept.some((k) => k.id === i.id) && !fresh.some((f) => f.id === i.id)).map(leafFromItem);
   const leaves = [...kept, ...untouched, ...fresh];
   assignCodes(leaves);
-  enforceLeaves(leaves, ctx, state.fullText);
+  const quantityText = approved_scope ? state.engineReqs.filter((r) => approved_scope.includes(r.id)).map((r) => r.quoteVerified ? r.quote : r.origin !== "系统" ? r.text : "").join("\n") : state.fullText;
+  enforceLeaves(leaves, ctx, quantityText);
+  if (approved_scope) {
+    const scoped = leaves.filter((l) => fresh.includes(l) || !l.id);
+    for (const leaf of scoped) leaf.input_scope = [...approved_scope];
+    const resolved = resolveParams(collectParams(state.engineReqs.filter((r) => approved_scope.includes(r.id))), sizing, repo.listOverrides(projectId));
+    applySizing(scoped.filter((l) => !l.manual_qty), resolved, sizing);
+  }
   const conflicts = checkConflicts([], leaves, ctx);
   for (const leaf of fresh) {
     if (leaf.scenario_ids.some((id) => sceneList.find((s) => s.code === id)?.status !== "已确认")) leaf.stale = "关联场景尚待人工审阅";

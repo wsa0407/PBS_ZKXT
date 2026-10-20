@@ -18,11 +18,12 @@ async function infrastructure() {
   } catch (error) { throw new Error("dsh运行时未安装或加载失败，请执行 npm install --prefix runtime", { cause: error }); }
 }
 
-async function withRuntime({ projectId, goal, tools, execute, onTool, onUsage = () => {}, signal, model = selectedModel(), maxTokens, sessionId, onSession }, run) {
-  if (runtimeFactory) return runtimeFactory({ projectId, goal, tools, execute, onTool, signal, model, maxTokens, sessionId, onSession }, run);
+async function withRuntime({ projectId, role, goal, tools, execute, onTool, onUsage = () => {}, signal, model = selectedModel(), maxTokens, sessionId, onSession }, run) {
+  if (runtimeFactory) return runtimeFactory({ projectId, role, goal, tools, execute, onTool, signal, model, maxTokens, sessionId, onSession }, run);
   signal?.throwIfAborted();
   const { createHost, serveTools } = await infrastructure();
   let host, timeout, closePromise, budgetError;
+  let executionResult, executionError;
   let requests = 0, tokens = 0;
   const failures = new Map();
   const close = () => closePromise ??= host?.close();
@@ -37,7 +38,7 @@ async function withRuntime({ projectId, goal, tools, execute, onTool, onUsage = 
     if (count >= 5) { budgetError = new Error("同类校验错误重复5次，已停止自动尝试，请复核已保存草稿"); budgetError.code = "REPEATED_VALIDATION_FAILURE"; abort(); }
   } });
   try {
-    host = await createHost({ home: join(stateRoot, projectId ?? "global"), ...transport, model, maxTokens, baseURL: (process.env.BAI_BASE_URL || "https://api.b.ai/v1").replace(/\/$/, ""), apiKey: process.env.BAI_API_KEY });
+    host = await createHost({ home: join(stateRoot, projectId ?? "global", ...(role ? [role] : [])), role, ...transport, model, maxTokens, baseURL: (process.env.BAI_BASE_URL || "https://api.b.ai/v1").replace(/\/$/, ""), apiKey: process.env.BAI_API_KEY });
     signal?.addEventListener("abort", abort, { once: true });
     signal?.throwIfAborted();
     const exhaust = () => { budgetError = new Error("Agent运行预算已用完，已保存的草稿可继续处理"); budgetError.code = "BUDGET_EXHAUSTED"; abort(); };
@@ -63,12 +64,28 @@ async function withRuntime({ projectId, goal, tools, execute, onTool, onUsage = 
     try { result = await run({ host, session, observe }); } catch (error) { throw budgetError ?? error; }
     if (budgetError) throw budgetError;
     signal?.throwIfAborted();
-    return result;
+    executionResult = result;
+  } catch (error) {
+    executionError = error;
   } finally {
     clearTimeout(timeout);
     signal?.removeEventListener("abort", abort);
-    try { await close(); } finally { await transport.close(); }
+    let cleanupError;
+    try { await close(); } catch (error) { cleanupError = error; }
+    try { await transport.close(); } catch (error) { cleanupError ??= error; }
+    if (cleanupError) {
+      const error = new Error("无法确认旧专家会话已停止，已暂缓恢复以避免重复写入", { cause: cleanupError });
+      error.code = "RUNTIME_CLEANUP_FAILED";
+      executionError = error;
+    }
   }
+  if (executionError) throw executionError;
+  return executionResult;
+}
+
+/** One role activation. Routing and durable work live outside the official SDK loop. */
+export async function runRole(options) {
+  return withRuntime(options, ({ session, observe }) => session.run(options.goal, { onNotification: observe }));
 }
 
 /** Primary PBS execution path: the official loop chooses and revises business tool calls. */

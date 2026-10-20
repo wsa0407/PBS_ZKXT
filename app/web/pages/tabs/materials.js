@@ -1,14 +1,15 @@
-import { computed, defineComponent, inject, onMounted, ref } from "vue";
+import { computed, defineComponent, inject, onMounted, ref, watch } from "vue";
 import { ElMessageBox } from "element-plus";
-import { api, call, fileToBase64, fmtTime, meta, runJob } from "../../api.js";
+import { api, call, fileToBase64, fmtTime, meta } from "../../api.js";
 
 export default defineComponent({
   setup() {
     const { id, view, reload } = inject("project");
-    const { open } = inject("workspace");
+    const { open, focus } = inject("workspace");
     const samples = ref([]);
     const form = ref({ title: "", description: "", text: "", file: null });
     const preview = ref(null);
+    const evidence = ref(null);
     onMounted(async () => (samples.value = (await call(() => api("/samples"))) ?? []));
 
     const materials = computed(() => view.value.materials);
@@ -45,17 +46,22 @@ export default defineComponent({
       reload();
     };
 
-    const show = async (m) => (preview.value = await call(() => api(`/projects/${id}/materials/${m.id}`)));
+    const show = async (m) => { evidence.value = null; preview.value = await call(() => api(`/projects/${id}/materials/${m.id}`)); };
+    watch(() => focus.value, async (value) => {
+      const source = view.value.segments.find((s) => s.uid === value);
+      const material = view.value.materials.find((m) => m.id === (source?.material_id ?? value));
+      if (material) { await show(material); evidence.value = source ?? null; }
+    }, { immediate: true });
 
     const analyze = async (all = false) => {
-      const result = await runJob(all ? "重新理解材料" : "理解新增材料", () => api(`/projects/${id}/analyze`, { method: "POST", body: { all } }));
+      const result = await call(() => api(`/projects/${id}/analyze`, { method: "POST", body: { all } }));
       if (result) {
         await reload();
         open("understanding");
       }
     };
 
-    return { view, materials, pending, samples, form, preview, meta, useSample, onFile, onDrop, add, remove, show, analyze, fmtTime };
+    return { view, materials, pending, samples, form, preview, evidence, meta, useSample, onFile, onDrop, add, remove, show, analyze, fmtTime };
   },
   template: `
   <div class="materials-stack">
@@ -106,6 +112,6 @@ export default defineComponent({
   </div>
 
   <el-drawer :model-value="!!preview" @close="preview = null" :title="preview?.title" size="50%">
-    <template v-if="preview"><p v-if="preview.meta.description" class="material-description">补充说明：{{ preview.meta.description }}</p><pre class="pre">{{ preview.text }}</pre></template>
+    <template v-if="preview"><div v-if="evidence" class="exchange-evidence"><b>引用位置 · {{ evidence.uid }} {{ evidence.chapter }}</b><blockquote>{{ evidence.text }}</blockquote><hr></div><p v-if="preview.meta.description" class="material-description">补充说明：{{ preview.meta.description }}</p><pre class="pre">{{ preview.text }}</pre></template>
   </el-drawer>`,
 });

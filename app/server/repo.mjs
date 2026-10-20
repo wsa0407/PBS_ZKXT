@@ -133,7 +133,8 @@ export function touchProject(id) {
 
 export function deleteProject(id) {
   tx((db) => {
-    for (const table of ["materials", "segments", "source_snapshots", "requirements", "param_overrides", "questions", "pbs_items", "capabilities", "scenarios", "scenario_requirements", "scenario_revisions", "requirement_dispositions", "scenario_runs", "events", "llm_calls", "chat_messages"]) {
+    db.prepare("DELETE FROM collaboration_activations WHERE task_id IN (SELECT id FROM collaboration_tasks WHERE project_id=?)").run(id);
+    for (const table of ["collaboration_tasks", "collaboration_sessions", "collaboration_consultations", "collaboration_interventions", "collaboration_approvals", "collaboration_events", "agent_runs", "agent_operations", "agent_coverage", "materials", "segments", "source_snapshots", "requirements", "param_overrides", "questions", "pbs_items", "capabilities", "scenarios", "scenario_requirements", "scenario_revisions", "requirement_dispositions", "scenario_runs", "events", "llm_calls", "chat_messages"]) {
       db.prepare(`DELETE FROM ${table} WHERE project_id = ?`).run(id);
     }
     db.prepare("DELETE FROM jobs WHERE project_id = ?").run(id);
@@ -160,8 +161,8 @@ export function addChat(projectId, role, content, payload = {}) {
 
 export function listChat(projectId, limit = 200) {
   return getDb()
-    .prepare("SELECT * FROM (SELECT * FROM chat_messages WHERE project_id = ? ORDER BY id DESC LIMIT ?) ORDER BY id")
-    .all(projectId, limit)
+    .prepare("SELECT * FROM (SELECT * FROM chat_messages WHERE project_id = ? AND id > COALESCE((SELECT CAST(value AS INTEGER) FROM settings WHERE key = ?),0) ORDER BY id DESC LIMIT ?) ORDER BY id")
+    .all(projectId, `chat-visible:${projectId}`, limit)
     .map(rowToChat);
 }
 
@@ -176,7 +177,8 @@ export function updateChatPayload(projectId, id, payload) {
 }
 
 export function clearChat(projectId) {
-  getDb().prepare("DELETE FROM chat_messages WHERE project_id = ?").run(projectId);
+  const last = getDb().prepare("SELECT MAX(id) AS id FROM chat_messages WHERE project_id=?").get(projectId)?.id ?? 0;
+  getDb().prepare("INSERT OR REPLACE INTO settings(key,value) VALUES (?,?)").run(`chat-visible:${projectId}`, String(last));
 }
 
 // ---------- materials & segments ----------
@@ -438,7 +440,7 @@ export function deleteQuestion(projectId, id) {
 
 // ---------- PBS items ----------
 
-const ITEM_JSON = ["matched_capabilities", "blocked_by", "evidence_chunks", "capability_ids", "scenario_ids", "req_ids", "history_ref", "repairs"];
+const ITEM_JSON = ["matched_capabilities", "blocked_by", "evidence_chunks", "capability_ids", "scenario_ids", "req_ids", "history_ref", "repairs", "input_scope"];
 const ITEM_BOOL = ["manual_qty", "edited", "confirmed", "reviewed"];
 const ITEM_COLUMNS = [
   "code",

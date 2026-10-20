@@ -3,15 +3,18 @@ import { fileURLToPath } from "node:url";
 import { resolve, join } from "node:path";
 import { DeepSeekHarness } from "@deepseek-ai/dsh-sdk-client";
 import { pbsPreset } from "../agents/pbs/preset.mjs";
+import { ROLES } from "../agents/pbs/roles.mjs";
 
 export const RUNTIME_VERSION = "0.2.1-rc.2";
 const agentDir = fileURLToPath(new URL("../agents/pbs/", import.meta.url));
 const disabled = ["tool-plugin-manager", "tool-working-directory", "tool-bash", "tool-pwsh", "tool-jobs", "tool-fs", "tool-fs-search", "agent-instructions", "skill-filesystem", "tool-subagent", "tool-subagent-fork", "tool-subagent-control", "tool-subagent-list-agents", "tool-workflow", "tool-todo", "tool-goal", "tool-web", "workspace-dependencies", "skill-office"];
 
-export async function createHost({ home, endpoint, token, model, baseURL, apiKey, maxTokens = 12000 }) {
+export async function createHost({ home, endpoint, token, model, baseURL, apiKey, maxTokens = 12000, role }) {
   const root = resolve(home);
   await mkdir(root, { recursive: true, mode: 0o700 });
-  const instructions = await readFile(join(agentDir, "AGENTS.md"), "utf8");
+  const common = await readFile(join(agentDir, "AGENTS.md"), "utf8");
+  if (role && !ROLES[role]) throw new Error("未知业务角色");
+  const instructions = common + (role ? `\n\n${await readFile(join(agentDir, ROLES[role].instructions), "utf8")}\n角色职责优先于通用流程；仅调用本角色获授权的工具。` : "");
   const deepseek = /^deepseek/i.test(model);
   const provider = { apiKeyEnv: "PBS_BAI_API_KEY", api: "openai-completions", baseURL,
     timeoutMs: 120000, streamIdleTimeoutMs: 120000, retryPolicy: { mode: "normal", maxRetries: 2 },

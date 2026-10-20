@@ -26,6 +26,7 @@ export default defineComponent({
       () => focus.value,
       (v) => {
         if (!v) return;
+        if (typeof v === "string") v = items.value.find((i) => i.code === v)?.id ?? v;
         expanded.value = new Set([...expanded.value, v]);
         setTimeout(() => document.getElementById(`item-${v}`)?.scrollIntoView({ block: "center", behavior: "smooth" }), 80);
       },
@@ -61,7 +62,7 @@ export default defineComponent({
       if (items.value.length) {
         await ElMessageBox.confirm("助手会补充 PBS，并可调整尚未人工审阅的草稿。人工修改、已确认或已审阅的项保留；本次不会自动删除原有项。", "完善 PBS 草稿", { confirmButtonText: "开始完善", cancelButtonText: "取消" });
       }
-      const r = await runJob("编制 PBS 草稿", () => api(`/projects/${id}/pbs/generate`, { method: "POST" }));
+      const r = await call(() => api(`/projects/${id}/pbs/generate`, { method: "POST" }));
       if (r) reload();
     };
 

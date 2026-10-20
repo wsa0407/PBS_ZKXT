@@ -25,7 +25,7 @@ const page = (items, args, max = 40) => {
 const err = (code, message, details) => ({ ok: false, error: { code, message, ...(details ? { details } : {}) } });
 const docId = (id) => `material:${id}`;
 
-export function localAgentAdapter(projectId, { signal, onProgress = () => {}, maxCalls = 500 } = {}) {
+export function localAgentAdapter(projectId, { signal, onProgress = () => {}, maxCalls = 500, operationScope = "", checkWrite = () => {}, pbsScope } = {}) {
   repo.getProject(projectId);
   let calls = 0; let finished = null;
   const documents = () => repo.listMaterials(projectId).map((m) => ({ document_id: docId(m.id), document_version: hash(repo.getMaterial(projectId, m.id).text), title: m.title, kind: m.kind, kind_inferred: Boolean(m.meta.kind_inferred), description: m.meta.description ?? "", size: m.size, extracted: Boolean(m.extracted_at) }));
@@ -169,7 +169,7 @@ export function localAgentAdapter(projectId, { signal, onProgress = () => {}, ma
       if (!product) return err("PRODUCT_NOT_FOUND", "产品不存在");
       return { product, bom: catalog.readCatalog()?.pack.boms.filter((b) => b.product_ref === product.id) ?? [], documents: repo.listDocs(product.id) };
     },
-    submit_pbs: (args) => svc.submitAgentPbs(projectId, args),
+    submit_pbs: (args) => svc.submitAgentPbs(projectId, { ...args, approved_scope: pbsScope?.() }),
     submit_solutions: (args) => ({ solutions: solutions.saveProjectSolutions(projectId, args.solutions, args.expected_version) }),
     propose_change: (args) => ({ card: proposeAgentChange(projectId, args.action) }),
     run_report: report,
@@ -195,12 +195,14 @@ export function localAgentAdapter(projectId, { signal, onProgress = () => {}, ma
       // All write handlers are synchronous, so transaction completion precedes the response.
       return tx((db) => {
         signal?.throwIfAborted();
+        checkWrite(name, args);
+        const operationId = operationScope ? `${operationScope}:${args.operation_id}` : args.operation_id;
         const input = hash({ name, args });
-        const old = db.prepare("SELECT * FROM agent_operations WHERE project_id=? AND operation_id=?").get(projectId, args.operation_id);
+        const old = db.prepare("SELECT * FROM agent_operations WHERE project_id=? AND operation_id=?").get(projectId, operationId);
         if (old) return old.input_hash === input ? parse(old.result, {}) : err("OPERATION_CONFLICT", "operation_id已用于不同内容，请使用新编号");
         const data = handlers[name](args);
         const result = data?.ok === false ? data : { ok: true, data };
-        if (result.ok) db.prepare("INSERT INTO agent_operations(project_id,operation_id,tool,input_hash,result,created_at) VALUES (?,?,?,?,?,?)").run(projectId, args.operation_id, name, input, json(result), now());
+        if (result.ok) db.prepare("INSERT INTO agent_operations(project_id,operation_id,tool,input_hash,result,created_at) VALUES (?,?,?,?,?,?)").run(projectId, operationId, name, input, json(result), now());
         return result;
       });
     } catch (error) { return err(error.status === 409 ? "VERSION_CONFLICT" : "VALIDATION_ERROR", error.message); }

@@ -4,12 +4,51 @@ import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
 const seedDir = new URL("../seed/", import.meta.url);
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS collaboration_tasks (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL, goal TEXT NOT NULL,
+  stage TEXT NOT NULL, status TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1,
+  approval_id TEXT, job_id TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS collaboration_activations (
+  id TEXT PRIMARY KEY, task_id TEXT NOT NULL, role TEXT NOT NULL, mode TEXT NOT NULL,
+  input TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'queued', attempts INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS collaboration_sessions (
+  project_id TEXT NOT NULL, role TEXT NOT NULL, session_id TEXT NOT NULL,
+  PRIMARY KEY(project_id, role)
+);
+CREATE TABLE IF NOT EXISTS collaboration_consultations (
+  id TEXT PRIMARY KEY, task_id TEXT NOT NULL, project_id TEXT NOT NULL,
+  caller TEXT NOT NULL, target TEXT NOT NULL, activation_id TEXT NOT NULL,
+  revision INTEGER NOT NULL, input_version TEXT NOT NULL,
+  question TEXT NOT NULL, data TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'waiting',
+  answer TEXT, outcome TEXT, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS collaboration_interventions (
+  id TEXT PRIMARY KEY, task_id TEXT NOT NULL, project_id TEXT NOT NULL,
+  target TEXT NOT NULL, content TEXT NOT NULL, data TEXT NOT NULL,
+  revision INTEGER NOT NULL, state TEXT NOT NULL DEFAULT 'received',
+  delivered_activation TEXT, result TEXT, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS collaboration_approvals (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL, input_version TEXT NOT NULL,
+  snapshot TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS collaboration_events (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL, task_id TEXT,
+  kind TEXT NOT NULL, sender TEXT NOT NULL, recipient TEXT, content TEXT NOT NULL,
+  payload TEXT NOT NULL, chat_id INTEGER NOT NULL, created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS collaboration_events_project ON collaboration_events(project_id,seq);
+CREATE INDEX IF NOT EXISTS collaboration_queue ON collaboration_activations(task_id,state);
 
 CREATE TABLE IF NOT EXISTS agent_runs (
   id TEXT PRIMARY KEY, project_id TEXT, session_id TEXT, goal TEXT NOT NULL,
@@ -318,6 +357,7 @@ export function openDb(file = process.env.APP_DB || fileURLToPath(new URL("../da
 
 // CREATE TABLE IF NOT EXISTS never alters an existing table, so new columns need an explicit step.
 const MIGRATIONS = [
+  { version: 6, table: "pbs_items", column: "input_scope", ddl: "ALTER TABLE pbs_items ADD COLUMN input_scope TEXT NOT NULL DEFAULT '[]'" },
   { version: 4, table: "products", column: "metadata", ddl: "ALTER TABLE products ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'" },
   { version: 2, table: "pbs_items", column: "capability_ids", ddl: "ALTER TABLE pbs_items ADD COLUMN capability_ids TEXT NOT NULL DEFAULT '[]'" },
   { version: 3, table: "pbs_items", column: "scenario_ids", ddl: "ALTER TABLE pbs_items ADD COLUMN scenario_ids TEXT NOT NULL DEFAULT '[]'" },
