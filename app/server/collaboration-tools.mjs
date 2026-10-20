@@ -8,7 +8,7 @@ import { getDb, json, now, parse, tx } from "./db.mjs";
 import * as repo from "./repo.mjs";
 import * as scenes from "./scenarios.mjs";
 import * as store from "./collaboration-store.mjs";
-import { approval, assertApproval, understandingVersion } from "./collaboration-approval.mjs";
+import { approval, assertApproval, pbsParticipation, understandingVersion } from "./collaboration-approval.mjs";
 import * as conversation from "./conversation-store.mjs";
 import { latestReview, review, validateReviewReply, offerChange, offerUnderstanding } from "./conversation-review.mjs";
 import { changeVersion } from "./chat.mjs";
@@ -19,9 +19,14 @@ export function collaborationAdapter(t, activation, { signal, onProgress } = {})
   const effectiveMode = mode === "intervention" && activation.input.work_mode === "discussion" ? "discussion" : mode;
   const revision = t.revision;
   const scope = `${t.id}:${role}:${activation.id}`;
-  const allowed = [...roleTools(role, effectiveMode), ...COLLABORATION_TOOLS.filter((tool) => mode === "claim"
+  const discussionOnly = live => role === "pbs" && !pbsParticipation(live).can_execute;
+  const businessTools = live => {
+    const readOnly = discussionOnly(live);
+    return roleTools(role, effectiveMode).filter(tool => !readOnly || tool.annotations.readOnlyHint);
+  };
+  const allowed = [...businessTools(t), ...COLLABORATION_TOOLS.filter((tool) => mode === "claim"
     ? ["collaboration_state", "respond_to_message"].includes(tool.name)
-    : tool.name !== "respond_to_message" && (tool.name !== "submit_expert_answer" || mode === "consultation") && (tool.name !== "request_confirmation" || (mode !== "consultation" && role !== "materials")))];
+    : tool.name !== "respond_to_message" && (tool.name !== "submit_expert_answer" || mode === "consultation") && (tool.name !== "request_confirmation" || (mode !== "consultation" && role !== "materials" && !discussionOnly(t))))];
   const readEvidence = new Map();
   const readInputs = new Set();
   const current = () => store.task(t.id);
@@ -39,6 +44,8 @@ export function collaborationAdapter(t, activation, { signal, onProgress } = {})
   const checkWrite = (name, args) => {
     const live = assertCurrent();
     if (["consultation", "claim"].includes(mode) || !ROLES[role].writes.includes(name)) fail("该角色或咨询任务没有此项写入权限");
+    // Also covers questions and change proposals, including approval lost mid-activation.
+    if (role === "pbs") assertApproval(live);
     if (conversation.pendingMessages(t.id).length) fail("新消息仍在收件认领，先完成消息同步再写入成果");
     const pending = store.pendingInputs(t.id);
     if (pending.length && (mode !== "intervention" || pending.some((i) => !readInputs.has(i.id)))) fail("人工补充尚未处理，业务写入暂缓");
@@ -55,26 +62,32 @@ export function collaborationAdapter(t, activation, { signal, onProgress } = {})
   };
   const local = localAgentAdapter(t.project_id, { signal, onProgress, operationScope: scope, checkWrite, pbsScope: () => assertApproval(current()).snapshot.requirements.map((r) => r.code) });
   const handlers = {
-    collaboration_state: () => ({ task: current(), role, activation_mode: mode, consultation_id: activation.input.consultation_id,
-      message: mode === "claim" ? conversation.message(activation.input.message_id) : null,
-      inbox: conversation.inbox(t.id).map(m => ({ id: m.id, content: m.content, targets: m.targets, state: m.state })),
-      claims: mode === "claim" ? conversation.claims(activation.input.message_id) : [],
-      review_request: mode === "claim" ? review(conversation.message(activation.input.message_id)?.data.reviewId) : latestReview(t.project_id),
-      capabilities: { business_tools: roleTools(role, effectiveMode).map((tool) => tool.name),
-        consultation_targets: mode === "claim" ? [] : ROLES[role].consult.map((target) => ({ role: target, label: ROLES[target].label })) },
-      confirmation: approval(current().approval_id, t.project_id), consultations: store.consultations(t.id), interventions: store.interventions(t.id),
-      rules: "只能使用实际工具答复。等待专家时结束本次活动，宿主将恢复。人工补充先read_interventions再处理。" }),
+    collaboration_state: () => {
+      const live = current(), participation = pbsParticipation(live);
+      return { task: live, role, activation_mode: mode, consultation_id: activation.input.consultation_id,
+        pbs_participation: participation,
+        message: mode === "claim" ? conversation.message(activation.input.message_id) : null,
+        inbox: conversation.inbox(t.id).map(m => ({ id: m.id, content: m.content, targets: m.targets, state: m.state })),
+        claims: mode === "claim" ? conversation.claims(activation.input.message_id) : [],
+        review_request: mode === "claim" ? review(conversation.message(activation.input.message_id)?.data.reviewId) : latestReview(t.project_id),
+        capabilities: { business_tools: businessTools(live).map((tool) => tool.name),
+          consultation_targets: mode === "claim" ? [] : ROLES[role].consult.map((target) => ({ role: target, label: ROLES[target].label })) },
+        confirmation: participation.can_execute ? approval(live.approval_id, t.project_id) : null, consultations: store.consultations(t.id), interventions: store.interventions(t.id),
+        rules: "只能使用实际工具答复。等待专家时结束本次活动，宿主将恢复。人工补充先read_interventions再处理。" };
+    },
     respond_to_message(args) {
       assertCurrent();
       const m = conversation.message(args.message_id);
       if (mode !== "claim" || args.message_id !== activation.input.message_id || m?.task_id !== t.id || m.state !== "pending" || !m.targets.includes(role)) fail("只能对当前实际投递给本角色的消息作出认领");
       if (args.decision === "claim" && (!args.scope?.trim() || !args.work_mode)) fail("认领需说明本角色处理的具体范围，并区分问答与成果执行");
+      if (args.decision === "claim" && args.work_mode === "main" && discussionOnly(current())) fail("需求理解尚未获得有效人工确认，PBS 不能认领执行任务。群聊中的成果任务请选择 pass；用户直接询问 PBS 或与你的职责有关的问答可认领 discussion，只做交流。不能把执行任务改名为 discussion 后继续编制。");
       if (args.decision === "review") validateReviewReply(m, args);
       conversation.recordClaim(m.id, role, args);
       return { recorded: true, next: "结束收件活动；待所有接收者判断后，宿主安排认领者处理。不要在收件活动执行业务。" };
     },
     request_confirmation(args) {
       assertCurrent();
+      if (discussionOnly(current())) fail("PBS 当前只参与交流，需求理解的确认范围由需求理解专家提供");
       if (conversation.pendingMessages(t.id).length || store.pendingInputs(t.id).some(i => !readInputs.has(i.id))) fail("先读取并处理用户的新消息，再展示确认范围");
       const selection = args.requirements || args.scenarios ? { requirements: args.requirements, scenarios: args.scenarios } : undefined;
       const request = offerUnderstanding(current(), selection);
@@ -137,6 +150,7 @@ export function collaborationAdapter(t, activation, { signal, onProgress } = {})
     },
     acknowledge_intervention(args) {
       assertCurrent(); checkReferences(args.references);
+      if (discussionOnly(current()) && args.outcome !== "read_only") fail("需求理解未获有效人工确认，PBS 当前只能记录只读交流结果，不能修改成果或确认状态");
       const i = store.pendingInputs(t.id).find((i) => i.id === args.intervention_id);
       if (mode !== "intervention" || i?.delivered_activation !== activation.id) fail("请先通过read_interventions读取这条人工消息");
       const receipts = (args.operation_ids ?? []).map((id) => getDb().prepare("SELECT tool,result FROM agent_operations WHERE project_id=? AND operation_id=?").get(t.project_id, `${scope}:${id}`));

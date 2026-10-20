@@ -48,6 +48,12 @@ export function approval(id, projectId) {
   const row = getDb().prepare("SELECT * FROM collaboration_approvals WHERE id=? AND project_id=?").get(id ?? "", projectId);
   return row ? { ...row, snapshot: parse(row.snapshot, {}) } : null;
 }
+export function pbsParticipation(t) {
+  const confirmed = approval(t.approval_id, t.project_id);
+  const canExecute = Boolean(confirmed && confirmed.input_version === understandingVersion(t.project_id));
+  return { can_discuss: true, can_execute: canExecute,
+    reason: canExecute ? null : "需求理解尚未经人工确认，或确认后的内容已变化。PBS 专家可交流和答疑，暂不认领或执行成果任务。" };
+}
 export function assertApproval(t) {
   const a = approval(t.approval_id, t.project_id);
   if (!a || a.input_version !== understandingVersion(t.project_id)) throw new HttpError(409, "本轮需求理解尚未确认或已变化，请先审阅并重新交接给PBS");

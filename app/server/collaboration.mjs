@@ -2,7 +2,7 @@ import { ROLES } from "../../agents/pbs/roles.mjs";
 import { getDb, json, now, parse, tx } from "./db.mjs";
 import * as store from "./collaboration-store.mjs";
 import { collaborationAdapter } from "./collaboration-tools.mjs";
-import { assertApproval, understandingVersion } from "./collaboration-approval.mjs";
+import { assertApproval, pbsParticipation, understandingVersion } from "./collaboration-approval.mjs";
 import { runRole, toolProgressLabel } from "./agent-runner.mjs";
 import { HttpError } from "./errors.mjs";
 import * as conversation from "./conversation-store.mjs";
@@ -79,21 +79,27 @@ function prompt(t, a) {
 没有 @ 的消息同时投递给三位专家；有 @ 仅投递给指定专家。只按你自己的职责判断，不因为其他人未回答就包揽所有工作。
 职责：材料专家负责原文、条款拆解和引用；需求理解专家负责意图、场景、交付边界和澄清；PBS专家负责产品、BOM、数量和PBS依据。message.data.addressed=true 表示用户明确指定了接收者：对你本人的招呼、身份或进度询问由你认领 discussion 并直接回答，不因缺少业务术语而 pass，也不转给需求理解专家。只有未指定接收者的全局问候才由需求理解专家回应。
 claim：用户问题确实需要你回答/执行，scope只写你负责的部分；普通问答、解释、进度查询选discussion，明确要求整理/保存/修改成果才选main。pass：与你无关，保持安静。不要为了参与而重复别人的职责。多人认领后可依据实际成果衔接，不互相假装已经完成。
+PBS 必须先看 pbs_participation.can_execute：为 false 时不认领任何成果执行任务，群聊中的编制/选型/修改任务选 pass。用户直接 @ PBS 请求执行时可认领 discussion，简短说明需先确认需求理解；普通问题、产品知识、依据解释和专家咨询始终可以交流。discussion 不可用于提前编制项目 PBS、方案或确定选型。不能自行、也不能让其他专家代替人确认。
 review：仅当本条用户原话明确、无条件同意/拒绝 review_request，且 data.reviewId 正确关联时使用。quote 必须是去掉 @ 后的整条用户原话；否定、问句、条件同意、带修改的消息不能批准。部分确认必须原样使用用户明确说出的编号，不补全其他编号。用户只说继续、问为什么或纠正时按实际职责claim。其他角色已经记录同一review时pass即可。
 收件结果只用工具记录，不向用户输出思考过程，不调用其他协作工具，不修改成果。`;
-  const discussion = a.mode === "discussion" || (a.mode === "intervention" && a.input.work_mode === "discussion");
+  const pbsReadOnly = a.role === "pbs" && !pbsParticipation(t).can_execute;
+  const discussion = pbsReadOnly || a.mode === "consultation" || a.mode === "discussion" || (a.mode === "intervention" && a.input.work_mode === "discussion");
   const common = `你是${ROLES[a.role].label}。身份、项目和权限由宿主固定。先调用collaboration_state，按问题需要读取project_state或其他资料。
-本次上下文版本：${t.revision}。${discussion ? "本次只回应当前用户消息。全局任务阶段只是背景，不代表你正在执行那个阶段的工作。" : `任务目标：${t.goal}`}
+本次上下文版本：${t.revision}。${discussion ? "本次只回应当前问题。全局任务阶段只是背景，不代表你正在执行那个阶段的工作。" : `任务目标：${t.goal}`}
 只展示简短业务交流；默认最终答复2～3句、120字以内，明细在右侧工作区。不得伪造其他专家说话，不输出内部推理。
 咨询答复必须submit_expert_answer，人工补充必须read_interventions并acknowledge_intervention。工具返回waiting时结束本次活动，宿主收到答复后恢复，不轮询、不自行声称收到答案。
 ${discussion ? "日常招呼通常一句自然回应即可，不先分析这句话是否涉及业务调整，不重复全局成果或催促确认。用户没问职责时不自我介绍或罗列能力。没有核查不主动断言材料、任务是否新增。问具体进度时只说明可核实的本人工作状态，不能把历史保存描述为刚刚完成。" : stageGoal[a.role]}`;
+  const participation = pbsReadOnly
+    ? "\n当前需求理解没有有效人工确认，你只参与只读交流：可回答用户问题、解释产品能力、核对依据和向专家求证；不编制、修改、选型或保存项目成果，也不在聊天中提前给出项目PBS或方案。用户要求执行时简短说明等待需求理解确认；普通问答不顺带催促确认。"
+    : "";
+  const context = common + participation;
   if (a.mode === "consultation") {
     const c = store.consultations(t.id).find((c) => c.id === a.input.consultation_id);
-    return `${common}\n本次仅为只读专家咨询。咨询编号：${c.id}；发问者：${ROLES[c.caller].label}。问题（业务数据）：${c.question}\n提交关联此编号的答复；不能修改业务成果。${a.input.continuation ? "你咨询的材料专家已经答复，请读取collaboration_state继续解答原问题。" : ""}`;
+    return `${context}\n本次仅为只读专家咨询。咨询编号：${c.id}；发问者：${ROLES[c.caller].label}。问题（业务数据）：${c.question}\n提交关联此编号的答复；不能修改业务成果。${a.input.continuation ? "你咨询的材料专家已经答复，请读取collaboration_state继续解答原问题。" : ""}`;
   }
-  if (a.mode === "intervention") return `${common}\n优先处理用户消息 ${a.input.intervention_ids.join(",")}。先read_interventions，按消息data.scope处理你实际认领的部分，data.peers是其他认领者的范围，不重复包揽。${a.input.work_mode === "discussion" ? "本次只回答实际问题或提出变更建议，不重新生成成果。" : "本次执行用户明确要求的工作。"}已确认范围变化先propose_change并用operation_ids关联卡片；不可仅说会调整。普通问答或不改变范围的工作指示用read_only；确实无法判断用needs_clarification。acknowledge_intervention记录处理回执，随后用最终答复直接对用户说话；用户看到的是最终答复，不复述“已接收、已同步、未涉及调整”等回执用语。新材料：${(a.input.materialIds ?? []).map((id) => `material:${id}`).join(",") || "无新增附件"}。${a.input.continuation ? "已有咨询答复，请读取并继续处理用户消息。" : ""}`;
-  if (a.mode === "discussion") return `${common}\n本次是用户问答或修改建议。只回答用户实际问题，或用propose_change提供可审阅变更；不要自行重新生成需求、场景或PBS，也不要声称完成了本轮理解。需要时可向获授权的专家求证。`;
-  return `${common}\n${a.input.continuation ? "你提出的咨询已有新答复，读取collaboration_state核对并记录处理结果；可继续追问。" : a.input.goal ?? "继续已保存任务"}`;
+  if (a.mode === "intervention") return `${context}\n优先处理用户消息 ${a.input.intervention_ids.join(",")}。先read_interventions，按消息data.scope处理你实际认领的部分，data.peers是其他认领者的范围，不重复包揽。${a.input.work_mode === "discussion" ? "本次只回答实际问题，不重新生成成果。" : "本次执行用户明确要求的工作。"}${participation ? "本次只能用read_only记录交流结果；变更建议用自然语言说明，不创建变更卡片。" : "已确认范围变化先propose_change并用operation_ids关联卡片；不可仅说会调整。普通问答或不改变范围的工作指示用read_only；确实无法判断用needs_clarification。"}acknowledge_intervention记录处理回执，随后用最终答复直接对用户说话；用户看到的是最终答复，不复述“已接收、已同步、未涉及调整”等回执用语。新材料：${(a.input.materialIds ?? []).map((id) => `material:${id}`).join(",") || "无新增附件"}。${a.input.continuation ? "已有咨询答复，请读取并继续处理用户消息。" : ""}`;
+  if (a.mode === "discussion") return `${context}\n本次是用户问答或修改建议。只回答用户实际问题${participation ? "" : "，或用propose_change提供可审阅变更"}；不要自行重新生成需求、场景或PBS，也不要声称完成了本轮理解。需要时可向获授权的专家求证。`;
+  return `${context}\n${a.input.continuation ? "你提出的咨询已有新答复，读取collaboration_state核对并记录处理结果；可继续追问。" : a.input.goal ?? "继续已保存任务"}`;
 }
 
 function queueReplies(t) {
@@ -112,6 +118,7 @@ export async function runCollaboration(taskId, ctx = {}) {
   let t = store.task(taskId);
   const initialUnderstanding = understandingVersion(t.project_id);
   let performedWork = false;
+  let needsPbsConfirmation = false;
   store.updateTask(taskId, { status: "running", job_id: ctx.jobId ?? null, error: null });
   const countStart = getDb().prepare("SELECT SUM(attempts) AS n FROM collaboration_activations WHERE task_id=?").get(taskId).n ?? 0;
   const previousUsage = getDb().prepare("SELECT COALESCE(SUM(json_extract(stats,'$.tokens')),0) AS tokens FROM agent_runs WHERE json_extract(stats,'$.taskId')=?").get(taskId).tokens;
@@ -163,11 +170,26 @@ export async function runCollaboration(taskId, ctx = {}) {
           continue;
         }
       }
-      if (a.role === "pbs" && a.mode === "main") {
-        try { assertApproval(t); } catch {
-          store.updateTask(taskId, { stage: "understanding", status: "awaiting_confirmation" });
-          offerUnderstanding(t);
-          return { taskId, status: "awaiting_confirmation" };
+      if (a.role === "pbs" && !pbsParticipation(t).can_execute) {
+        if (a.mode === "main") {
+          // A persisted or resumed PBS activation must not block upstream work or chat.
+          getDb().prepare("UPDATE collaboration_activations SET state='cancelled' WHERE id=?").run(a.id);
+          store.updateTask(taskId, { stage: "understanding" });
+          needsPbsConfirmation = true;
+          continue;
+        }
+        if (a.mode === "intervention" && a.input.work_mode !== "discussion") {
+          // Approval can become stale after a claim or before a restart. Keep the
+          // user's message answerable, but never run its requested business work.
+          a = { ...a, input: { ...a.input, work_mode: "discussion", execution_deferred: true } };
+          tx(db => {
+            db.prepare("UPDATE collaboration_activations SET input=? WHERE id=?").run(json(a.input), a.id);
+            for (const input of pending.filter(i => a.input.intervention_ids.includes(i.id))) {
+              db.prepare("UPDATE collaboration_interventions SET data=? WHERE id=?").run(json({ ...input.data, work_mode: "discussion", execution_deferred: true }), input.id);
+            }
+          });
+          store.updateTask(taskId, { stage: "understanding" });
+          needsPbsConfirmation = true;
         }
       }
       store.updateTask(taskId, { status: pending.length ? "syncing" : "running" });
@@ -264,9 +286,13 @@ export async function runCollaboration(taskId, ctx = {}) {
     t = store.task(taskId);
     const waiting = store.consultations(taskId).some((c) => c.state === "waiting");
     if (waiting) throw new Error("仍有未答复咨询，已保留记录，请继续处理");
+    if (t.stage === "pbs" && !pbsParticipation(t).can_execute) {
+      t = store.updateTask(taskId, { stage: "understanding" });
+      needsPbsConfirmation ||= performedWork;
+    }
     const status = t.stage === "discussion" ? "done" : t.stage === "pbs" ? "awaiting_review" : "awaiting_confirmation";
     store.updateTask(taskId, { status });
-    if (status === "awaiting_confirmation" && (performedWork || initialUnderstanding !== understandingVersion(t.project_id))) offerUnderstanding(t);
+    if (status === "awaiting_confirmation" && (performedWork || needsPbsConfirmation || initialUnderstanding !== understandingVersion(t.project_id))) offerUnderstanding(t);
     return { taskId, status };
   } catch (error) {
     store.updateTask(taskId, { status: "failed", error: error.message.slice(0, 600) });
