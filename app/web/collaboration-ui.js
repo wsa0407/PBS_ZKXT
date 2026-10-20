@@ -1,11 +1,11 @@
 import { defineComponent, ref, watch } from "vue";
 import { api, call } from "./api.js";
 
-export const expertLabels = { materials: "材料拆解专家", understanding: "需求理解专家", pbs: "PBS专家", human: "我", system: "协作提示" };
+export const expertLabels = { materials: "材料拆解专家", understanding: "需求理解专家", pbs: "PBS专家", human: "我", all: "专家群", system: "协作提示" };
 export const exchangeStatus = { received: "已接收", waiting: "等待答复", delivered: "已送达", processing: "正在处理", answered: "已答复", adjusted: "已据此调整", requires_confirmation: "需你确认", needs_clarification: "仍待澄清", read_only: "已答复", paused: "已暂停" };
 export const ExpertDetails = defineComponent({
   props: { message: Object, open: Function },
-  emits: ["reply", "approve", "resume"],
+  emits: ["resume"],
   setup(props) {
     const openReference = (ref) => props.open(/^SC/.test(ref) ? "scenarios" : /^R/.test(ref) ? "requirements" : /^M\d+:/.test(ref) ? "materials" : "pbs", ref.startsWith("pbs:") ? Number(ref.slice(4)) : ref);
     return { expertLabels, exchangeStatus, openReference };
@@ -20,9 +20,8 @@ export const ExpertDetails = defineComponent({
       <div v-for="d in message.payload.coverage || []" :key="d.title">{{ d.title }}：已处理 {{ d.total_sections - d.remaining }}/{{ d.total_sections }} 段，剩余 {{ d.remaining }} 段</div>
       <p v-if="message.payload.detail">{{ message.payload.detail }}</p>
     </details>
+    <details v-if="message.payload.reviewScope"><summary>查看本轮确认范围</summary><p>需求：{{ message.payload.reviewScope.requirements.join('、') }}</p><p>场景：{{ message.payload.reviewScope.scenarios.join('、') || '无' }}</p><p v-for="q in message.payload.reviewScope.questions" :key="q.id">待澄清：{{ q.question }}</p></details>
     <div class="exchange-actions">
-      <button v-if="message.payload.sender && !['human','system'].includes(message.payload.sender)" @click="$emit('reply', message)">补充 / 纠正</button>
-      <button v-if="message.payload.approvalRequired" class="primary-text" @click="$emit('approve')">审阅本轮范围并交给 PBS →</button>
       <button v-if="message.payload.resumable" @click="$emit('resume')">继续处理</button>
       <span>{{ exchangeStatus[message.payload.status] || '' }}</span>
       <span v-if="message.payload.consultationId" title="同一编号表示同一段专家讨论">讨论 {{ message.payload.consultationId.slice(0, 6) }}</span>

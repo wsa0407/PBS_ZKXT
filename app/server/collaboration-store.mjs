@@ -28,7 +28,7 @@ export function enqueue(t, role, mode, input) {
   return id;
 }
 export function nextActivation(id) {
-  const row = getDb().prepare("SELECT * FROM collaboration_activations WHERE task_id=? AND state='queued' ORDER BY CASE mode WHEN 'intervention' THEN 0 WHEN 'consultation' THEN 1 ELSE 2 END,rowid LIMIT 1").get(id);
+  const row = getDb().prepare("SELECT * FROM collaboration_activations WHERE task_id=? AND state='queued' ORDER BY CASE mode WHEN 'claim' THEN -1 WHEN 'intervention' THEN 0 WHEN 'consultation' THEN 1 ELSE 2 END,rowid LIMIT 1").get(id);
   return row ? { ...row, input: parse(row.input, {}) } : null;
 }
 export const consultations = (id) => getDb().prepare("SELECT * FROM collaboration_consultations WHERE task_id=? ORDER BY rowid").all(id).map((r) => ({ ...r, data: parse(r.data, {}), answer: parse(r.answer, null), outcome: parse(r.outcome, null) }));

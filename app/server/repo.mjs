@@ -134,6 +134,9 @@ export function touchProject(id) {
 export function deleteProject(id) {
   tx((db) => {
     db.prepare("DELETE FROM collaboration_activations WHERE task_id IN (SELECT id FROM collaboration_tasks WHERE project_id=?)").run(id);
+    db.prepare("DELETE FROM conversation_claims WHERE message_id IN (SELECT id FROM conversation_messages WHERE project_id=?)").run(id);
+    db.prepare("DELETE FROM conversation_messages WHERE project_id=?").run(id);
+    db.prepare("DELETE FROM conversation_reviews WHERE project_id=?").run(id);
     for (const table of ["collaboration_tasks", "collaboration_sessions", "collaboration_consultations", "collaboration_interventions", "collaboration_approvals", "collaboration_events", "agent_runs", "agent_operations", "agent_coverage", "materials", "segments", "source_snapshots", "requirements", "param_overrides", "questions", "pbs_items", "capabilities", "scenarios", "scenario_requirements", "scenario_revisions", "requirement_dispositions", "scenario_runs", "events", "llm_calls", "chat_messages"]) {
       db.prepare(`DELETE FROM ${table} WHERE project_id = ?`).run(id);
     }

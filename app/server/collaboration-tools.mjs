@@ -9,14 +9,19 @@ import * as repo from "./repo.mjs";
 import * as scenes from "./scenarios.mjs";
 import * as store from "./collaboration-store.mjs";
 import { approval, assertApproval, understandingVersion } from "./collaboration-approval.mjs";
+import * as conversation from "./conversation-store.mjs";
+import { latestReview, review, validateReviewReply, offerChange, offerUnderstanding } from "./conversation-review.mjs";
+import { changeVersion } from "./chat.mjs";
 
 const fail = (message) => { throw new Error(message); };
 export function collaborationAdapter(t, activation, { signal, onProgress } = {}) {
   const { role, mode } = activation;
+  const effectiveMode = mode === "intervention" && activation.input.work_mode === "discussion" ? "discussion" : mode;
   const revision = t.revision;
   const scope = `${t.id}:${role}:${activation.id}`;
-  const allowed = [...roleTools(role, mode), ...COLLABORATION_TOOLS.filter((tool) =>
-    tool.name !== "submit_expert_answer" || mode === "consultation")];
+  const allowed = [...roleTools(role, effectiveMode), ...COLLABORATION_TOOLS.filter((tool) => mode === "claim"
+    ? ["collaboration_state", "respond_to_message"].includes(tool.name)
+    : tool.name !== "respond_to_message" && (tool.name !== "submit_expert_answer" || mode === "consultation") && (tool.name !== "request_confirmation" || (mode !== "consultation" && role !== "materials")))];
   const readEvidence = new Map();
   const readInputs = new Set();
   const current = () => store.task(t.id);
@@ -33,7 +38,8 @@ export function collaborationAdapter(t, activation, { signal, onProgress } = {})
   };
   const checkWrite = (name, args) => {
     const live = assertCurrent();
-    if (mode === "consultation" || !ROLES[role].writes.includes(name)) fail("该角色或咨询任务没有此项写入权限");
+    if (["consultation", "claim"].includes(mode) || !ROLES[role].writes.includes(name)) fail("该角色或咨询任务没有此项写入权限");
+    if (conversation.pendingMessages(t.id).length) fail("新消息仍在收件认领，先完成消息同步再写入成果");
     const pending = store.pendingInputs(t.id);
     if (pending.length && (mode !== "intervention" || pending.some((i) => !readInputs.has(i.id)))) fail("人工补充尚未处理，业务写入暂缓");
     if (["submit_pbs", "submit_solutions"].includes(name)) {
@@ -50,10 +56,31 @@ export function collaborationAdapter(t, activation, { signal, onProgress } = {})
   const local = localAgentAdapter(t.project_id, { signal, onProgress, operationScope: scope, checkWrite, pbsScope: () => assertApproval(current()).snapshot.requirements.map((r) => r.code) });
   const handlers = {
     collaboration_state: () => ({ task: current(), role, activation_mode: mode, consultation_id: activation.input.consultation_id,
-      capabilities: { business_tools: roleTools(role, mode).map((tool) => tool.name),
-        consultation_targets: ROLES[role].consult.map((target) => ({ role: target, label: ROLES[target].label })) },
+      message: mode === "claim" ? conversation.message(activation.input.message_id) : null,
+      inbox: conversation.inbox(t.id).map(m => ({ id: m.id, content: m.content, targets: m.targets, state: m.state })),
+      claims: mode === "claim" ? conversation.claims(activation.input.message_id) : [],
+      review_request: mode === "claim" ? review(conversation.message(activation.input.message_id)?.data.reviewId) : latestReview(t.project_id),
+      capabilities: { business_tools: roleTools(role, effectiveMode).map((tool) => tool.name),
+        consultation_targets: mode === "claim" ? [] : ROLES[role].consult.map((target) => ({ role: target, label: ROLES[target].label })) },
       confirmation: approval(current().approval_id, t.project_id), consultations: store.consultations(t.id), interventions: store.interventions(t.id),
       rules: "只能使用实际工具答复。等待专家时结束本次活动，宿主将恢复。人工补充先read_interventions再处理。" }),
+    respond_to_message(args) {
+      assertCurrent();
+      const m = conversation.message(args.message_id);
+      if (mode !== "claim" || args.message_id !== activation.input.message_id || m?.task_id !== t.id || m.state !== "pending" || !m.targets.includes(role)) fail("只能对当前实际投递给本角色的消息作出认领");
+      if (args.decision === "claim" && (!args.scope?.trim() || !args.work_mode)) fail("认领需说明本角色处理的具体范围，并区分问答与成果执行");
+      if (args.decision === "review") validateReviewReply(m, args);
+      conversation.recordClaim(m.id, role, args);
+      return { recorded: true, next: "结束收件活动；待所有接收者判断后，宿主安排认领者处理。不要在收件活动执行业务。" };
+    },
+    request_confirmation(args) {
+      assertCurrent();
+      if (conversation.pendingMessages(t.id).length || store.pendingInputs(t.id).some(i => !readInputs.has(i.id))) fail("先读取并处理用户的新消息，再展示确认范围");
+      const selection = args.requirements || args.scenarios ? { requirements: args.requirements, scenarios: args.scenarios } : undefined;
+      const request = offerUnderstanding(current(), selection);
+      if (!request) fail("当前没有可交接的需求范围，或仍有变更建议需要先处理");
+      return { review_id: request.id, scope: request.data, state: "awaiting_user", next: "已在对话中请用户确认；本轮不能据此生成PBS。" };
+    },
     ask_expert(args) {
       assertCurrent(); checkReferences(args.references);
       if (!ROLES[role].consult.includes(args.target)) fail("当前角色不允许向该专家发起咨询");
@@ -104,7 +131,7 @@ export function collaborationAdapter(t, activation, { signal, onProgress } = {})
       const pending = all.filter((i) => activation.input.intervention_ids.includes(i.id));
       for (const i of pending) {
         getDb().prepare("UPDATE collaboration_interventions SET state='delivered',delivered_activation=? WHERE id=?").run(activation.id, i.id);
-        if (i.delivered_activation !== activation.id) store.event(t, "delivery", role, "human", "已读到你的补充，正在核对相关依据与影响。", { interventionId: i.id, status: "delivered" });
+        if (i.delivered_activation !== activation.id && !i.data.messageId) store.event(t, "delivery", role, "human", "已读到你的补充，正在核对相关依据与影响。", { interventionId: i.id, status: "delivered" });
       }
       return { messages: pending, other_pending_context: all.filter((i) => !activation.input.intervention_ids.includes(i.id)), note: "仅处理定向给本角色的messages；其他补充作为上下文参考。调整需实际保存，已确认范围变化需提交变更建议。" };
     },
@@ -118,8 +145,18 @@ export function collaborationAdapter(t, activation, { signal, onProgress } = {})
       if (args.outcome === "requires_confirmation" && !valid.some((r) => r.tool === "propose_change")) fail("需要先提交可审阅的变更建议，再记录需人工确认");
       if (args.outcome !== "read_only") {
         // Conservative invalidation until the affected range has been explicitly reviewed.
+        const before = changeVersion(t.project_id);
         getDb().prepare("UPDATE pbs_items SET stale='人工补充已影响本轮理解，请复核',confirmed=0 WHERE project_id=?").run(t.project_id);
         store.updateTask(t.id, { approval_id: null });
+        const after = changeVersion(t.project_id);
+        // Only the known host invalidation above may rebase still-current proposals.
+        // Actual content changes continue to make older cards stale.
+        if (before !== after) for (const row of getDb().prepare("SELECT id,payload FROM chat_messages WHERE project_id=?").all(t.project_id)) {
+          const payload = parse(row.payload, {});
+          const cards = payload.cards?.filter(c => c.kind === "agent_change" && c.state === "pending" && c.input_version === before) ?? [];
+          if (cards.length) { cards.forEach(c => { c.input_version = after; }); repo.updateChatPayload(t.project_id, row.id, payload); }
+        }
+        if (before !== after) getDb().prepare("UPDATE conversation_reviews SET version=? WHERE project_id=? AND kind='change' AND state='pending' AND version=?").run(after, t.project_id, before);
       }
       getDb().prepare("UPDATE collaboration_interventions SET state='handled',result=? WHERE id=?").run(json(args), i.id);
       store.event(t, "intervention_result", role, "human", args.explanation, { interventionId: i.id, status: args.outcome, references: args.references ?? [] });
@@ -151,8 +188,10 @@ export function collaborationAdapter(t, activation, { signal, onProgress } = {})
       }
       if (result.ok && result.data?.card) {
         const key = `${scope}:${args.operation_id}`;
-        if (!getDb().prepare("SELECT 1 FROM collaboration_events WHERE project_id=? AND json_extract(payload,'$.operationKey')=?").get(t.project_id, key))
-          store.event(t, "change_proposal", role, "human", result.data.card.text, { cards: [result.data.card], operationKey: key, status: "requires_confirmation" });
+        if (!getDb().prepare("SELECT 1 FROM collaboration_events WHERE project_id=? AND json_extract(payload,'$.operationKey')=?").get(t.project_id, key)) {
+          const e = store.event(t, "change_proposal", role, "human", `${result.data.card.text}。请直接回复是否采纳，或告诉我需要怎样修改。`, { cards: [result.data.card], operationKey: key, status: "requires_confirmation" });
+          offerChange(t, role, e, result.data.card);
+        }
       }
       return result;
     } catch (error) { return { ok: false, error: { code: "COLLABORATION_VALIDATION", message: error.message } }; }

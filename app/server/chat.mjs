@@ -6,7 +6,7 @@ import * as scenarios from "./scenarios.mjs";
 import { hash } from "../engine/scenario.mjs";
 
 const AGENT_CHANGE_TYPES = new Set(["set_param", "edit_requirement", "add_requirement", "delete_requirement", "edit_scenario", "confirm_scenarios", "confirm_requirements", "edit_item", "confirm_items", "delete_item", "finish", "show"]);
-const changeVersion = (id) => hash({ requirements: repo.listRequirements(id), items: repo.listItems(id), params: repo.listOverrides(id), scenarios: scenarios.listScenarios(id), project: repo.getProject(id) });
+export const changeVersion = (id) => hash({ requirements: repo.listRequirements(id), items: repo.listItems(id), params: repo.listOverrides(id), scenarios: scenarios.listScenarios(id), project: repo.getProject(id) });
 export function proposeAgentChange(projectId, action) {
   if (!AGENT_CHANGE_TYPES.has(action.type)) throw new Error("该操作不能作为人工变更提案");
   const planned = plan(action, svc.projectView(projectId), { projectId });

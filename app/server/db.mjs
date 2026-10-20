@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
 const seedDir = new URL("../seed/", import.meta.url);
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
@@ -49,6 +49,23 @@ CREATE TABLE IF NOT EXISTS collaboration_events (
 );
 CREATE INDEX IF NOT EXISTS collaboration_events_project ON collaboration_events(project_id,seq);
 CREATE INDEX IF NOT EXISTS collaboration_queue ON collaboration_activations(task_id,state);
+
+CREATE TABLE IF NOT EXISTS conversation_messages (
+  id TEXT PRIMARY KEY, task_id TEXT NOT NULL, project_id TEXT NOT NULL,
+  content TEXT NOT NULL, targets TEXT NOT NULL, data TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS conversation_claims (
+  message_id TEXT NOT NULL, role TEXT NOT NULL, decision TEXT NOT NULL,
+  data TEXT NOT NULL, PRIMARY KEY(message_id,role)
+);
+CREATE TABLE IF NOT EXISTS conversation_reviews (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL, task_id TEXT NOT NULL,
+  kind TEXT NOT NULL, version TEXT NOT NULL, data TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS conversation_inbox ON conversation_messages(task_id,state);
+CREATE INDEX IF NOT EXISTS conversation_review_project ON conversation_reviews(project_id,state);
 
 CREATE TABLE IF NOT EXISTS agent_runs (
   id TEXT PRIMARY KEY, project_id TEXT, session_id TEXT, goal TEXT NOT NULL,

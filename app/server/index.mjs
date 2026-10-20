@@ -231,7 +231,10 @@ post("/api/projects/:id/questions/:qid/answer", ({ id, qid }, body) =>
 post("/api/projects/:id/questions/:qid/apply", ({ id, qid }, body) => svc.applyAnswer(id, Number(qid), body.accepted ?? [], body.resolution_note ?? ""));
 
 // chat (conversational control; every turn is a background job so model calls show progress)
-get("/api/projects/:id/chat", ({ id }) => ({ messages: chat.chatHistory(id), suggestions: chat.suggestions(svc.projectView(id)), collaboration: collaboration.collaborationView(id), job: activeJob(id) }));
+get("/api/projects/:id/chat", ({ id }) => {
+  const state = collaboration.collaborationView(id);
+  return { messages: chat.chatHistory(id), suggestions: chat.suggestions(svc.projectView(id)), collaboration: state, job: activeJob(id) };
+});
 post("/api/projects/:id/chat", async ({ id }, body) => {
   repo.getProject(id);
   const attachment = body.file?.base64 ? { name: String(body.file.name ?? "upload"), text: (await fileText(body)).text } : null;

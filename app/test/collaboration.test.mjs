@@ -9,6 +9,7 @@ import { createCollaboration, receiveIntervention, runCollaboration } from "../s
 import { collaborationAdapter } from "../server/collaboration-tools.mjs";
 import { setAgentRuntimeFactory } from "../server/agent-runner.mjs";
 import { createServer } from "../server/index.mjs";
+import { inbox } from "../server/conversation-store.mjs";
 
 let id;
 beforeEach(() => {
@@ -162,7 +163,9 @@ test("durable messages, hidden conversation and restart recovery preserve eviden
     const input = { requestId: "api-message", text: "这个接口还需客户明确", target: "understanding" };
     const send = () => fetch(base + "/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }).then((r) => r.json());
     assert.deepEqual(await send(), await send());
-    assert.equal(store.interventions(t.id).length, 2);
+    assert.equal(store.interventions(t.id).length, 1);
+    assert.equal(inbox(t.id).length, 1);
+    assert.deepEqual(inbox(t.id)[0].targets, ["understanding"]);
     const events = store.events(id);
     const stream = await fetch(base + `/collaboration/stream?after=${events.at(-2).seq}`, { signal: AbortSignal.timeout(2000) });
     const reader = stream.body.getReader();
