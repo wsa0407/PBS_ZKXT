@@ -158,10 +158,8 @@ main { max-width: 1680px; margin: 0 auto; padding: 18px 24px 40px; }
 .arrow { color: var(--muted); font-size: 18px; flex: none; }
 .caps { margin: 6px 0; }
 .open-link { margin-top: 4px; }
-.working .job-step { padding: 2px 0; font-size: 13px; }
 .chat-foot { border-top: 1px solid var(--line); padding: 8px 12px 12px; background: #fff; }
 .chat-activity { display:flex; align-items:center; gap:8px; color:#667085; font-size:12px; padding:2px 0 8px; }
-.chat-activity .el-button { margin-left:auto; }
 .chat-activity .spin { flex:none; }
 .quick { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
 .quick button { border: 1px solid #b2d1f5; background: var(--accent-wash); color: #1c5cab; border-radius: 14px; padding: 2px 12px; font-size: 12px; cursor: pointer; }

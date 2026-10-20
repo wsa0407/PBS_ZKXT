@@ -1,7 +1,7 @@
 import { createApp, defineComponent } from "vue";
 import ElementPlus from "element-plus";
 import zhCn from "element-plus/zh-cn";
-import { jobState, loadMeta, meta, shell, stopJob } from "./api.js";
+import { jobState, loadMeta, meta, shell } from "./api.js";
 import { resolve, router, setRoutes } from "./router.js";
 import ProjectList from "./pages/projects.js";
 import ProjectPage from "./pages/project.js";
@@ -17,7 +17,7 @@ window.addEventListener("hashchange", resolve);
 // ---------- shell ----------
 
 const JobDialog = defineComponent({
-  setup: () => ({ jobState, stopJob }),
+  setup: () => ({ jobState }),
   template: `
   <el-dialog v-model="jobState.visible" :title="jobState.title" width="480px" :close-on-click-modal="false" :show-close="['失败','已取消'].includes(jobState.job?.status)">
     <div class="job-steps" v-if="jobState.job">
@@ -29,8 +29,7 @@ const JobDialog = defineComponent({
       <el-alert v-if="jobState.job.status === '已取消'" type="info" :closable="false" :title="jobState.job.error" style="margin-top:12px" />
     </div>
     <div v-else class="muted">正在启动……</div>
-    <div class="muted" style="margin-top:10px" v-if="jobState.job?.status === '处理中'">正在按材料内容逐步处理，已保存的草稿可继续处理。</div>
-    <template #footer><el-button v-if="['失败','已取消'].includes(jobState.job?.status)" @click="jobState.visible = false">关闭</el-button><el-button v-else :disabled="!jobState.job?.id || jobState.stopping" @click="stopJob">{{ jobState.stopping ? '正在停止…' : '停止处理' }}</el-button></template>
+    <template #footer v-if="['失败','已取消'].includes(jobState.job?.status)"><el-button @click="jobState.visible = false">关闭</el-button></template>
   </el-dialog>`,
   data: () => ({ meta }),
 });

@@ -46,12 +46,7 @@ export function pickFile(accept) {
 
 // ---------- background jobs (every model call runs as a job) ----------
 
-export const jobState = reactive({ visible: false, title: "", job: null, stopping: false });
-export async function stopJob() {
-  if (!jobState.job?.id || jobState.stopping) return;
-  const result = await call(() => api(`/jobs/${jobState.job.id}/cancel`, { method: "POST" }));
-  if (result) jobState.stopping = true;
-}
+export const jobState = reactive({ visible: false, title: "", job: null });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -66,7 +61,6 @@ export async function runJob(title, start) {
   }
   jobState.title = title;
   jobState.job = null;
-  jobState.stopping = false;
   jobState.visible = true;
   try {
     for (;;) {

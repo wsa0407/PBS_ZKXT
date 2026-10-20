@@ -9,6 +9,7 @@ import { selectedModel } from "./models.mjs";
 const stateRoot = fileURLToPath(new URL("../../runtime/.state/", import.meta.url));
 const labels = { project_state: "读取项目现状", list_document_sections: "检查材料目录", read_document_batch: "阅读材料原文", read_evidence: "回查原文", search_evidence: "检索证据", list_requirements: "读取需求", list_scenarios: "读取场景", list_pbs: "读取PBS明细", submit_requirements: "校验并保存需求", submit_scenarios: "校验并保存场景", submit_questions: "保存澄清问题", read_product: "核对产品与BOM", submit_pbs: "校验PBS组合", submit_solutions: "保存项目解决方案", run_report: "检查覆盖与待办", propose_change: "整理人工变更建议", finish_task: "记录工作结果", submit_result: "校验分析结果" };
 let runtimeFactory;
+export const toolProgressLabel = (name) => labels[name] ?? "核对项目信息";
 export function setAgentRuntimeFactory(factory) { runtimeFactory = factory; }
 
 async function infrastructure() {
@@ -97,7 +98,7 @@ export async function runAgent(projectId, goal, { progress, signal, resume = fal
   if (resume && !previous) throw new Error("没有找到当前项目可恢复的任务，请重新指定处理目标");
   if (previous) goal = `继续原任务：${previous.goal}\n${goal}`;
   getDb().prepare("INSERT INTO agent_runs(id,project_id,goal,status,created_at) VALUES (?,?,?,'running',?)").run(runId, projectId, goal, now());
-  const adapter = localAgentAdapter(projectId, { signal, onProgress: (name) => progress?.detail(labels[name] ?? name) });
+  const adapter = localAgentAdapter(projectId, { signal, onProgress: (name) => progress?.detail(toolProgressLabel(name)) });
   const trace = [];
   const cards = [];
   progress?.setSteps(["Agent理解与执行", "校验成果与待办"]);
