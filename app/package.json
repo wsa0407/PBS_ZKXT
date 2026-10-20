@@ -1,0 +1,30 @@
+{
+  "name": "pbs-agent-app",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "PBS 智能拆解：需求 → 澄清 → PBS → 产品匹配，带人工审阅与编辑",
+  "scripts": {
+    "start": "node server/index.mjs",
+    "test": "node --test",
+    "lint": "eslint .",
+    "check:templates": "node scripts/check-templates.mjs",
+    "check": "npm run lint && npm run check:templates && npm test"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "element-plus": "^2.8.0",
+    "exceljs": "^4.4.0",
+    "mammoth": "^1.8.0",
+    "pdf-parse": "^1.1.1",
+    "vue": "^3.5.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@vue/compiler-dom": "^3.5.44",
+    "eslint": "^10.12.0",
+    "globals": "^17.13.0"
+  }
+}

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "tender_police",
+    "file": "tender_police.md",
+    "title": "某市交警支队道路无人机智能巡逻系统",
+    "inputType": "tender",
+    "industry": "公安",
+    "label": "招标文件 · 公安交警道路巡逻"
+  },
+  {
+    "id": "minutes_forest",
+    "file": "minutes_forest.md",
+    "title": "某县应急局森林防火无人机巡查",
+    "inputType": "minutes",
+    "industry": "应急",
+    "label": "会议纪要 · 应急森林防火巡查"
+  },
+  {
+    "id": "oral_cityadmin",
+    "file": "oral_cityadmin.txt",
+    "title": "某市城管局违建巡查与三维建模",
+    "inputType": "oral",
+    "industry": "城管",
+    "label": "口述需求 · 城管违建巡查"
+  }
+]

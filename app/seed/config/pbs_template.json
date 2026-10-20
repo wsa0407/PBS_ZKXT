@@ -1,0 +1,14 @@
+{
+  "id": "TPL-LOWALT-01",
+  "name": "低空巡检解决方案 PBS 模板",
+  "level1": [
+    { "code": "1", "name": "自有软件平台", "hint": "公司已有软件产品的许可、部署与标准配置，每个产品一项；按量授权的扩容另列一项", "required": false, "license": true },
+    { "code": "2", "name": "自有硬件装备", "hint": "无人机、自动机场、任务载荷等公司自有硬件", "required": false },
+    { "code": "3", "name": "定制开发", "hint": "超出产品标准能力的功能开发、系统对接", "required": false },
+    { "code": "4", "name": "外采软硬件与基础设施", "hint": "服务器、GPU、网络与安全设备、第三方软件与配件", "required": false },
+    { "code": "5", "name": "实施服务", "hint": "项目管理、驻场实施、机场选址安装、航线规划与试飞、联调测试", "required": true },
+    { "code": "6", "name": "培训与资质", "hint": "飞手培训取证、平台操作培训", "required": true },
+    { "code": "7", "name": "运维与飞行服务", "hint": "免费运维期内的设备与平台运维、代飞服务", "required": true },
+    { "code": "8", "name": "测评与审批", "hint": "等保测评、空域申请与飞行报备", "required": false }
+  ]
+}

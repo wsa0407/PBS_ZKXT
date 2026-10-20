@@ -1,0 +1,286 @@
+import { computed, defineComponent, inject, nextTick, onMounted, ref } from "vue";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { api, call, fileToBase64, jobState, meta } from "../api.js";
+
+const KIND_LABEL = { tender: "招标文件", minutes: "会议纪要", oral: "用户描述", other: "其他材料" };
+const CHANGE_LABEL = { set_param: "设定参数", update_requirement: "修改需求", add_requirement: "新增需求", remove_requirement: "删除需求" };
+
+export default defineComponent({
+  props: { open: Function },
+  setup(props) {
+    const { id, view, reload } = inject("project");
+    const messages = ref([]);
+    const suggestions = ref([]);
+    const text = ref("");
+    const file = ref(null);
+    const busy = ref(false);
+    const progress = ref(null);
+    const scroller = ref(null);
+    const samples = ref([]);
+
+    const scrollDown = () => nextTick(() => scroller.value && (scroller.value.scrollTop = scroller.value.scrollHeight));
+
+    const load = async () => {
+      const data = await call(() => api(`/projects/${id}/chat`));
+      if (data) {
+        messages.value = data.messages;
+        suggestions.value = data.suggestions;
+        scrollDown();
+      }
+    };
+    onMounted(async () => {
+      await load();
+      samples.value = (await call(() => api("/samples"))) ?? [];
+    });
+
+    // Pending text shown immediately; the real message arrives with the job result.
+    const send = async (body, label) => {
+      if (busy.value) return;
+      busy.value = true;
+      messages.value.push({ id: `tmp${Date.now()}`, role: "user", content: label || body.text || (body.file ? `（上传了文件 ${body.file.name}）` : ""), payload: {} });
+      progress.value = { steps: [{ name: "理解你的意思", state: "running" }] };
+      scrollDown();
+      try {
+        const { jobId } = await api(`/projects/${id}/chat`, { method: "POST", body: { ...body, label } });
+        for (;;) {
+          const job = await api(`/jobs/${jobId}`);
+          progress.value = job;
+          scrollDown();
+          if (job.status === "已完成") break;
+          if (job.status === "失败") {
+            messages.value.push({ id: `err${Date.now()}`, role: "assistant", content: `这一步没成功：${job.error}`, payload: { error: true } });
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 900));
+        }
+      } catch (error) {
+        messages.value.push({ id: `err${Date.now()}`, role: "assistant", content: `出错了：${error.message}`, payload: { error: true } });
+      }
+      progress.value = null;
+      busy.value = false;
+      await reload();
+      await load();
+      const last = messages.value.at(-1);
+      if (last?.payload?.open) props.open(last.payload.open.tab, last.payload.open.focus);
+    };
+
+    const submit = async () => {
+      const body = {};
+      if (file.value) body.file = { name: file.value.name, base64: await fileToBase64(file.value) };
+      if (text.value.trim()) body.text = text.value.trim();
+      if (!body.text && !body.file) return;
+      text.value = "";
+      file.value = null;
+      send(body);
+    };
+    const onKey = (e) => {
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        submit();
+      }
+    };
+    const onFile = (e) => {
+      const f = e.target.files[0];
+      if (f) file.value = f;
+      e.target.value = "";
+    };
+    const onDrop = (e) => {
+      const f = e.dataTransfer.files[0];
+      if (f) file.value = f;
+    };
+
+    const quick = (s) => {
+      if (s.actions) return send({ actions: s.actions }, s.label);
+      if (s.ui === "samples") return;
+      if (s.ui === "export") return props.open("finish");
+      if (s.ui?.startsWith("open:")) return props.open(s.ui.slice(5));
+    };
+
+    const useSample = (s) => {
+      text.value = s.text;
+    };
+
+    // ----- cards -----
+    const card = (m, i) => m.payload.cards[i];
+    const question = (c) => view.value.questions.find((q) => q.id === c.question_id);
+    const acceptedIdx = ref({});
+    const proposalAccepted = (m, i) => acceptedIdx.value[`${m.id}-${i}`] ?? (question(card(m, i))?.proposal?.changes ?? []).map((_, k) => k);
+    const toggleChange = (m, i, k, on) => {
+      const set = new Set(proposalAccepted(m, i));
+      on ? set.add(k) : set.delete(k);
+      acceptedIdx.value[`${m.id}-${i}`] = [...set].sort((a, b) => a - b);
+    };
+    const resolve = async (m, i, decision) => {
+      await call(() => api(`/projects/${id}/chat/${m.id}/cards/${i}`, { method: "POST", body: { decision } }));
+      await load();
+      await reload();
+    };
+    const applyProposal = async (m, i) => {
+      const c = card(m, i);
+      const res = await call(() => api(`/projects/${id}/questions/${c.question_id}/apply`, { method: "POST", body: { accepted: proposalAccepted(m, i) } }));
+      if (res) {
+        await resolve(m, i, "accept");
+        props.open("pbs");
+      }
+    };
+    const applyRematch = async (m, i) => {
+      const c = card(m, i);
+      const res = await call(() => api(`/projects/${id}/pbs/${c.item_id}/accept`, { method: "POST", body: { suggestion: c.suggestion } }), "已按建议修改");
+      if (res) {
+        await resolve(m, i, "accept");
+        props.open("pbs", c.item_id);
+      }
+    };
+
+    const productName = (ref) => meta.products?.[ref] ?? view.value.items.find((x) => x.product_ref === ref)?.match?.product_name ?? ref;
+    const cardDone = (c) => c.state !== "pending";
+
+    const clear = async () => {
+      await ElMessageBox.confirm("清空这个项目的对话记录？项目数据不受影响。", "清空对话", { type: "warning" });
+      await call(() => api(`/projects/${id}/chat`, { method: "DELETE" }));
+      load();
+    };
+
+    const empty = computed(() => !messages.value.length);
+
+    // ----- model picker (global setting: every job uses the chosen model) -----
+    const modelState = ref({ current: "", groups: [], loading: false });
+    const loadModels = async (refresh = false) => {
+      modelState.value.loading = true;
+      const data = await call(() => api(`/models${refresh ? "?refresh=1" : ""}`));
+      if (data) {
+        modelState.value = { ...data, loading: false };
+        if (data.error) ElMessage.warning(`没能获取 B.AI 的模型列表：${data.error}`);
+      } else modelState.value.loading = false;
+    };
+    const refreshModels = () => loadModels(true);
+    const changeModel = async (id) => {
+      const r = await call(() => api("/models/current", { method: "PUT", body: { model: id } }), `已切换到 ${id}`);
+      if (!r) await loadModels();
+      else if (r.unverified) ElMessage.warning("没能核对模型列表，如果这个模型不可用，下一次调用会报错。");
+    };
+    onMounted(() => loadModels());
+    const hint = computed(() => {
+      const s = view.value.steps;
+      if (!s.materials.count) return "把客户的需求发给我就行：直接粘贴文字、会议纪要，或者拖入招标文件。";
+      return "";
+    });
+
+    return { view, messages, suggestions, text, file, busy, progress, scroller, samples, empty, hint, modelState, refreshModels, changeModel, send, submit, onKey, onFile, onDrop, quick, useSample, card, question, proposalAccepted, toggleChange, applyProposal, applyRematch, resolve, cardDone, productName, clear, KIND_LABEL, CHANGE_LABEL, meta, jobState };
+  },
+  template: `
+  <div class="chat" @dragover.prevent @drop.prevent="onDrop">
+    <div class="chat-head">
+      <b>和助手对话</b>
+      <span style="flex:1"></span>
+      <el-select v-model="modelState.current" size="small" filterable class="model-select" :loading="modelState.loading"
+        placeholder="选择模型" :disabled="busy" @change="changeModel" @visible-change="(v) => v && refreshModels()" no-data-text="没有可用模型">
+        <el-option-group v-for="g in modelState.groups" :key="g.label" :label="g.label">
+          <el-option v-for="m in g.models" :key="m" :label="m" :value="m" />
+        </el-option-group>
+      </el-select>
+      <el-button link size="small" @click="clear" v-if="messages.length">清空</el-button>
+    </div>
+
+    <div class="chat-body" ref="scroller">
+      <div v-if="empty" class="chat-welcome">
+        <div class="bot-avatar">PBS</div>
+        <div class="bubble bot">
+          你好，我是 PBS 拆解助手。<br />{{ hint || '继续说吧，比如“这个项目机场改成 12 个”“为什么要外采 GPU”“再加一条夜间飞行的要求”。' }}
+          <div v-if="samples.length && !view.steps.materials.count" class="samples">
+            <div class="muted" style="margin:8px 0 4px">想先看看效果？选一个示例填入输入框：</div>
+            <el-button v-for="s in samples" :key="s.id" size="small" @click="useSample(s)">{{ s.label }}</el-button>
+          </div>
+        </div>
+      </div>
+
+      <div v-for="m in messages" :key="m.id" class="msg" :class="m.role">
+        <div v-if="m.role === 'assistant'" class="bot-avatar">PBS</div>
+        <div class="bubble" :class="[m.role === 'user' ? 'me' : 'bot', { error: m.payload.error }]">
+          <div class="content">{{ m.content }}</div>
+          <div v-if="m.payload.attachment" class="muted">📄 {{ m.payload.attachment.name }}</div>
+
+          <div v-for="(r, k) in (m.payload.results || [])" :key="'r' + k" class="result" :class="{ bad: !r.ok }">{{ r.ok ? '✓' : '✗' }} {{ r.text }}</div>
+
+          <template v-for="(c, i) in (m.payload.cards || [])" :key="'c' + i">
+            <!-- 客户答复 → 变更建议 -->
+            <div v-if="c.kind === 'proposal' && question(c)" class="mini-card">
+              <div class="mc-title">客户答复带来的变更 <span class="muted">Q{{ c.question_id }}</span></div>
+              <div class="muted">{{ question(c).proposal?.summary }}</div>
+              <div v-if="!(question(c).proposal?.changes || []).length" class="muted">只是确认现有内容，没有需要变更的地方。</div>
+              <div v-for="(ch, k) in (question(c).proposal?.changes || [])" :key="k" class="change">
+                <el-checkbox v-if="!cardDone(c)" :model-value="proposalAccepted(m, i).includes(k)" @change="(v) => toggleChange(m, i, k, v)" />
+                <div style="flex:1">
+                  <el-tag size="small">{{ CHANGE_LABEL[ch.type] }}</el-tag>
+                  <template v-if="ch.type === 'set_param'"> {{ ch.label }}：{{ ch.before ?? '未知' }} → <b>{{ ch.value }}{{ ch.unit }}</b></template>
+                  <template v-else-if="ch.type === 'update_requirement'"> {{ ch.code }}<div class="diff"><s>{{ ch.before }}</s><br />{{ ch.text }}</div></template>
+                  <template v-else-if="ch.type === 'add_requirement'"> <div class="diff">{{ ch.text }}</div></template>
+                  <template v-else> {{ ch.code }}<div class="diff"><s>{{ ch.before }}</s></div></template>
+                </div>
+              </div>
+              <div class="mc-actions" v-if="!cardDone(c)">
+                <el-button size="small" type="primary" @click="applyProposal(m, i)">应用所选（{{ proposalAccepted(m, i).length }}）</el-button>
+                <el-button size="small" @click="resolve(m, i, 'dismiss')">先不应用</el-button>
+              </div>
+              <div v-else class="muted">{{ c.note }}</div>
+            </div>
+
+            <!-- 重新匹配建议 -->
+            <div v-else-if="c.kind === 'rematch'" class="mini-card">
+              <div class="mc-title">重新匹配建议</div>
+              <div class="compare">
+                <div><div class="muted">原来</div>{{ c.before.name }}<br /><span class="muted">{{ c.before.source }} {{ c.before.product_ref ? productName(c.before.product_ref) : '' }}</span></div>
+                <div class="arrow">→</div>
+                <div><div class="muted">建议</div><b>{{ c.suggestion.name }}</b><br /><span class="muted">{{ c.suggestion.source }} {{ c.suggestion.product_ref ? productName(c.suggestion.product_ref) : '' }}</span></div>
+              </div>
+              <div v-if="c.suggestion.matched_capabilities?.length" class="caps"><el-tag v-for="x in c.suggestion.matched_capabilities" :key="x" size="small" type="success">✓ {{ x }}</el-tag></div>
+              <div v-if="c.suggestion.blocked_by" class="caps"><el-tag size="small" type="warning">✕ {{ c.suggestion.blocked_by.product_name }}：{{ c.suggestion.blocked_by.limit }}</el-tag></div>
+              <div class="muted">{{ c.suggestion.basis }}</div>
+              <div v-for="n in c.notes" :key="n" class="muted">· {{ n }}</div>
+              <div class="mc-actions" v-if="!cardDone(c)">
+                <el-button size="small" type="primary" @click="applyRematch(m, i)">采纳</el-button>
+                <el-button size="small" @click="resolve(m, i, 'dismiss')">保持原样</el-button>
+              </div>
+              <div v-else class="muted">{{ c.note }}</div>
+            </div>
+
+            <!-- 需要确认的危险操作 -->
+            <div v-else-if="c.kind === 'delete_item'" class="mini-card">
+              <div>{{ c.text }}</div>
+              <div class="mc-actions" v-if="!cardDone(c)">
+                <el-button size="small" type="danger" @click="resolve(m, i, 'accept')">删除</el-button>
+                <el-button size="small" @click="resolve(m, i, 'dismiss')">取消</el-button>
+              </div>
+              <div v-else class="muted">{{ c.note }}</div>
+            </div>
+          </template>
+
+          <div v-if="m.payload.open" class="open-link"><el-button link type="primary" size="small" @click="$props.open(m.payload.open.tab, m.payload.open.focus)">在右侧查看 →</el-button></div>
+        </div>
+      </div>
+
+      <div v-if="progress" class="msg assistant">
+        <div class="bot-avatar">PBS</div>
+        <div class="bubble bot working">
+          <div v-for="s in progress.steps" :key="s.name" class="job-step" :class="s.state">
+            <span class="ic"><template v-if="s.state === 'done'">✓</template><template v-else-if="s.state === 'running'"><i class="spin"></i></template></span>
+            <span>{{ s.name }}</span><span class="muted" v-if="s.detail">{{ s.detail }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="chat-foot">
+      <div class="quick" v-if="suggestions.length && !busy">
+        <button v-for="s in suggestions.filter((x) => x.ui !== 'samples')" :key="s.label" @click="quick(s)">{{ s.label }}</button>
+      </div>
+      <div v-if="file" class="file-chip">📄 {{ file.name }} <el-button link type="danger" size="small" @click="file = null">移除</el-button></div>
+      <div class="input">
+        <el-input v-model="text" type="textarea" :autosize="{ minRows: 1, maxRows: 8 }" resize="none" :disabled="busy"
+          placeholder="说需求、粘贴材料、改数量、问依据……（Enter 发送，Shift+Enter 换行）" @keydown="onKey" />
+        <label class="attach" title="上传文件"><input type="file" hidden :accept="meta.fileTypes.join(',')" @change="onFile" />📎</label>
+        <el-button type="primary" :disabled="busy || (!text.trim() && !file)" @click="submit">发送</el-button>
+      </div>
+    </div>
+  </div>`,
+});

@@ -1,0 +1,233 @@
+{
+  "params": {
+    "road_km": { "label": "巡检道路里程", "unit": "公里", "units": ["公里", "km", "千米"], "keywords": ["道路", "公路", "高速", "国道", "省道", "里程", "路段", "巡"] },
+    "area_km2": { "label": "巡查面积", "unit": "平方公里", "units": ["平方公里", "km2", "km²"], "keywords": ["面积", "林区", "城区", "区域", "范围", "辖区"] },
+    "dock_count": {
+      "label": "自动机场数量",
+      "unit": "个",
+      "units": ["个", "台", "座", "套"],
+      "keywords": ["机场"],
+      "derive": [
+        { "expr": "ceil(road_km / 12)", "note": "单个机场覆盖半径 7 公里，沿道路有效覆盖约 12 公里" },
+        { "expr": "ceil(area_km2 / 100)", "note": "单个机场有效巡查面积约 100 平方公里" }
+      ]
+    },
+    "min_temp_c": { "label": "最低工作温度", "unit": "℃", "units": ["℃", "°C", "度"], "keywords": ["温度", "低温", "环境", "气温"], "pick": "min" },
+    "pilots": { "label": "飞手培训人数", "unit": "人", "units": ["人", "名"], "keywords": ["飞手", "执照", "驾驶员", "取证"] },
+    "interfaces": { "label": "对接业务系统数", "unit": "个", "keywords": ["系统", "平台"] },
+    "onsite_staff": { "label": "驻场人数", "unit": "人", "units": ["人", "名"], "keywords": ["驻场"] },
+    "build_months": { "label": "建设周期", "unit": "月", "keywords": ["周期", "建设", "上线", "完成", "工期"] },
+    "maintenance_years": { "label": "免费运维年限", "unit": "年", "keywords": ["运维", "维保", "质保"] },
+    "training_sessions": { "label": "操作培训期数", "unit": "期", "units": ["期", "次", "场"], "keywords": ["培训"] }
+  },
+  "rules": [
+    {
+      "id": "R01",
+      "name": "无人机自动机场 Dock-X",
+      "expr": "dock_count",
+      "unit": "台",
+      "inputs": ["dock_count"],
+      "defaults": {},
+      "note": "每个巡检点位 1 台机场",
+      "required_when": ["机场"],
+      "category": "2",
+      "source": "自有产品",
+      "product_ref": "P02"
+    },
+    {
+      "id": "R02",
+      "name": "行业无人机 Falcon-M",
+      "expr": "dock_count + ceil(dock_count / 5)",
+      "unit": "架",
+      "inputs": ["dock_count"],
+      "defaults": {},
+      "note": "每个机场配 1 架，另按每 5 个机场 1 架备机",
+      "required_when": ["机场"],
+      "category": "2",
+      "source": "自有产品",
+      "product_ref": "P03"
+    },
+    {
+      "id": "R03",
+      "name": "飞行管控平台扩容授权",
+      "expr": "max(0, ceil((dock_count - 20) / 10))",
+      "unit": "个",
+      "inputs": ["dock_count"],
+      "defaults": {},
+      "note": "SkyOps 标准版含 20 台接入，每超出 10 台加 1 个扩容授权",
+      "required_if": "dock_count > 20",
+      "addon": true,
+      "category": "1",
+      "source": "自有产品",
+      "product_ref": "P01"
+    },
+    {
+      "id": "R04",
+      "name": "AI 识别视频路数授权",
+      "expr": "dock_count",
+      "unit": "路",
+      "inputs": ["dock_count"],
+      "defaults": {},
+      "note": "VisionAI 按路授权，每个机场 1 路实时视频",
+      "required_when": ["识别"],
+      "addon": true,
+      "category": "1",
+      "source": "自有产品",
+      "product_ref": "P06"
+    },
+    {
+      "id": "R05",
+      "name": "GPU 推理服务器（8 卡）",
+      "expr": "max(1, ceil(dock_count / 8))",
+      "unit": "台",
+      "inputs": ["dock_count"],
+      "defaults": {},
+      "note": "每台 8 卡服务器支撑 8 路实时识别；VisionAI 不含 GPU 服务器",
+      "required_when": ["识别"],
+      "category": "4",
+      "source": "外采"
+    },
+    {
+      "id": "R06",
+      "name": "双光吊舱 EyePod",
+      "expr": "dock_count + ceil(dock_count / 5)",
+      "unit": "台",
+      "inputs": ["dock_count"],
+      "defaults": {},
+      "note": "每架无人机配 1 台吊舱（含备机）",
+      "required_when": ["夜间", "红外", "热成像"],
+      "category": "2",
+      "source": "自有产品",
+      "product_ref": "P04"
+    },
+    {
+      "id": "R07",
+      "name": "机场低温温控套件",
+      "expr": "dock_count",
+      "unit": "套",
+      "inputs": ["dock_count"],
+      "defaults": {},
+      "note": "Dock-X 工作温度下限 -20℃，更低温度需每台机场加装温控套件",
+      "required_if": "min_temp_c < -20",
+      "category": "4",
+      "source": "外采"
+    },
+    {
+      "id": "R08",
+      "name": "机场选址勘察与安装调试",
+      "expr": "ceil(dock_count * 1.5)",
+      "unit": "人天",
+      "inputs": ["dock_count"],
+      "defaults": {},
+      "note": "每台机场 1.5 人天；不含市电引入、基座土建和网络接入",
+      "required_when": ["机场"],
+      "category": "5",
+      "source": "服务"
+    },
+    {
+      "id": "R09",
+      "name": "航线规划与试飞验证",
+      "expr": "dock_count * 2",
+      "unit": "人天",
+      "inputs": ["dock_count"],
+      "defaults": {},
+      "note": "每个机场 2 人天",
+      "required_when": ["航线"],
+      "category": "5",
+      "source": "服务"
+    },
+    {
+      "id": "R10",
+      "name": "业务系统对接开发",
+      "expr": "interfaces * 15",
+      "unit": "人天",
+      "inputs": ["interfaces"],
+      "defaults": { "interfaces": 2 },
+      "note": "每个系统 15 人天（含联调）；数量未明确时按 2 个估算，需与客户确认"
+    },
+    {
+      "id": "R11",
+      "name": "驻场实施",
+      "expr": "onsite_staff * build_months * 21.75",
+      "unit": "人天",
+      "inputs": ["onsite_staff", "build_months"],
+      "defaults": {},
+      "note": "每月 21.75 个工作日",
+      "required_when": ["驻场"],
+      "category": "5",
+      "source": "服务"
+    },
+    {
+      "id": "R12",
+      "name": "飞手培训取证",
+      "expr": "pilots",
+      "unit": "人",
+      "inputs": ["pilots"],
+      "defaults": {},
+      "note": "委托 CAAC 认证培训机构，含执照考试",
+      "required_when": ["飞手"],
+      "category": "6",
+      "source": "外采"
+    },
+    {
+      "id": "R13",
+      "name": "平台操作培训",
+      "expr": "training_sessions",
+      "unit": "期",
+      "inputs": ["training_sessions"],
+      "defaults": { "training_sessions": 2 },
+      "note": "每期 1 天，含教材",
+      "required_when": ["培训"],
+      "category": "6",
+      "source": "服务"
+    },
+    {
+      "id": "R14",
+      "name": "运维服务",
+      "expr": "maintenance_years * 12",
+      "unit": "人月",
+      "inputs": ["maintenance_years"],
+      "defaults": { "maintenance_years": 1 },
+      "note": "每月 1 人，含设备巡检、电池更换与平台运维",
+      "required_when": ["运维", "维保", "质保"],
+      "category": "7",
+      "source": "服务"
+    },
+    {
+      "id": "R15",
+      "name": "等保三级测评",
+      "expr": "1",
+      "unit": "项",
+      "inputs": [],
+      "defaults": {},
+      "note": "外采测评机构服务",
+      "required_when": ["等级保护", "等保三级"],
+      "category": "8",
+      "source": "外采"
+    },
+    {
+      "id": "R16",
+      "name": "公安网安全边界接入",
+      "expr": "1",
+      "unit": "套",
+      "inputs": [],
+      "defaults": {},
+      "note": "视频从互联网或无线链路进入公安视频专网，须经公安部认证的安全边界接入平台",
+      "required_when": ["视频专网", "公安网", "公安信息网"],
+      "category": "4",
+      "source": "外采"
+    },
+    {
+      "id": "R17",
+      "name": "三维实景建模作业",
+      "expr": "ceil(area_km2 * 0.8)",
+      "unit": "人天",
+      "inputs": ["area_km2"],
+      "defaults": {},
+      "note": "外业航飞加内业建模，每平方公里 0.8 人天",
+      "required_when": ["三维", "实景"],
+      "category": "5",
+      "source": "服务"
+    }
+  ]
+}

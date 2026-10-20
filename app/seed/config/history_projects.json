@@ -1,0 +1,94 @@
+[
+  {
+    "id": "H1",
+    "name": "某市公安交警高速公路无人机巡逻项目",
+    "year": 2025,
+    "industry": "公安",
+    "amount_wan": 380,
+    "tags": ["公安", "交警", "高速", "道路", "巡逻", "机场", "事故", "违停", "视频专网", "喊话"],
+    "pbs": [
+      { "category": "1", "name": "低空飞行管控平台 SkyOps", "qty": 1, "unit": "套", "source": "自有产品" },
+      { "category": "1", "name": "AI 视觉识别引擎 VisionAI（8 路）", "qty": 1, "unit": "套", "source": "自有产品" },
+      { "category": "2", "name": "无人机自动机场 Dock-X", "qty": 8, "unit": "台", "source": "自有产品" },
+      { "category": "2", "name": "行业无人机 Falcon-M", "qty": 10, "unit": "架", "source": "自有产品" },
+      { "category": "2", "name": "喊话照明一体载荷 Speaker-L", "qty": 4, "unit": "台", "source": "自有产品" },
+      { "category": "3", "name": "交警集成指挥平台告警对接", "qty": 20, "unit": "人天", "source": "自研" },
+      { "category": "4", "name": "GPU 推理服务器（8 卡）", "qty": 1, "unit": "台", "source": "外采" },
+      { "category": "4", "name": "公安网安全边界接入", "qty": 1, "unit": "套", "source": "外采" },
+      { "category": "5", "name": "机场选址勘察与安装调试", "qty": 12, "unit": "人天", "source": "服务" },
+      { "category": "6", "name": "飞手培训取证", "qty": 6, "unit": "人", "source": "外采" },
+      { "category": "7", "name": "两年运维服务", "qty": 24, "unit": "人月", "source": "服务" }
+    ],
+    "lessons": "机场市电引入由交警负责但迟迟未落实，2 个机场延期 1 个月；客户想用车牌识别取证，80 米高度效果差，被投诉"
+  },
+  {
+    "id": "H2",
+    "name": "某区城管违建巡查与三维建模项目",
+    "year": 2024,
+    "industry": "城管",
+    "amount_wan": 160,
+    "tags": ["城管", "违建", "三维", "实景", "正射", "比对", "机场"],
+    "pbs": [
+      { "category": "1", "name": "低空飞行管控平台 SkyOps", "qty": 1, "unit": "套", "source": "自有产品" },
+      { "category": "1", "name": "三维实景建模软件 Mapper3D", "qty": 1, "unit": "套", "source": "自有产品" },
+      { "category": "2", "name": "无人机自动机场 Dock-X", "qty": 3, "unit": "台", "source": "自有产品" },
+      { "category": "4", "name": "建模工作站", "qty": 2, "unit": "台", "source": "外采" },
+      { "category": "4", "name": "历史正射影像底图", "qty": 1, "unit": "项", "source": "外采" },
+      { "category": "5", "name": "三维实景建模作业", "qty": 30, "unit": "人天", "source": "服务" },
+      { "category": "7", "name": "一年运维服务", "qty": 12, "unit": "人月", "source": "服务" }
+    ],
+    "lessons": "违建比对需要历史正射影像做底图，客户没有，后来追加外采；建模工作站当初漏报"
+  },
+  {
+    "id": "H3",
+    "name": "某省电网输电线路无人机巡检项目",
+    "year": 2025,
+    "industry": "电力",
+    "amount_wan": 450,
+    "tags": ["电力", "输电线路", "缺陷识别", "红外", "测温", "巡检"],
+    "pbs": [
+      { "category": "1", "name": "低空飞行管控平台 SkyOps", "qty": 1, "unit": "套", "source": "自有产品" },
+      { "category": "2", "name": "行业无人机 Falcon-M", "qty": 15, "unit": "架", "source": "自有产品" },
+      { "category": "2", "name": "双光吊舱 EyePod", "qty": 15, "unit": "台", "source": "自有产品" },
+      { "category": "3", "name": "输电线路缺陷识别模型定制训练", "qty": 40, "unit": "人天", "source": "自研" },
+      { "category": "6", "name": "飞手培训取证", "qty": 15, "unit": "人", "source": "外采" },
+      { "category": "7", "name": "一年运维服务", "qty": 12, "unit": "人月", "source": "服务" }
+    ],
+    "lessons": "缺陷识别要客户提供标注样本，样本准备拖了 6 周；VisionAI 标准算法不含电力缺陷，需定制训练"
+  },
+  {
+    "id": "H4",
+    "name": "某县应急管理局森林防火无人机巡查项目",
+    "year": 2025,
+    "industry": "应急",
+    "amount_wan": 210,
+    "tags": ["应急", "森林防火", "林区", "烟火", "热成像", "夜间", "系留", "山区"],
+    "pbs": [
+      { "category": "1", "name": "低空飞行管控平台 SkyOps", "qty": 1, "unit": "套", "source": "自有产品" },
+      { "category": "1", "name": "AI 视觉识别引擎 VisionAI（4 路）", "qty": 1, "unit": "套", "source": "自有产品" },
+      { "category": "2", "name": "无人机自动机场 Dock-X", "qty": 4, "unit": "台", "source": "自有产品" },
+      { "category": "2", "name": "双光吊舱 EyePod", "qty": 5, "unit": "台", "source": "自有产品" },
+      { "category": "2", "name": "系留无人机 Tether-T", "qty": 1, "unit": "套", "source": "自有产品" },
+      { "category": "4", "name": "自组网图传设备", "qty": 2, "unit": "套", "source": "外采" },
+      { "category": "5", "name": "机场选址勘察与安装调试", "qty": 6, "unit": "人天", "source": "服务" },
+      { "category": "7", "name": "一年运维服务", "qty": 12, "unit": "人月", "source": "服务" }
+    ],
+    "lessons": "山区 4G/5G 覆盖差，2 个机场改用自组网图传，追加费用；林区冬季低温，机场加装了温控套件"
+  },
+  {
+    "id": "H5",
+    "name": "某市公安大型活动低空安保项目",
+    "year": 2024,
+    "industry": "公安",
+    "amount_wan": 95,
+    "tags": ["公安", "安保", "大型活动", "反制", "侦测", "喊话", "人员聚集"],
+    "pbs": [
+      { "category": "1", "name": "低空飞行管控平台 SkyOps", "qty": 1, "unit": "套", "source": "自有产品" },
+      { "category": "2", "name": "行业无人机 Falcon-M", "qty": 4, "unit": "架", "source": "自有产品" },
+      { "category": "2", "name": "喊话照明一体载荷 Speaker-L", "qty": 4, "unit": "台", "source": "自有产品" },
+      { "category": "2", "name": "无人机侦测反制系统 Guardian", "qty": 2, "unit": "套", "source": "自有产品" },
+      { "category": "7", "name": "活动期间代飞保障服务", "qty": 30, "unit": "人天", "source": "服务" }
+    ],
+    "lessons": "反制设备使用许可审批用了 2 个月，差点赶不上活动"
+  }
+]
