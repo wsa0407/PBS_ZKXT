@@ -1,9 +1,11 @@
+import ProjectCatalog from "./project-catalog.js";
 import { computed, defineComponent, inject, ref, watch } from "vue";
 import { ElMessageBox } from "element-plus";
 import { api, call, meta, runJob } from "../../api.js";
 import { highlight, SOURCES, TIER_TYPE, SOURCE_CLASS, LEVEL_TYPE } from "../../ui.js";
 
 export default defineComponent({
+  components: { ProjectCatalog },
   setup() {
     const { id, view, reload } = inject("project");
     const { focus, open } = inject("workspace");
@@ -79,8 +81,8 @@ export default defineComponent({
         spec: e.spec,
         parent: e.parent,
         source: e.source,
-        product_ref: e.source === "自有产品" ? e.product_ref || null : null,
-        matched_capabilities: e.source === "自有产品" ? e.matched_capabilities : [],
+        product_ref: e.product_ref || null,
+        matched_capabilities: e.matched_capabilities,
         blocked_by: e.source !== "自有产品" && e.blocked.product_ref && e.blocked.limit ? e.blocked : null,
         req_ids: e.req_ids,
         sizing_rule: e.sizing_rule || null,
@@ -121,7 +123,7 @@ export default defineComponent({
     };
 
     const chunkOf = (cid) => view.value.chunks[cid];
-    const productOptions = computed(() => products.value);
+    const productOptions = computed(() => products.value.filter((p) => p.metadata?.active !== false || p.id === editing.value?.product_ref));
     const editProduct = computed(() => (editing.value?.product_ref ? productById.value.get(editing.value.product_ref) : null));
     const blockerProduct = computed(() => (editing.value?.blocked.product_ref ? productById.value.get(editing.value.blocked.product_ref) : null));
     const rulesFor = computed(() => meta.rules);
@@ -133,6 +135,7 @@ export default defineComponent({
     return { view, s, items, filter, focus, visibleGroups, missingRequired, expanded, toggle, generate, edit, editing, save, confirmItem, confirmAll, remove, rematch, startRematch, runRematch, acceptRematch, products, productOptions, editProduct, blockerProduct, rulesFor, reqOptions, reqByCode, segByUid, chunkOf, qtyText, stateOf, highlight, SOURCES, TIER_TYPE, SOURCE_CLASS, LEVEL_TYPE, meta, open };
   },
   template: `
+  <ProjectCatalog />
   <div v-if="!items.length" class="empty">
     <template v-if="view.steps.requirements.total">
       原始需求 {{ view.steps.requirements.total }} 条，场景需求 {{ view.scenarioCoverage.active }} 条。<el-button v-if="!view.scenarioCoverage.active" link type="primary" @click="open('scenarios')">先拆分场景需求</el-button><el-button type="primary" @click="generate">生成 PBS</el-button>
@@ -254,7 +257,7 @@ export default defineComponent({
                       <div class="muted" style="margin-top:6px">{{ i.sizing.note }}</div>
                     </template>
                     <template v-else-if="i.sizing?.error"><div class="conflict">{{ i.sizing.error }}</div></template>
-                    <div v-else-if="i.qty_basis === '产品许可'">产品许可，按 1 套计</div>
+                    <div v-else-if="i.qty_basis === '产品许可'">产品许可，按 1 {{ i.unit }}计</div>
                     <div v-else-if="i.qty_basis === '原文数量'">原文写明：“{{ i.qty_quote }}”</div>
                     <div v-else><el-tag type="warning" size="small">待估</el-tag><div class="muted" style="margin-top:6px">没有测算规则，原文也没给数量。可以在对话里说“X 改成 N”，或点编辑填写。</div></div>
                     <div v-if="i.last_qty !== null && i.last_qty !== undefined && i.stale" class="muted" style="margin-top:6px">上一次是 {{ i.last_qty }}</div>
@@ -278,9 +281,9 @@ export default defineComponent({
         <el-form-item label="来源"><el-radio-group v-model="editing.source"><el-radio-button v-for="x in SOURCES" :key="x" :value="x">{{ x }}</el-radio-button></el-radio-group></el-form-item>
       </div>
 
-      <template v-if="editing.source === '自有产品'">
+      <template>
         <el-form-item label="匹配产品">
-          <el-select v-model="editing.product_ref" filterable clearable placeholder="从产品库选择" @change="editing.matched_capabilities = []">
+          <el-select v-model="editing.product_ref" filterable clearable placeholder="从产品库选择" @change="editing.matched_capabilities = []; editing.source = editProduct?.metadata?.delivery_source || editing.source; editing.unit = editProduct?.unit || editing.unit">
             <el-option v-for="p in productOptions" :key="p.id" :value="p.id" :label="p.id + ' ' + p.name" />
           </el-select>
         </el-form-item>
@@ -289,7 +292,7 @@ export default defineComponent({
           <div v-if="editProduct.limits.length" class="muted" style="margin-top:6px">该产品的限制：{{ editProduct.limits.join('；') }}</div>
         </el-form-item>
       </template>
-      <template v-else>
+      <template v-if="editing.source !== '自有产品'">
         <el-form-item label="被哪个产品的哪条限制挡住（可选，用于说明为什么不用自有产品）">
           <el-select v-model="editing.blocked.product_ref" filterable clearable placeholder="产品" @change="editing.blocked.limit = ''"><el-option v-for="p in productOptions" :key="p.id" :value="p.id" :label="p.id + ' ' + p.name" /></el-select>
           <el-select v-if="blockerProduct" v-model="editing.blocked.limit" placeholder="限制" style="margin-top:6px"><el-option v-for="l in blockerProduct.limits" :key="l" :value="l" :label="l" /></el-select>

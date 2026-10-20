@@ -4,12 +4,18 @@ import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
 const seedDir = new URL("../seed/", import.meta.url);
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS catalog_revisions (
+  revision INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT NOT NULL,
+  reason TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS catalog_imports (id TEXT PRIMARY KEY, data TEXT NOT NULL);
 
 CREATE TABLE IF NOT EXISTS products (
   id TEXT PRIMARY KEY,
@@ -296,6 +302,7 @@ export function openDb(file = process.env.APP_DB || fileURLToPath(new URL("../da
 
 // CREATE TABLE IF NOT EXISTS never alters an existing table, so new columns need an explicit step.
 const MIGRATIONS = [
+  { version: 4, table: "products", column: "metadata", ddl: "ALTER TABLE products ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'" },
   { version: 2, table: "pbs_items", column: "capability_ids", ddl: "ALTER TABLE pbs_items ADD COLUMN capability_ids TEXT NOT NULL DEFAULT '[]'" },
   { version: 3, table: "pbs_items", column: "scenario_ids", ddl: "ALTER TABLE pbs_items ADD COLUMN scenario_ids TEXT NOT NULL DEFAULT '[]'" },
   { version: 3, table: "pbs_items", column: "reviewed", ddl: "ALTER TABLE pbs_items ADD COLUMN reviewed INTEGER NOT NULL DEFAULT 0" },

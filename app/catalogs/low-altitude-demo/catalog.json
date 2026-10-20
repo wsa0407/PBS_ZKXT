@@ -1,0 +1,2411 @@
+{
+  "schema_version": 1,
+  "id": "low-altitude-demo",
+  "version": "1.0.0",
+  "name": "低空业务专业示例目录",
+  "description": "全部公司能力、方案组合与BOM均为MOCK。厂商条目仅引用公开资料供选型参考，不代表采购可得性或本公司的已交付能力。",
+  "references": [
+    {
+      "id": "DJI-DOCK",
+      "title": "DJI Dock 3 官方规格",
+      "url": "https://enterprise.dji.com/dock-3/specs",
+      "checked_at": "2026-10-21"
+    },
+    {
+      "id": "DJI-H30",
+      "title": "Zenmuse H30 系列官方 FAQ",
+      "url": "https://enterprise.dji.com/zenmuse-h30-series/faq",
+      "checked_at": "2026-10-21"
+    },
+    {
+      "id": "DJI-L2",
+      "title": "Zenmuse L2 官方 FAQ",
+      "url": "https://enterprise.dji.com/zenmuse-l2/faq",
+      "checked_at": "2026-10-21"
+    },
+    {
+      "id": "DJI-P1",
+      "title": "Zenmuse P1 官方介绍",
+      "url": "https://enterprise.dji.com/zenmuse-p1",
+      "checked_at": "2026-10-21"
+    },
+    {
+      "id": "DJI-TERRA",
+      "title": "DJI Terra 官方介绍",
+      "url": "https://enterprise.dji.com/dji-terra",
+      "checked_at": "2026-10-21"
+    },
+    {
+      "id": "DJI-FH",
+      "title": "FlightHub 2 On-Premises 官方发布说明",
+      "url": "https://enterprise-insights.dji.com/blog/dji-flighthub-2-on-premises-officially-released",
+      "checked_at": "2026-10-21"
+    },
+    {
+      "id": "JOUAV-CW15",
+      "title": "纵横 CW-15 官方介绍",
+      "url": "https://www.jouav.com/products/cw-15.html",
+      "checked_at": "2026-10-21"
+    },
+    {
+      "id": "JOUAV-CASE",
+      "title": "纵横 CW-15 城市测绘案例",
+      "url": "https://www.jouav.com/case-study/cw-15-urban-mapping-thailand.html",
+      "checked_at": "2026-10-21"
+    },
+    {
+      "id": "DJI-FIRE",
+      "title": "DJI 森林火灾应用方案",
+      "url": "https://enterprise.dji.com/public-safety/wildfires",
+      "checked_at": "2026-10-21"
+    },
+    {
+      "id": "DJI-RESCUE",
+      "title": "DJI 灾害应急应用方案",
+      "url": "https://enterprise.dji.com/public-safety/disaster-prevention-and-response",
+      "checked_at": "2026-10-21"
+    }
+  ],
+  "products": [
+    {
+      "id": "LA-P01",
+      "name": "凌空·飞行运营中台（MOCK）",
+      "summary": "机场、飞行器、航线与任务的运营管理底座；第三方设备通过适配器接入。",
+      "capabilities": [
+        "设备台账、航线版本、巡航任务编排、飞行记录与异常处置留痕",
+        "分级组织权限、任务审批记录、操作审计和运行统计"
+      ],
+      "limits": [
+        "不提供空域审批或飞行许可；接入设备型号和API授权须逐项验证",
+        "不默认支持多品牌混编；不含服务器、地图授权和专网边界设备"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "套",
+      "metadata": {
+        "kind": "软件",
+        "delivery_source": "自有产品",
+        "availability": "现有（模拟）",
+        "data_kind": "模拟公司产品",
+        "quantity_policy": "single_license",
+        "active": true,
+        "compatibility": [
+          "设备厂商接口版本、账号权限、网络可达性通过联调后接入"
+        ],
+        "deliverables": [
+          "平台部署包、设备适配清单、任务回放记录、运维手册"
+        ],
+        "reference_ids": [],
+        "requires_validation": false
+      }
+    },
+    {
+      "id": "LA-P02",
+      "name": "凌空·空中事件分析引擎（MOCK）",
+      "summary": "视频帧/图片解析、候选事件归集、人工复核与模型效果评测。",
+      "capabilities": [
+        "烟火、人员、车辆等候选事件识别，关联位置、时间和原始图片",
+        "模型版本管理、人工复核、误报标注、告警去重与证据归档"
+      ],
+      "limits": [
+        "不保证固定准确率、并发路数或最小目标尺寸；须基于客户样本评测",
+        "不将热异常直接认定为火灾；专业温度分析需载荷与标定验证"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "套",
+      "metadata": {
+        "kind": "软件",
+        "delivery_source": "自有产品",
+        "availability": "现有（模拟）",
+        "data_kind": "模拟公司产品",
+        "quantity_policy": "single_license",
+        "active": true,
+        "compatibility": [
+          "需确认可见光/热红外数据格式、算力规格、网络与目标场景"
+        ],
+        "deliverables": [
+          "模型清单、测试集、分场景评测报告、告警样例"
+        ],
+        "reference_ids": [],
+        "requires_validation": false
+      }
+    },
+    {
+      "id": "LA-P03",
+      "name": "凌空·一张图指挥工作台（MOCK）",
+      "summary": "地理空间态势、实时视频和事件协同展示。",
+      "capabilities": [
+        "设备、航迹、事件与任务地理位置展示，视频联动及证据回放",
+        "按部门和区域组织事件，输出处置态势与任务统计"
+      ],
+      "limits": [
+        "地图/三维底图授权及坐标转换单独确认",
+        "不含语音集群调度和跨部门业务系统集成"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "套",
+      "metadata": {
+        "kind": "软件",
+        "delivery_source": "自有产品",
+        "availability": "现有（模拟）",
+        "data_kind": "模拟公司产品",
+        "quantity_policy": "single_license",
+        "active": true,
+        "compatibility": [
+          "明确坐标参考系、地图服务、视频协议及并发用户"
+        ],
+        "deliverables": [
+          "场景视图配置、图层字典、联动演示与用户手册"
+        ],
+        "reference_ids": [],
+        "requires_validation": false
+      }
+    },
+    {
+      "id": "LA-P04",
+      "name": "凌空·巡检事件闭环系统（MOCK）",
+      "summary": "将巡检发现转成可追踪的工单和报告。",
+      "capabilities": [
+        "事件复核、派单、签收、处置、复验与关闭全流程留痕",
+        "巡检计划与事件台账关联，按区域、任务、责任单位输出报告"
+      ],
+      "limits": [
+        "不含客户原有工单系统迁移与接口开发",
+        "责任单位、时限和验收流程由客户明确"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "套",
+      "metadata": {
+        "kind": "软件",
+        "delivery_source": "自有产品",
+        "availability": "现有（模拟）",
+        "data_kind": "模拟公司产品",
+        "quantity_policy": "single_license",
+        "active": true,
+        "compatibility": [
+          "对接人员组织、消息通道和工单编码规则"
+        ],
+        "deliverables": [
+          "流程配置表、工单样例、巡检报告模板"
+        ],
+        "reference_ids": [],
+        "requires_validation": false
+      }
+    },
+    {
+      "id": "LA-P05",
+      "name": "凌空·实景三维应用平台（MOCK）",
+      "summary": "对航测成果进行发布、量测与多期变化核查。",
+      "capabilities": [
+        "正射影像、三维模型、点云成果分层发布和空间量测",
+        "多期成果叠加、变化线索标注、外业核查记录与成果归档"
+      ],
+      "limits": [
+        "不包含摄影测量重建引擎授权，不默认达到测绘精度等级",
+        "变化线索须人工核查；成果精度取决于采集、控制点与处理流程"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "套",
+      "metadata": {
+        "kind": "软件",
+        "delivery_source": "自有产品",
+        "availability": "现有（模拟）",
+        "data_kind": "模拟公司产品",
+        "quantity_policy": "single_license",
+        "active": true,
+        "compatibility": [
+          "核对成果格式、坐标系、数据规模、存储和浏览端性能"
+        ],
+        "deliverables": [
+          "成果目录、发布服务、量测示例与质量检查记录"
+        ],
+        "reference_ids": [],
+        "requires_validation": false
+      }
+    },
+    {
+      "id": "LA-P06",
+      "name": "凌空·输电通道分析模块（MOCK）",
+      "summary": "面向输电通道点云与影像的专业分析工作包。",
+      "capabilities": [
+        "导线、杆塔与植被点云分类，净空距离分析及树障疑点清单",
+        "按杆塔/档距组织影像缺陷复核与巡检成果"
+      ],
+      "limits": [
+        "处于拟研发状态，不能作为现成功能承诺",
+        "净空阈值、缺陷标签和评测标准须由客户与电力专家确认"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "项",
+      "metadata": {
+        "kind": "软件",
+        "delivery_source": "自研",
+        "availability": "待研发（模拟）",
+        "data_kind": "模拟公司产品",
+        "quantity_policy": "unknown",
+        "active": true,
+        "compatibility": [
+          "需要资产台账、线路坐标、合格点云与标注样本"
+        ],
+        "deliverables": [
+          "需求规格、算法评测、树障报告及可复现测试样本"
+        ],
+        "reference_ids": [],
+        "requires_validation": true
+      }
+    },
+    {
+      "id": "LA-P07",
+      "name": "机场值守单元·热成像配置（MOCK）",
+      "summary": "以 Dock 3 与 Matrice 4TD 作为参考设备组成无人值守采集单元。",
+      "capabilities": [
+        "机场与热成像无人机组成自动任务执行和数据回传单元",
+        "交付包含站点勘察、设备配置和任务试飞验证"
+      ],
+      "limits": [
+        "产品是模拟集成交付包，非自研飞行器；机场本体与飞机不得重复采购计量",
+        "机场工作温度不能等同于整套系统可飞条件；点位数量不能由面积直接推定"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "套",
+      "metadata": {
+        "kind": "组合硬件",
+        "delivery_source": "自有产品",
+        "availability": "现有集成方案（模拟）",
+        "data_kind": "模拟公司产品",
+        "quantity_policy": "unknown",
+        "active": true,
+        "compatibility": [
+          "DJI Dock 3 搭配 Matrice 4D 系列；本配置选 4TD；平台API、网络、电源和现场条件须验证"
+        ],
+        "deliverables": [
+          "站点勘察表、交付设备清单、配置备份、试飞验收记录"
+        ],
+        "reference_ids": [
+          "DJI-DOCK"
+        ],
+        "requires_validation": false
+      }
+    },
+    {
+      "id": "LA-P08",
+      "name": "低空巡检运营服务包（MOCK）",
+      "summary": "按确认任务量组织飞手、设备维护、数据复核和运行报告。",
+      "capabilities": [
+        "任务执行、飞行前检查、设备维护、异常报告和运行记录归档",
+        "按月输出任务完成情况、问题清单、设备可用性及整改跟踪"
+      ],
+      "limits": [
+        "不默认提供全天候、无限架次或固定响应时间；服务等级须约定",
+        "不包含行政许可代办承诺、保险费和跨区域驻场差旅"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "月",
+      "metadata": {
+        "kind": "服务",
+        "delivery_source": "服务",
+        "availability": "可交付（模拟）",
+        "data_kind": "模拟公司产品",
+        "quantity_policy": "unknown",
+        "active": true,
+        "compatibility": [
+          "确认作业窗口、人员资质、值守方式、任务量和禁飞/天气中止条件"
+        ],
+        "deliverables": [
+          "服务计划、运行日志、月报、维护记录"
+        ],
+        "reference_ids": [],
+        "requires_validation": false
+      }
+    },
+    {
+      "id": "LA-E01",
+      "name": "DJI Dock 3（外采参考）",
+      "summary": "第三代机场参考型号，作为值守单元组成项管理。",
+      "capabilities": [
+        "支持机场自动任务和网络接入；支持 FlightHub 2、私有部署版本和 Cloud API 接入方案",
+        "公开规格：机场本体 IP56，工作温度 -30°C 至 50°C"
+      ],
+      "limits": [
+        "上述防护与温度仅指机场本体，不能作为无人机、网络和整套系统运行承诺",
+        "飞机、电源施工与运营平台需核对采购配置；4G配件与服务不默认为标配"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "台",
+      "metadata": {
+        "kind": "硬件",
+        "delivery_source": "外采",
+        "availability": "需采购核价",
+        "data_kind": "厂商公开参考",
+        "quantity_policy": "unknown",
+        "active": true,
+        "compatibility": [
+          "须使用对应 Matrice 4D 系列飞机；选址、电源、接地、链路均需验收"
+        ],
+        "deliverables": [
+          "供货型号、保修条款、安装与调试记录"
+        ],
+        "reference_ids": [
+          "DJI-DOCK"
+        ],
+        "requires_validation": false
+      }
+    },
+    {
+      "id": "LA-E02",
+      "name": "DJI Matrice 4TD（外采参考）",
+      "summary": "机场配套多传感器无人机，供昼夜侦察采集参考。",
+      "capabilities": [
+        "集成可见光广角、中长焦、热成像、近红外补光和激光测距能力"
+      ],
+      "limits": [
+        "不能任意更换为 H30T/L2/P1 云台；不保证识别准确率或固定覆盖半径",
+        "续航、飞行条件和测温效果须按官方条件与现场试验验证"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "架",
+      "metadata": {
+        "kind": "硬件",
+        "delivery_source": "外采",
+        "availability": "需采购核价",
+        "data_kind": "厂商公开参考",
+        "quantity_policy": "unknown",
+        "active": true,
+        "compatibility": [
+          "与 DJI Dock 3 的适配及固件版本须核对；平台接口授权单独确认"
+        ],
+        "deliverables": [
+          "飞机配置单、序列号、固件记录与试飞报告"
+        ],
+        "reference_ids": [
+          "DJI-DOCK"
+        ],
+        "requires_validation": false
+      }
+    },
+    {
+      "id": "LA-E03",
+      "name": "DJI Matrice 400 载荷平台（外采参考）",
+      "summary": "多旋翼载荷平台，按任务选择相容载荷。",
+      "capabilities": [
+        "可配合 H30T 多传感器载荷开展侦察，或配合 L2 开展激光采集"
+      ],
+      "limits": [
+        "载荷、安装位置、固件和电源兼容须逐项核对；不默认同时挂载所有载荷",
+        "本条目不含载荷，电池、遥控器和充电设备以最终供货清单为准"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "架",
+      "metadata": {
+        "kind": "硬件",
+        "delivery_source": "外采",
+        "availability": "需采购核价",
+        "data_kind": "厂商公开参考",
+        "quantity_policy": "unknown",
+        "active": true,
+        "compatibility": [
+          "H30/L2 官方FAQ列出 Matrice 400 支持；载荷组合按厂商限制核验"
+        ],
+        "deliverables": [
+          "最终套装清单、载荷兼容矩阵及联调记录"
+        ],
+        "reference_ids": [
+          "DJI-H30",
+          "DJI-L2"
+        ],
+        "requires_validation": false
+      }
+    },
+    {
+      "id": "LA-E04",
+      "name": "DJI Zenmuse H30T（外采参考）",
+      "summary": "多传感器热成像云台，适用于侦察和巡检取证。",
+      "capabilities": [
+        "可见光广角/变焦、激光测距、近红外补光与热成像协同采集"
+      ],
+      "limits": [
+        "H30 与 H30T 不可混写，只有本条 H30T 含热成像",
+        "测温、识别和效果须结合目标、距离和环境评测，不从宣传参数推出业务指标"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "台",
+      "metadata": {
+        "kind": "载荷",
+        "delivery_source": "外采",
+        "availability": "需采购核价",
+        "data_kind": "厂商公开参考",
+        "quantity_policy": "unknown",
+        "active": true,
+        "compatibility": [
+          "官方列出 M400/M350RTK/M300RTK；M300须RCPlus并核对固件"
+        ],
+        "deliverables": [
+          "型号与固件清单、图像样例、挂载测试记录"
+        ],
+        "reference_ids": [
+          "DJI-H30"
+        ],
+        "requires_validation": false
+      }
+    },
+    {
+      "id": "LA-E05",
+      "name": "DJI Zenmuse L2（外采参考）",
+      "summary": "机载激光雷达采集载荷，服务通道巡检与地形数据采集。",
+      "capabilities": [
+        "激光点云采集，配合相容飞行平台与处理软件形成空间数据成果"
+      ],
+      "limits": [
+        "采集载荷不等于树障分析软件；不保证任意植被条件下的地面点密度或净空精度",
+        "多载荷同时安装可能影响精度；成果需经过校准与独立检查"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "台",
+      "metadata": {
+        "kind": "载荷",
+        "delivery_source": "外采",
+        "availability": "需采购核价",
+        "data_kind": "厂商公开参考",
+        "quantity_policy": "unknown",
+        "active": true,
+        "compatibility": [
+          "官方支持 M400/M350RTK/M300RTK；按FAQ核对挂载口、遥控器和固件"
+        ],
+        "deliverables": [
+          "载荷清单、校准记录、原始数据与质量报告"
+        ],
+        "reference_ids": [
+          "DJI-L2"
+        ],
+        "requires_validation": false
+      }
+    },
+    {
+      "id": "LA-E06",
+      "name": "DJI Zenmuse P1（外采参考）",
+      "summary": "面向摄影测量的全画幅可换定焦镜头云台相机。",
+      "capabilities": [
+        "4500万像素全画幅摄影测量采集，支持机械快门与智能倾斜摄影任务"
+      ],
+      "limits": [
+        "不直接承诺免像控精度；采集高度、像控、航线和重建流程需设计",
+        "镜头、飞行平台、固件与授权由供货方案核验"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "台",
+      "metadata": {
+        "kind": "载荷",
+        "delivery_source": "外采",
+        "availability": "需采购核价",
+        "data_kind": "厂商公开参考",
+        "quantity_policy": "unknown",
+        "active": true,
+        "compatibility": [
+          "须确认当前官方支持的飞机、镜头与航线软件组合"
+        ],
+        "deliverables": [
+          "镜头配置、采集任务、原始照片及质量检查报告"
+        ],
+        "reference_ids": [
+          "DJI-P1"
+        ],
+        "requires_validation": false
+      }
+    },
+    {
+      "id": "LA-E07",
+      "name": "DJI Terra 重建软件（外采参考）",
+      "summary": "可见光二维/三维重建及 DJI 激光数据处理参考软件。",
+      "capabilities": [
+        "可见光影像二维/三维重建，以及 DJI 激光雷达数据处理"
+      ],
+      "limits": [
+        "版本、许可期限、计算节点与功能范围须按采购授权确认",
+        "不等同于业务成果管理系统，也不默认取得测绘成果合格结论"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "许可",
+      "metadata": {
+        "kind": "软件",
+        "delivery_source": "外采",
+        "availability": "需采购核价",
+        "data_kind": "厂商公开参考",
+        "quantity_policy": "unknown",
+        "active": true,
+        "compatibility": [
+          "核对数据来源、计算硬件、软件版本、成果格式和许可要求"
+        ],
+        "deliverables": [
+          "正式授权记录、处理工程、成果及质量检查记录"
+        ],
+        "reference_ids": [
+          "DJI-TERRA"
+        ],
+        "requires_validation": false
+      }
+    },
+    {
+      "id": "LA-E08",
+      "name": "DJI FlightHub 2 On-Premises（外采参考）",
+      "summary": "厂商私有部署飞行管理平台，可作为飞行运营底座的备选。",
+      "capabilities": [
+        "支持本地部署的设备与任务管理方案，以及业务系统集成接口方案"
+      ],
+      "limits": [
+        "私有部署与公有云版本不可混用授权和功能结论",
+        "不自动满足公安专网、信创或跨域安全要求；需专项验证"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "许可",
+      "metadata": {
+        "kind": "软件",
+        "delivery_source": "外采",
+        "availability": "需采购核价",
+        "data_kind": "厂商公开参考",
+        "quantity_policy": "unknown",
+        "active": true,
+        "compatibility": [
+          "确认设备支持清单、API授权、部署规格、网络边界与版本"
+        ],
+        "deliverables": [
+          "许可、部署架构、接口清单与联调记录"
+        ],
+        "reference_ids": [
+          "DJI-FH"
+        ],
+        "requires_validation": false
+      }
+    },
+    {
+      "id": "LA-E09",
+      "name": "JOUAV 纵横 CW-15（外采参考）",
+      "summary": "电动垂直起降固定翼平台，作为大范围航测采集备选。",
+      "capabilities": [
+        "垂直起降固定翼任务执行；按厂商配置选择航测相机或光电载荷"
+      ],
+      "limits": [
+        "空载与带载续航不可混用，不把理论续航当作客户作业覆盖承诺",
+        "载荷、地面站和配套软件按厂商适配选型；不默认与 DJI 机场/软件兼容"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "架",
+      "metadata": {
+        "kind": "硬件",
+        "delivery_source": "外采",
+        "availability": "需采购核价",
+        "data_kind": "厂商公开参考",
+        "quantity_policy": "unknown",
+        "active": true,
+        "compatibility": [
+          "厂商案例有 CW-15 配合 CA-502R 倾斜摄影配置；实际采购型号与版本须确认"
+        ],
+        "deliverables": [
+          "任务与载荷选型、地面站配置、试飞和成果验收记录"
+        ],
+        "reference_ids": [
+          "JOUAV-CW15",
+          "JOUAV-CASE"
+        ],
+        "requires_validation": false
+      }
+    },
+    {
+      "id": "LA-C01",
+      "name": "业务系统接口适配包（MOCK）",
+      "summary": "对接客户工单、视频、地理信息及资产系统。",
+      "capabilities": [
+        "按双方确认的接口协议实施鉴权、数据映射、幂等和失败重试",
+        "形成接口测试、异常回放、日志与数据校核记录"
+      ],
+      "limits": [
+        "不能因为标书提到系统名称就认为接口开放；无接口文档时保留澄清",
+        "不按接口数量直接套固定人天"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "接口",
+      "metadata": {
+        "kind": "定制开发",
+        "delivery_source": "自研",
+        "availability": "待研发（模拟）",
+        "data_kind": "模拟公司产品",
+        "quantity_policy": "unknown",
+        "active": true,
+        "compatibility": [
+          "接口文档、网络权限、测试环境、数据字典和责任边界齐备"
+        ],
+        "deliverables": [
+          "接口规格、映射表、联调报告和运行手册"
+        ],
+        "reference_ids": [],
+        "requires_validation": true
+      }
+    },
+    {
+      "id": "LA-C02",
+      "name": "专网部署与边界适配包（MOCK）",
+      "summary": "按项目安全架构设计部署与跨域数据交换适配。",
+      "capabilities": [
+        "梳理控制流、视频流、业务数据流，设计鉴权、审计和边界交换流程"
+      ],
+      "limits": [
+        "不是认证产品；不提供未经测试的专网/信创/等保兼容承诺",
+        "边界设备型号、密码服务与测评费用另行明确"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "项",
+      "metadata": {
+        "kind": "定制开发",
+        "delivery_source": "自研",
+        "availability": "待验证（模拟）",
+        "data_kind": "模拟公司产品",
+        "quantity_policy": "unknown",
+        "active": true,
+        "compatibility": [
+          "客户安全域划分、白名单、审计要求和验证环境明确"
+        ],
+        "deliverables": [
+          "数据流图、部署清单、安全联调记录和问题整改表"
+        ],
+        "reference_ids": [],
+        "requires_validation": true
+      }
+    },
+    {
+      "id": "LA-C03",
+      "name": "场景算法适配与评测包（MOCK）",
+      "summary": "将客户实际样本与验收指标转为算法适配和评测工作包。",
+      "capabilities": [
+        "样本清洗、标注规则、训练/测试集隔离、模型迭代和分场景评测"
+      ],
+      "limits": [
+        "不在样本与指标未确认时承诺准确率；需约定漏报、误报和困难样本口径",
+        "不默认包含数据采集权、无限迭代或第三方模型授权"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "项",
+      "metadata": {
+        "kind": "定制开发",
+        "delivery_source": "自研",
+        "availability": "待研发（模拟）",
+        "data_kind": "模拟公司产品",
+        "quantity_policy": "unknown",
+        "active": true,
+        "compatibility": [
+          "明确样本来源、标签定义、昼夜/天气分布和独立测试集"
+        ],
+        "deliverables": [
+          "数据集版本、模型版本、混淆矩阵及业务效果报告"
+        ],
+        "reference_ids": [],
+        "requires_validation": true
+      }
+    },
+    {
+      "id": "LA-I01",
+      "name": "边缘推理服务器配置包（MOCK）",
+      "summary": "按实际模型、视频输入和留存策略选型的计算存储节点。",
+      "capabilities": [
+        "承载视频接入、推理服务、事件缓存和设备监控部署"
+      ],
+      "limits": [
+        "未绑定服务器/GPU型号，不默认承诺并发路数或国产化适配",
+        "供电、散热、机柜、操作系统许可与存储容量须单独确认"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "台",
+      "metadata": {
+        "kind": "基础设施",
+        "delivery_source": "外采",
+        "availability": "待选型（模拟）",
+        "data_kind": "模拟公司产品",
+        "quantity_policy": "unknown",
+        "active": true,
+        "compatibility": [
+          "用目标模型、输入分辨率、帧率和并发进行压力测试"
+        ],
+        "deliverables": [
+          "配置清单、性能测试、部署和恢复验证报告"
+        ],
+        "reference_ids": [],
+        "requires_validation": true
+      }
+    },
+    {
+      "id": "LA-I02",
+      "name": "机场站点基础配套包（MOCK）",
+      "summary": "电源、网络、接地、基础安装与现场验收的工程包。",
+      "capabilities": [
+        "形成站点电力、通信、基础、接地和施工交付清单"
+      ],
+      "limits": [
+        "不以机场温度范围代替站点可用性；不默认已有电源和通信",
+        "土建量、布线长度、设备防护和施工许可须勘察确认"
+      ],
+      "xinchuang": "未验证；不得作为国产化、等保或专网认证承诺",
+      "unit": "站",
+      "metadata": {
+        "kind": "基础设施",
+        "delivery_source": "服务",
+        "availability": "待勘察（模拟）",
+        "data_kind": "模拟公司产品",
+        "quantity_policy": "unknown",
+        "active": true,
+        "compatibility": [
+          "站点权属、施工窗口、网络链路和设备安装规范确认"
+        ],
+        "deliverables": [
+          "勘察表、施工图、材料清单、隐蔽验收和连通性测试"
+        ],
+        "reference_ids": [],
+        "requires_validation": true
+      }
+    },
+    {
+      "id": "LA-P09",
+      "name": "凌空·模块化四旋翼平台（MOCK原型）",
+      "summary": "自研原型机的工程BOM示例，展示机体、航电、动力、能源与任务接口组成。",
+      "capabilities": [
+        "原型设计目标：航点任务、RTK定位、任务载荷接口与飞行日志采集",
+        "模块化机体与动力组件配置管理，支持部件序列号及试验批次追溯"
+      ],
+      "limits": [
+        "原型处于待验证阶段，不作为现成装备承诺；续航、载荷、抗风、防护和失效保护须实测",
+        "未经接口验证不宣称兼容DJI云台、机场或其他厂商任务软件；不默认支持自主值守"
+      ],
+      "xinchuang": "飞控、图传、GNSS及芯片来源逐项核对，未完成国产化适配验证",
+      "unit": "架",
+      "metadata": {
+        "kind": "硬件",
+        "delivery_source": "自研",
+        "availability": "原型待验证（模拟）",
+        "data_kind": "模拟公司产品",
+        "quantity_policy": "unknown",
+        "active": true,
+        "compatibility": [
+          "气动/结构、电源预算、EMC、重心、动力余量与载荷接口完成联合验证后定型"
+        ],
+        "deliverables": [
+          "设计与部件清单、装配记录、重量重心记录、地面与飞行试验报告"
+        ],
+        "reference_ids": [],
+        "requires_validation": true
+      }
+    }
+  ],
+  "solutions": [
+    {
+      "id": "LA-S01",
+      "name": "道路常态巡逻与事件闭环",
+      "version": "1.0.0",
+      "data_kind": "模拟解决方案模板",
+      "scenario": "交通管理部门对重点道路、互通及事故易发路段开展周期巡逻与应急复飞。",
+      "activities": [
+        "编排重点路段巡航任务",
+        "采集可见光与热成像并复核事故/拥堵线索",
+        "关联路段位置、派单处置与复验关闭"
+      ],
+      "deliverables": [
+        "站点与航线设计",
+        "巡检事件台账",
+        "处置工单与运行报告"
+      ],
+      "acceptance": [
+        "逐条验证巡航任务、位置、视频证据与工单流转",
+        "用昼夜独立样本约定误报漏报口径"
+      ],
+      "boundaries": [
+        "不承诺固定半径覆盖；地形、链路、天气与作业窗口须论证",
+        "同一底座二选一；值守包已含机场与飞机，不重复计量"
+      ],
+      "clarifications": [
+        "路段长度与可飞范围？",
+        "值守时段与响应时间？",
+        "客户工单/视频接口是否开放？"
+      ],
+      "reference_ids": [
+        "DJI-DOCK"
+      ],
+      "products": [
+        {
+          "product_ref": "LA-P07",
+          "role": "必选",
+          "purpose": "值守采集单元",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-P01",
+          "role": "备选",
+          "purpose": "自有运营底座（模拟）",
+          "alternative_group": "飞行运营底座",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-E08",
+          "role": "备选",
+          "purpose": "厂商私有部署运营底座",
+          "alternative_group": "飞行运营底座",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-P02",
+          "role": "必选",
+          "purpose": "候选事件分析",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-P04",
+          "role": "必选",
+          "purpose": "事件闭环",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-C01",
+          "role": "可选",
+          "purpose": "客户工单集成",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-P08",
+          "role": "可选",
+          "purpose": "运营服务",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        }
+      ]
+    },
+    {
+      "id": "LA-S02",
+      "name": "森林防火早期巡查与火场侦察",
+      "version": "1.0.0",
+      "data_kind": "模拟解决方案模板",
+      "scenario": "林区巡护人员执行日常烟火线索巡查，发生险情后进行热异常复核和态势汇集。",
+      "activities": [
+        "按风险区域与时段巡查",
+        "热成像与可见光交叉复核",
+        "标注火点线索与风险区域并移交指挥人员"
+      ],
+      "deliverables": [
+        "风险区域航线",
+        "热异常取证记录",
+        "火场态势视图及移交报告"
+      ],
+      "acceptance": [
+        "白天/夜间、不同植被与天气分别评测",
+        "保留原始图像、复核结论与处置记录"
+      ],
+      "boundaries": [
+        "热异常不等于确认火灾；飞行与消防处置由专业人员决策",
+        "日常机场单元与机动侦察组用途不同，数量分别确认"
+      ],
+      "clarifications": [
+        "林区地形与通信条件？",
+        "早期巡查或火场侦察的重点？",
+        "夜间任务许可与安全流程？"
+      ],
+      "reference_ids": [
+        "DJI-FIRE",
+        "DJI-H30"
+      ],
+      "products": [
+        {
+          "product_ref": "LA-P07",
+          "role": "可选",
+          "purpose": "常态值守",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-E03",
+          "role": "必选",
+          "purpose": "机动载荷平台",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-E04",
+          "role": "必选",
+          "purpose": "H30T热成像侦察",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-P01",
+          "role": "备选",
+          "purpose": "自有运营底座（模拟）",
+          "alternative_group": "飞行运营底座",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-E08",
+          "role": "备选",
+          "purpose": "厂商私有部署运营底座",
+          "alternative_group": "飞行运营底座",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-P02",
+          "role": "必选",
+          "purpose": "候选烟火分析",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-P03",
+          "role": "必选",
+          "purpose": "指挥态势",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-C03",
+          "role": "可选",
+          "purpose": "林区样本适配",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        }
+      ]
+    },
+    {
+      "id": "LA-S03",
+      "name": "输电通道点云巡检与树障分析",
+      "version": "1.0.0",
+      "data_kind": "模拟解决方案模板",
+      "scenario": "电网运检团队对输电通道、杆塔及植被进行周期数据采集与疑点复核。",
+      "activities": [
+        "沿线路采集点云和影像",
+        "关联资产台账并进行导线/植被分类",
+        "按确认净空阈值输出树障疑点与复核报告"
+      ],
+      "deliverables": [
+        "原始点云和航迹",
+        "线路分类成果",
+        "树障疑点表与质量报告"
+      ],
+      "acceptance": [
+        "按客户定义的距离和分类标准对独立检查样本验证",
+        "完成坐标系、控制点和资产匹配检查"
+      ],
+      "boundaries": [
+        "点云载荷、重建与专业分析分开选型；算法模块为待研发项",
+        "不能从设备规格直接推导最终净空测量精度"
+      ],
+      "clarifications": [
+        "线路电压等级及安全距离标准？",
+        "线路与杆塔坐标是否完整？",
+        "采集密度、作业环境与成果格式？"
+      ],
+      "reference_ids": [
+        "DJI-L2",
+        "DJI-TERRA"
+      ],
+      "products": [
+        {
+          "product_ref": "LA-E03",
+          "role": "必选",
+          "purpose": "采集平台",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-E05",
+          "role": "必选",
+          "purpose": "L2点云载荷",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-E07",
+          "role": "必选",
+          "purpose": "激光数据处理",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-P06",
+          "role": "必选",
+          "purpose": "树障分析研发工作包",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-P04",
+          "role": "可选",
+          "purpose": "缺陷处置闭环",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-C01",
+          "role": "可选",
+          "purpose": "资产系统接口",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        }
+      ]
+    },
+    {
+      "id": "LA-S04",
+      "name": "城市实景三维与变化核查",
+      "version": "1.0.0",
+      "data_kind": "模拟解决方案模板",
+      "scenario": "自然资源或城管团队对目标区域定期采集，管理空间成果并核查疑似变化。",
+      "activities": [
+        "设计多期航摄与像控方案",
+        "处理影像并检查成果质量",
+        "发布多期成果并人工核查变化线索"
+      ],
+      "deliverables": [
+        "采集与控制点设计",
+        "二维/三维成果",
+        "变化线索与核查台账"
+      ],
+      "acceptance": [
+        "依据合同约定的坐标系、分辨率和精度进行独立检查",
+        "成果可追溯到采集时间、原始数据和处理工程"
+      ],
+      "boundaries": [
+        "多旋翼与固定翼是采集组合的备选组，不默认同时采购",
+        "固定翼所需相机与软件按纵横选型，不套用DJI载荷兼容结论"
+      ],
+      "clarifications": [
+        "区域面积与地形？",
+        "目标精度和更新周期？",
+        "数据分级与成果存储要求？"
+      ],
+      "reference_ids": [
+        "DJI-P1",
+        "DJI-TERRA",
+        "JOUAV-CASE"
+      ],
+      "products": [
+        {
+          "product_ref": "LA-E03",
+          "role": "备选",
+          "purpose": "多旋翼航测平台",
+          "alternative_group": "采集平台",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-E09",
+          "role": "备选",
+          "purpose": "大范围固定翼采集方案，另选相容相机",
+          "alternative_group": "采集平台",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-E06",
+          "role": "可选",
+          "purpose": "仅经核验的多旋翼摄影测量配置",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-E07",
+          "role": "可选",
+          "purpose": "DJI数据重建流程",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-P05",
+          "role": "必选",
+          "purpose": "成果发布与多期核查",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        }
+      ]
+    },
+    {
+      "id": "LA-S05",
+      "name": "防汛河湖巡查与险情处置",
+      "version": "1.0.0",
+      "data_kind": "模拟解决方案模板",
+      "scenario": "水务与防汛人员巡查河道、堤防、重点闸站，形成险情复核和移交记录。",
+      "activities": [
+        "沿河道航线巡查并记录异常线索",
+        "对疑点进行近景复核",
+        "按堤段/设施派发巡检工单并复验"
+      ],
+      "deliverables": [
+        "河道巡查航线",
+        "险情取证记录",
+        "设施台账与处置报告"
+      ],
+      "acceptance": [
+        "验证设施编码、位置、影像和处置单据的一致性",
+        "按水面反光、夜间和降雨影响划分测试样本"
+      ],
+      "boundaries": [
+        "航拍不能代替堤防内部渗漏检测和专业水文监测",
+        "恶劣天气任务须按设备条件及现场风险决策"
+      ],
+      "clarifications": [
+        "水域与堤线范围？",
+        "险情类型与复核流程？",
+        "水利平台接口和网络条件？"
+      ],
+      "reference_ids": [
+        "DJI-RESCUE"
+      ],
+      "products": [
+        {
+          "product_ref": "LA-P07",
+          "role": "必选",
+          "purpose": "周期采集",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-P01",
+          "role": "备选",
+          "purpose": "自有运营底座（模拟）",
+          "alternative_group": "飞行运营底座",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-E08",
+          "role": "备选",
+          "purpose": "厂商私有部署运营底座",
+          "alternative_group": "飞行运营底座",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-P03",
+          "role": "必选",
+          "purpose": "河湖态势",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-P04",
+          "role": "必选",
+          "purpose": "险情闭环",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-C03",
+          "role": "可选",
+          "purpose": "场景算法评测",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-C01",
+          "role": "可选",
+          "purpose": "水利平台接口",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        }
+      ]
+    },
+    {
+      "id": "LA-S06",
+      "name": "应急灾害机动侦察与态势汇集",
+      "version": "1.0.0",
+      "data_kind": "模拟解决方案模板",
+      "scenario": "应急队伍在灾害现场开展机动侦察、搜寻线索复核与影像资料汇集。",
+      "activities": [
+        "快速建立任务、作业范围和安全边界",
+        "多传感器侦察并人工复核人员/热异常线索",
+        "向指挥端汇集位置、影像和任务进展"
+      ],
+      "deliverables": [
+        "机动设备配置",
+        "侦察任务和线索记录",
+        "态势图与交接报告"
+      ],
+      "acceptance": [
+        "验证断网/弱网情况下的记录与恢复流程",
+        "按演练脚本检查侦察、复核、上报与交接"
+      ],
+      "boundaries": [
+        "不把无人机图传等同公网覆盖恢复或应急通信中继",
+        "救援指挥、空域协调和人员安全流程须专门约定",
+        "若选自研原型，H30T不能直接视为兼容，须另行选型相容载荷与指挥接口；该路线保留待验证。"
+      ],
+      "clarifications": [
+        "部署时限与任务时长？",
+        "现场通信与离线运行要求？",
+        "指挥平台接口和安全域？"
+      ],
+      "reference_ids": [
+        "DJI-RESCUE",
+        "DJI-H30"
+      ],
+      "products": [
+        {
+          "product_ref": "LA-E03",
+          "role": "备选",
+          "purpose": "机动载荷平台",
+          "alternative_group": "机动侦察平台",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-P09",
+          "role": "备选",
+          "purpose": "自研原型研发路线；须完成载荷适配和试飞后才可交付，不直接配H30T",
+          "alternative_group": "机动侦察平台",
+          "quantity_note": "仅在允许研发和验证周期时考虑；不默认采购或承诺性能"
+        },
+        {
+          "product_ref": "LA-E04",
+          "role": "可选",
+          "purpose": "M400路线配套热成像载荷；自研原型路线须另行验证载荷",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-P03",
+          "role": "必选",
+          "purpose": "现场态势",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-C01",
+          "role": "可选",
+          "purpose": "指挥平台适配",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-C02",
+          "role": "可选",
+          "purpose": "安全域部署适配",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        },
+        {
+          "product_ref": "LA-P08",
+          "role": "可选",
+          "purpose": "任务保障服务",
+          "alternative_group": "",
+          "quantity_note": "按项目明确的设备数、用户数、任务量或许可范围确认；模板不提供项目数量"
+        }
+      ]
+    }
+  ],
+  "boms": [
+    {
+      "id": "BOM-LA-P01",
+      "product_ref": "LA-P01",
+      "version": "1.0.0",
+      "kind": "模拟产品组成",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-P01-01",
+          "name": "设备接入适配模块",
+          "qty": 1,
+          "unit": "模块",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-P01-02",
+          "name": "航线任务编排模块",
+          "qty": 1,
+          "unit": "模块",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-P01-03",
+          "name": "飞行记录与组织权限模块",
+          "qty": 1,
+          "unit": "模块",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-P02",
+      "product_ref": "LA-P02",
+      "version": "1.0.0",
+      "kind": "模拟产品组成",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-P02-01",
+          "name": "推理任务与模型管理模块",
+          "qty": 1,
+          "unit": "模块",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-P02-02",
+          "name": "事件归集和复核模块",
+          "qty": 1,
+          "unit": "模块",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-P02-03",
+          "name": "样本标注与评测模块",
+          "qty": 1,
+          "unit": "模块",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-P03",
+      "product_ref": "LA-P03",
+      "version": "1.0.0",
+      "kind": "模拟产品组成",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-P03-01",
+          "name": "GIS态势与图层模块",
+          "qty": 1,
+          "unit": "模块",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-P03-02",
+          "name": "视频联动和任务回放模块",
+          "qty": 1,
+          "unit": "模块",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-P03-03",
+          "name": "组织权限与审计模块",
+          "qty": 1,
+          "unit": "模块",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-P04",
+      "product_ref": "LA-P04",
+      "version": "1.0.0",
+      "kind": "模拟产品组成",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-P04-01",
+          "name": "工单流程与时限配置模块",
+          "qty": 1,
+          "unit": "模块",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-P04-02",
+          "name": "证据与巡检报告模块",
+          "qty": 1,
+          "unit": "模块",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-P05",
+      "product_ref": "LA-P05",
+      "version": "1.0.0",
+      "kind": "模拟产品组成",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-P05-01",
+          "name": "空间成果发布模块",
+          "qty": 1,
+          "unit": "模块",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-P05-02",
+          "name": "多期变化线索标注模块",
+          "qty": 1,
+          "unit": "模块",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-P06",
+      "product_ref": "LA-P06",
+      "version": "1.0.0",
+      "kind": "模拟产品组成",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-P06-01",
+          "name": "点云分类与净空分析模块",
+          "qty": 1,
+          "unit": "模块",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-P06-02",
+          "name": "线路缺陷复核与报告模块",
+          "qty": 1,
+          "unit": "模块",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-P07",
+      "product_ref": "LA-P07",
+      "version": "1.0.0",
+      "kind": "模拟产品组成",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-P07-01",
+          "name": "DJI Dock 3 机场本体",
+          "qty": 1,
+          "unit": "台",
+          "source": "外采",
+          "product_ref": "LA-E01",
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-P07-02",
+          "name": "DJI Matrice 4TD 飞机",
+          "qty": 1,
+          "unit": "架",
+          "source": "外采",
+          "product_ref": "LA-E02",
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-P07-03",
+          "name": "站点基础工程",
+          "qty": 1,
+          "unit": "站",
+          "source": "服务",
+          "product_ref": "LA-I02",
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-P07-04",
+          "name": "可选边缘推理节点",
+          "qty": 1,
+          "unit": "台",
+          "source": "外采",
+          "product_ref": "LA-I01",
+          "optional": true,
+          "condition": "须本地推理且性能测试通过时选配",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-P08",
+      "product_ref": "LA-P08",
+      "version": "1.0.0",
+      "kind": "模拟产品组成",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-P08-01",
+          "name": "飞行任务执行服务",
+          "qty": null,
+          "unit": "人日",
+          "source": "服务",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-P08-02",
+          "name": "设备维护与数据复核",
+          "qty": null,
+          "unit": "人日",
+          "source": "服务",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-P08-03",
+          "name": "月度运行报告",
+          "qty": 1,
+          "unit": "份",
+          "source": "服务",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-E01",
+      "product_ref": "LA-E01",
+      "version": "1.0.0",
+      "kind": "模拟交付配置",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-E01-01",
+          "name": "DJI Dock 3（外采参考） 采购交付项",
+          "qty": 1,
+          "unit": "台",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-E01-02",
+          "name": "配套附件与授权核对记录",
+          "qty": 1,
+          "unit": "份",
+          "source": "服务",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-E02",
+      "product_ref": "LA-E02",
+      "version": "1.0.0",
+      "kind": "模拟交付配置",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-E02-01",
+          "name": "DJI Matrice 4TD（外采参考） 采购交付项",
+          "qty": 1,
+          "unit": "架",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-E02-02",
+          "name": "配套附件与授权核对记录",
+          "qty": 1,
+          "unit": "份",
+          "source": "服务",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-E03",
+      "product_ref": "LA-E03",
+      "version": "1.0.0",
+      "kind": "模拟交付配置",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-E03-01",
+          "name": "DJI Matrice 400 载荷平台（外采参考） 采购交付项",
+          "qty": 1,
+          "unit": "架",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-E03-02",
+          "name": "配套附件与授权核对记录",
+          "qty": 1,
+          "unit": "份",
+          "source": "服务",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-E04",
+      "product_ref": "LA-E04",
+      "version": "1.0.0",
+      "kind": "模拟交付配置",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-E04-01",
+          "name": "DJI Zenmuse H30T（外采参考） 采购交付项",
+          "qty": 1,
+          "unit": "台",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-E04-02",
+          "name": "配套附件与授权核对记录",
+          "qty": 1,
+          "unit": "份",
+          "source": "服务",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-E05",
+      "product_ref": "LA-E05",
+      "version": "1.0.0",
+      "kind": "模拟交付配置",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-E05-01",
+          "name": "DJI Zenmuse L2（外采参考） 采购交付项",
+          "qty": 1,
+          "unit": "台",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-E05-02",
+          "name": "配套附件与授权核对记录",
+          "qty": 1,
+          "unit": "份",
+          "source": "服务",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-E06",
+      "product_ref": "LA-E06",
+      "version": "1.0.0",
+      "kind": "模拟交付配置",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-E06-01",
+          "name": "DJI Zenmuse P1（外采参考） 采购交付项",
+          "qty": 1,
+          "unit": "台",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-E06-02",
+          "name": "配套附件与授权核对记录",
+          "qty": 1,
+          "unit": "份",
+          "source": "服务",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-E07",
+      "product_ref": "LA-E07",
+      "version": "1.0.0",
+      "kind": "模拟交付配置",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-E07-01",
+          "name": "DJI Terra 重建软件（外采参考） 采购交付项",
+          "qty": 1,
+          "unit": "许可",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-E07-02",
+          "name": "配套附件与授权核对记录",
+          "qty": 1,
+          "unit": "份",
+          "source": "服务",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-E08",
+      "product_ref": "LA-E08",
+      "version": "1.0.0",
+      "kind": "模拟交付配置",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-E08-01",
+          "name": "DJI FlightHub 2 On-Premises（外采参考） 采购交付项",
+          "qty": 1,
+          "unit": "许可",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-E08-02",
+          "name": "配套附件与授权核对记录",
+          "qty": 1,
+          "unit": "份",
+          "source": "服务",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-E09",
+      "product_ref": "LA-E09",
+      "version": "1.0.0",
+      "kind": "模拟交付配置",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-E09-01",
+          "name": "JOUAV 纵横 CW-15（外采参考） 采购交付项",
+          "qty": 1,
+          "unit": "架",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-E09-02",
+          "name": "配套附件与授权核对记录",
+          "qty": 1,
+          "unit": "份",
+          "source": "服务",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-C01",
+      "product_ref": "LA-C01",
+      "version": "1.0.0",
+      "kind": "模拟产品组成",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-C01-01",
+          "name": "协议梳理与详细设计",
+          "qty": null,
+          "unit": "人日",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-C01-02",
+          "name": "接口开发和异常处理",
+          "qty": null,
+          "unit": "人日",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-C01-03",
+          "name": "联调与验收",
+          "qty": null,
+          "unit": "人日",
+          "source": "服务",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-C02",
+      "product_ref": "LA-C02",
+      "version": "1.0.0",
+      "kind": "模拟产品组成",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-C02-01",
+          "name": "网络与安全域设计",
+          "qty": null,
+          "unit": "人日",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-C02-02",
+          "name": "边界设备及密码服务",
+          "qty": null,
+          "unit": "套",
+          "source": "外采",
+          "product_ref": null,
+          "optional": true,
+          "condition": "按客户安全设计和选型结果配置",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-C02-03",
+          "name": "安全联调与整改",
+          "qty": null,
+          "unit": "人日",
+          "source": "服务",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-C03",
+      "product_ref": "LA-C03",
+      "version": "1.0.0",
+      "kind": "模拟产品组成",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-C03-01",
+          "name": "样本整理与标注",
+          "qty": null,
+          "unit": "样本",
+          "source": "服务",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-C03-02",
+          "name": "模型适配和训练",
+          "qty": null,
+          "unit": "人日",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-C03-03",
+          "name": "独立评测报告",
+          "qty": 1,
+          "unit": "份",
+          "source": "服务",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-I01",
+      "product_ref": "LA-I01",
+      "version": "1.0.0",
+      "kind": "模拟交付配置",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-I01-01",
+          "name": "计算与GPU配置",
+          "qty": null,
+          "unit": "套",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-I01-02",
+          "name": "存储与网卡配置",
+          "qty": null,
+          "unit": "套",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-I01-03",
+          "name": "部署与压力测试",
+          "qty": 1,
+          "unit": "项",
+          "source": "服务",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-I02",
+      "product_ref": "LA-I02",
+      "version": "1.0.0",
+      "kind": "模拟交付配置",
+      "basis": "演示配置：用于产品组成和交付拆解，不是厂商制造BOM或已确认采购清单。",
+      "lines": [
+        {
+          "id": "LA-I02-01",
+          "name": "基础与安装构件",
+          "qty": null,
+          "unit": "套",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-I02-02",
+          "name": "电源与接地材料",
+          "qty": null,
+          "unit": "套",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-I02-03",
+          "name": "通信与网络材料",
+          "qty": null,
+          "unit": "套",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        },
+        {
+          "id": "LA-I02-04",
+          "name": "勘察施工验收",
+          "qty": null,
+          "unit": "人日",
+          "source": "服务",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示用量；最终以项目范围与供货清单为准"
+        }
+      ]
+    },
+    {
+      "id": "BOM-LA-P09",
+      "product_ref": "LA-P09",
+      "version": "1.0.0",
+      "kind": "模拟产品组成",
+      "basis": "自研四旋翼原型工程BOM示例；不是已定型图纸，部件数量仅演示配置管理，所有性能和选型待工程验证。",
+      "lines": [
+        {
+          "id": "LA-P09-01",
+          "name": "碳纤维机架与起落架组件",
+          "qty": 1,
+          "unit": "套",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "结构件示例；材料、强度和重量需设计验证"
+        },
+        {
+          "id": "LA-P09-02",
+          "name": "飞控与惯导航电组件",
+          "qty": 1,
+          "unit": "套",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "飞控型号、冗余架构、供电与接口待选型"
+        },
+        {
+          "id": "LA-P09-03",
+          "name": "无刷电机",
+          "qty": 4,
+          "unit": "台",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "推力和效率按桨、电压、负载联合选型"
+        },
+        {
+          "id": "LA-P09-04",
+          "name": "电子调速器",
+          "qty": 4,
+          "unit": "只",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "电流裕量、协议和散热条件待验证"
+        },
+        {
+          "id": "LA-P09-05",
+          "name": "正反桨叶",
+          "qty": 2,
+          "unit": "对",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "四旋翼两对桨，尺寸与动力匹配待设计"
+        },
+        {
+          "id": "LA-P09-06",
+          "name": "动力电池包",
+          "qty": 2,
+          "unit": "块",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "演示双电池配置；串并联拓扑、BMS与安全策略须验证"
+        },
+        {
+          "id": "LA-P09-07",
+          "name": "电源分配与保护模块",
+          "qty": 1,
+          "unit": "套",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "电压、电流保护及载荷供电接口待设计"
+        },
+        {
+          "id": "LA-P09-08",
+          "name": "RTK/GNSS定位与天线组件",
+          "qty": 1,
+          "unit": "套",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "差分服务、天线布置和飞控协议待验证"
+        },
+        {
+          "id": "LA-P09-09",
+          "name": "遥控与图数传组件",
+          "qty": 1,
+          "unit": "套",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "通信制式、频段、加密与地面端适配待确认"
+        },
+        {
+          "id": "LA-P09-10",
+          "name": "快拆任务载荷接口与减振组件",
+          "qty": 1,
+          "unit": "套",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "机械、电源、数据与重心边界待定义"
+        },
+        {
+          "id": "LA-P09-11",
+          "name": "线束与连接器套件",
+          "qty": 1,
+          "unit": "套",
+          "source": "外采",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "线规、防松和环境防护需工程验证"
+        },
+        {
+          "id": "LA-P09-12",
+          "name": "飞控参数与载荷适配固件",
+          "qty": 1,
+          "unit": "版本",
+          "source": "自研",
+          "product_ref": null,
+          "optional": false,
+          "condition": "",
+          "note": "固件配置和试验版本受控，不含未验证载荷"
+        }
+      ]
+    }
+  ],
+  "sizing": {
+    "params": {
+      "dock_count": {
+        "label": "确认的值守单元数量",
+        "unit": "套",
+        "units": [
+          "个",
+          "台",
+          "座",
+          "套"
+        ],
+        "keywords": [
+          "机场"
+        ]
+      },
+      "drone_count": {
+        "label": "确认的机动飞机数量",
+        "unit": "架",
+        "units": [
+          "架"
+        ],
+        "keywords": [
+          "机动飞机",
+          "机动无人机",
+          "Matrice 400"
+        ]
+      },
+      "road_km": {
+        "label": "道路里程",
+        "unit": "公里",
+        "units": [
+          "公里",
+          "km",
+          "千米"
+        ],
+        "keywords": [
+          "道路",
+          "公路",
+          "高速",
+          "国道",
+          "省道",
+          "里程",
+          "路段",
+          "巡"
+        ]
+      },
+      "area_km2": {
+        "label": "作业面积",
+        "unit": "平方公里",
+        "units": [
+          "平方公里",
+          "km2",
+          "km²"
+        ],
+        "keywords": [
+          "面积",
+          "林区",
+          "城区",
+          "区域",
+          "范围",
+          "辖区"
+        ]
+      },
+      "interfaces": {
+        "label": "接口数量",
+        "unit": "个",
+        "keywords": [
+          "系统",
+          "平台"
+        ]
+      },
+      "maintenance_years": {
+        "label": "运维年限",
+        "unit": "年",
+        "keywords": [
+          "运维",
+          "维保",
+          "质保"
+        ]
+      },
+      "min_temp_c": {
+        "label": "最低工作温度",
+        "unit": "℃",
+        "units": [
+          "℃",
+          "°C",
+          "度"
+        ],
+        "keywords": [
+          "温度",
+          "低温",
+          "环境",
+          "气温"
+        ],
+        "pick": "min"
+      },
+      "pilots": {
+        "label": "飞手培训人数",
+        "unit": "人",
+        "units": [
+          "人",
+          "名"
+        ],
+        "keywords": [
+          "飞手",
+          "执照",
+          "驾驶员",
+          "取证"
+        ]
+      },
+      "onsite_staff": {
+        "label": "驻场人数",
+        "unit": "人",
+        "units": [
+          "人",
+          "名"
+        ],
+        "keywords": [
+          "驻场"
+        ]
+      },
+      "build_months": {
+        "label": "建设周期",
+        "unit": "月",
+        "keywords": [
+          "周期",
+          "建设",
+          "上线",
+          "完成",
+          "工期"
+        ]
+      },
+      "training_sessions": {
+        "label": "操作培训期数",
+        "unit": "期",
+        "units": [
+          "期",
+          "次",
+          "场"
+        ],
+        "keywords": [
+          "培训"
+        ]
+      }
+    },
+    "rules": [
+      {
+        "id": "LA-Q01",
+        "name": "按确认站点数配置值守单元",
+        "product_ref": "LA-P07",
+        "param": "dock_count",
+        "unit": "套"
+      },
+      {
+        "id": "LA-Q02",
+        "name": "按确认机动飞机数配置平台",
+        "product_ref": "LA-E03",
+        "param": "drone_count",
+        "unit": "架"
+      }
+    ]
+  }
+}

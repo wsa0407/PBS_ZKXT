@@ -1,3 +1,4 @@
+import { usesSingleLicense } from "./catalog.mjs";
 import { NON_DELIVERABLE } from "./extract.mjs";
 import { dice, normalize } from "./text.mjs";
 
@@ -9,11 +10,12 @@ const CONFLICT_FORMAT = `{"product_ref":"P08","req_id":"R030","evidence":"逐字
 
 const MATCH_RULES = `匹配产品（最重要）。**从场景中的具体要求（或已有业务能力）匹配产品能力，再确定产品**：
 a. 先确定这一项服务于哪些“业务能力”（capability_ids，填能力编号如 C01）；再到产品目录里找能满足这些业务能力的“产品能力”；最后才确定产品。已经提供场景时，以场景活动及关联需求为依据，不要求另建业务能力，capability_ids可为空。场景中未明确的条件不可默认满足。
-b. 业务能力能被产品目录中某个产品的能力满足时，source 填“自有产品”，product_ref 填产品 ID，matched_capabilities 逐字复制该产品“能力”中满足需求的条目。
-c. 每个用到的自有产品只出一个叶子（产品本身），不要为同一产品的标准能力再拆“部署”“配置”“开发”叶子。
+b. 业务能力能被产品目录中某个产品的能力满足时，source 必须采用产品目录的 delivery_source（自有产品、外采、自研或服务），product_ref 填产品 ID，matched_capabilities 逐字复制该产品“能力”中满足需求的条目。
+c. 每个用到的目录产品只出一个叶子（产品本身），不要为同一产品的标准能力再拆“部署”“配置”“开发”叶子。
 d. 产品“限制”中写明不具备、不包含、需定制的内容，不能算自有产品覆盖。要拆出外采或自研叶子，并在 blocked_by 中写明是哪个产品的哪条限制：${BLOCKED_FORMAT}。
 e. 产品目录里没有相关产品时，按实际填外采、自研或服务，blocked_by 填 null。
-f. “检索到的产品资料”是从产品库和产品手册中按业务能力和需求检索出的片段，编号形如 K12。叶子的判断用到了哪些片段，就把编号填进 evidence_chunks；没用到就给空数组。`;
+f. 方案模板仅为参考，不是客户确认需求；备选组只选一个，组合产品已经包含的BOM组成项不得重复列入PBS报价。标为待研发或待验证的能力必须说明缺口，不可当作现成覆盖。
+g. “检索到的产品资料”是从产品库和产品手册中按业务能力和需求检索出的片段，编号形如 K12。叶子的判断用到了哪些片段，就把编号填进 evidence_chunks；没用到就给空数组。`;
 
 const SYSTEM = `你是资深解决方案架构师，负责把客户需求拆成可报价的产品清单（PBS），并为每一项匹配公司已有产品。
 
@@ -65,7 +67,7 @@ export function contextText(chunks) {
 
 export function productText(p) {
   const list = (items) => (items.length ? items.map((x) => `\n    - ${x}`).join("") : " 无");
-  return `${p.id} ${p.name}（单位：${p.unit}）${p.summary ? "：" + p.summary : ""}\n  能力：${list(p.capabilities)}\n  限制：${list(p.limits)}\n  信创：${p.xinchuang || "未说明"}`;
+  return `${p.id} ${p.name}（单位：${p.unit}；delivery_source：${p.metadata?.delivery_source ?? "自有产品"}；供给状态：${p.metadata?.availability ?? "未核实"}；数据性质：${p.metadata?.data_kind ?? "旧版目录"}）${p.summary ? "：" + p.summary : ""}\n  能力：${list(p.capabilities)}\n  限制：${list(p.limits)}\n  信创：${p.xinchuang || "未说明"}\n  适配条件：${list(p.metadata?.compatibility ?? [])}\n  交付物：${list(p.metadata?.deliverables ?? [])}`;
 }
 
 function reqLine(r) {
@@ -193,9 +195,14 @@ function checkEvidence(leaf, ctx) {
 }
 
 function checkMatch(leaf, ctx) {
-  // Product references only stand for "we deliver this product"; for other sources use blocked_by.
-  if (leaf.source !== "自有产品") leaf.product_ref = null;
-  const product = leaf.product_ref ? ctx.productById.get(leaf.product_ref) : null;
+  // A blocker is not the product being delivered; custom gap work must have its own reference.
+  if (leaf.product_ref && leaf.blocked_by?.product_ref === leaf.product_ref) leaf.product_ref = null;
+  // All delivery sources can reference products and their BOMs.
+  let product = leaf.product_ref ? ctx.productById.get(leaf.product_ref) : null;
+  if (product?.metadata?.active === false && !leaf.edited && !leaf.reviewed) {
+    note(ctx, "匹配校验", `「${product.name}」已归档，不能用于新的自动匹配`, [leaf.code]);
+    leaf.product_ref = null; product = null;
+  }
   if (leaf.product_ref && !product) {
     note(ctx, "匹配校验", `叶子「${leaf.name}」引用了不存在的产品 ${leaf.product_ref}，已移除`, [leaf.code]);
     leaf.product_ref = null;
@@ -210,6 +217,9 @@ function checkMatch(leaf, ctx) {
   }
 
   if (product) {
+    if (product.metadata?.delivery_source) leaf.source = product.metadata.delivery_source;
+    if (product.metadata?.active === false) note(ctx, "匹配校验", `「${product.name}」已归档，请替换或人工复核`, [leaf.code]);
+    if (product.metadata?.requires_validation) note(ctx, "匹配校验", `「${product.name}」${product.metadata.availability}，不能视为已交付能力`, [leaf.code]);
     const verified = [];
     for (const claim of leaf.matched_capabilities) {
       const hit = findText(claim, product.capabilities);
@@ -235,7 +245,7 @@ function checkMatch(leaf, ctx) {
 }
 
 function isBaseLeaf(leaf, ctx) {
-  if (leaf.source !== "自有产品" || !leaf.product_ref) return false;
+  if (!leaf.product_ref) return false;
   const rule = leaf.sizing_rule ? ctx.ruleById.get(leaf.sizing_rule) : null;
   return !rule || !rule.addon;
 }
@@ -269,7 +279,7 @@ function ruleLeaf(rule, ctx, basis, origin = "rule") {
     name: rule.name,
     spec: rule.note ?? "",
     source: rule.source ?? "服务",
-    product_ref: product && rule.source === "自有产品" ? product.id : null,
+    product_ref: product?.id ?? null,
     sizing_rule: rule.id,
     unit: rule.unit,
     basis,
@@ -282,7 +292,7 @@ function baseLeaf(product, basis, ctx) {
     parent: [...ctx.level1.values()].find((l) => l.license)?.code ?? "1",
     name: product.name,
     spec: product.summary ?? "",
-    source: "自有产品",
+    source: product.metadata?.delivery_source ?? "自有产品",
     product_ref: product.id,
     unit: product.unit,
     basis,
@@ -307,6 +317,11 @@ export function enforceLeaves(leaves, ctx, fullText = "") {
   for (const leaf of leaves) {
     checkMatch(leaf, ctx);
     if (!leaf.edited) checkEvidence(leaf, ctx);
+    const linkedRule = ctx.ruleById.get(leaf.sizing_rule);
+    if (linkedRule?.strict_product && linkedRule.product_ref !== leaf.product_ref) {
+      note(ctx, "测算规则校验", `「${leaf.name}」的规则不属于所选产品，已移除`, [leaf.code]);
+      leaf.sizing_rule = null;
+    }
     if (leaf.sizing_rule && !ctx.ruleById.has(leaf.sizing_rule)) {
       note(ctx, "生成结果修正", `「${leaf.name}」引用了不存在的测算规则 ${leaf.sizing_rule}，已移除`, [leaf.code]);
       leaf.sizing_rule = null;
@@ -356,7 +371,7 @@ export function enforceLeaves(leaves, ctx, fullText = "") {
   // Product lines whose quantity is governed by a rule (e.g. docks, drones) pick that rule up.
   const used = new Set(leaves.map((l) => l.sizing_rule).filter(Boolean));
   for (const leaf of leaves) {
-    if (leaf.edited || leaf.sizing_rule || leaf.source !== "自有产品" || !leaf.product_ref) continue;
+    if (leaf.edited || leaf.sizing_rule || !leaf.product_ref) continue;
     const rule = [...ctx.ruleById.values()].find((r) => r.product_ref === leaf.product_ref && !r.addon && !used.has(r.id));
     if (rule) {
       leaf.sizing_rule = rule.id;
@@ -376,14 +391,14 @@ export function enforceLeaves(leaves, ctx, fullText = "") {
       continue;
     }
     const product = leaf.product_ref ? ctx.productById.get(leaf.product_ref) : null;
-    if (product && product.unit === "套") {
-      leaf.qty = 1;
-      leaf.unit = "套";
-      leaf.qtyBasis = "产品许可";
-      continue;
-    }
     if (leaf.qty !== null && quoteSupportsQty(leaf, ctx, fullText)) {
       leaf.qtyBasis = "原文数量";
+      continue;
+    }
+    if (product && usesSingleLicense(product)) {
+      leaf.qty = 1;
+      leaf.unit = product.unit;
+      leaf.qtyBasis = "产品许可";
       continue;
     }
     if (leaf.qty !== null) {

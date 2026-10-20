@@ -229,5 +229,36 @@ export async function exportProject(view) {
   view.audit.forEach((f) => (risks.addRow(f).alignment = wrap));
   styleHeader(risks);
 
+  if (view.catalog) {
+    const snapshot = view.catalog.snapshot ?? view.catalog.preview;
+    const status = view.catalog.snapshot ? view.catalog.snapshot_stale ? "已存快照待复核" : "已存快照" : "当前展开草稿（未保存快照）";
+    const solutions = book.addWorksheet("解决方案产品关系");
+    solutions.columns = [
+      { header: "方案编号", key: "id", width: 18 }, { header: "项目方案", key: "name", width: 32 },
+      { header: "客户场景", key: "scenes", width: 22 }, { header: "原始需求", key: "reqs", width: 22 },
+      { header: "产品组合（PBS项）", key: "products", width: 46 }, { header: "选型与差距说明", key: "notes", width: 60 },
+      { header: "目录版本", key: "version", width: 20 }, { header: "快照状态", key: "status", width: 30 },
+    ];
+    for (const s of snapshot.solutions) solutions.addRow({ id: s.id, name: s.name, scenes: s.scenario_ids.join("、"), reqs: s.req_ids.join("、"), products: s.products.map((p) => `${p.code} ${p.name}`).join("\n"), notes: s.design_notes, version: `${snapshot.catalog_version} / 修订${snapshot.catalog_revision}`, status }).alignment = wrap;
+    if (snapshot.unassigned.length) solutions.addRow({ name: "未关联方案的PBS项", products: snapshot.products.filter((p) => snapshot.unassigned.includes(p.id)).map((p) => `${p.code} ${p.name}`).join("\n"), status }).alignment = wrap;
+    styleHeader(solutions);
+    const bom = book.addWorksheet("产品BOM组成");
+    bom.columns = [
+      { header: "PBS项", key: "item", width: 32 }, { header: "产品数量", key: "qty", width: 12 },
+      { header: "BOM版本", key: "version", width: 30 }, { header: "组成路径", key: "path", width: 60 },
+      { header: "组成项", key: "name", width: 36 }, { header: "层级口径", key: "node_type", width: 28 }, { header: "单产品用量", key: "per", width: 14 },
+      { header: "展开用量", key: "total", width: 14 }, { header: "单位", key: "unit", width: 8 },
+      { header: "来源", key: "source", width: 10 }, { header: "选配条件", key: "condition", width: 40 },
+      { header: "数据性质与状态", key: "status", width: 48 },
+    ];
+    // Unique PBS list, not the per-solution copies, prevents counting shared products twice.
+    for (const p of snapshot.products) {
+      if (!p.bom.length) bom.addRow({ item: `${p.code} ${p.name}`, qty: p.qty ?? "待确认", status: `${status}；${p.warnings.join("；") || "未维护BOM"}` }).alignment = wrap;
+      for (const row of p.bom) bom.addRow({ item: `${p.code} ${p.name}`, qty: p.qty ?? "待确认", version: `${row.bom_id}@${row.bom_version}`, path: row.path, name: row.name, node_type: row.has_children ? "组成组（不与子项累计）" : row.included ? "明细" : "可选未纳入", per: row.per_product_qty ?? "待确认", total: row.included ? row.total_qty ?? "待确认" : "未选配", unit: row.unit, source: row.source, condition: row.condition, status: `${row.bom_kind}；${status}` }).alignment = wrap;
+    }
+    bom.addRow({ name: snapshot.note, status: snapshot.warnings.join("；") }).alignment = wrap;
+    styleHeader(bom);
+  }
+
   return Buffer.from(await book.xlsx.writeBuffer());
 }

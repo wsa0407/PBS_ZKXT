@@ -4,7 +4,8 @@ import { extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { INPUT_TYPES, CATEGORIES } from "../engine/extract.mjs";
 import { fileToText, SUPPORTED } from "../engine/ingest.mjs";
-import { loadConfig, openDb } from "./db.mjs";
+import * as catalog from "./catalog.mjs";
+import { openDb } from "./db.mjs";
 import * as chat from "./chat.mjs";
 import * as models from "./models.mjs";
 import { badRequest, HttpError } from "./errors.mjs";
@@ -75,7 +76,7 @@ async function fileText(body) {
 // ---------- meta ----------
 
 get("/api/meta", () => {
-  const { template, sizing, checklists } = loadConfig();
+  const { template, sizing, checklists } = catalog.runtimeConfig();
   return {
     model: models.selectedModel(),
     retrieval: rag.retrievalMode(),
@@ -105,6 +106,15 @@ del("/api/models/current", () => models.resetModel());
 
 // ---------- products ----------
 
+get("/api/catalog", () => catalog.readCatalog());
+get("/api/catalog/export.json", () => new FileReply(Buffer.from(JSON.stringify(catalog.readCatalog()?.pack, null, 2)), "产品方案目录.json", "application/json; charset=utf-8"));
+post("/api/catalog/preview", (_, body) => {
+  try { const preview = catalog.previewImport(body.pack); delete preview.merged; return preview; } catch (e) { throw badRequest(e.message); }
+});
+post("/api/catalog/import", (_, body) => catalog.importCatalog(body));
+put("/api/catalog/:kind/:id", ({ kind, id }, body) => catalog.saveEntry(kind, id, body.entry, body.fingerprint));
+put("/api/projects/:id/solutions", ({ id }, body) => catalog.saveProjectSolutions(id, body.designs, body.input_hash));
+post("/api/projects/:id/bom/snapshot", ({ id }) => { svc.computeState(id); return catalog.captureProjectBom(id); });
 get("/api/products", () => repo.listProducts());
 post("/api/products", (_, body) => svc.saveProduct(null, body));
 put("/api/products/:id", ({ id }, body) => svc.saveProduct(id, body));
@@ -293,6 +303,7 @@ export function createServer() {
 
 export async function boot({ port = Number(process.env.PORT || 8765), host = process.env.HOST || "127.0.0.1" } = {}) {
   openDb();
+  catalog.installDefaultCatalog();
   failInterruptedJobs();
   svc.rebuildIndex();
   svc.seedManuals();

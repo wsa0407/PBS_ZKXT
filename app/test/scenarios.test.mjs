@@ -227,7 +227,7 @@ test("v2 databases migrate without losing reviewed requirements, materials or PB
     assert.equal(repo.getItem(oldProject, oldItem).qty, 5);
     assert.equal(repo.getItem(oldProject, oldItem).confirmed, true);
     assert.equal(repo.getItem(oldProject, oldItem).reviewed, true);
-    assert.equal(getDb().prepare("SELECT value FROM meta WHERE key = 'schema'").get().value, "3");
+    assert.equal(getDb().prepare("SELECT value FROM meta WHERE key = 'schema'").get().value, "4");
     assert.equal(scenes.listScenarios(oldProject).length, 0);
   } finally { resetDb(":memory:"); rmSync(dir, { recursive: true, force: true }); }
 });

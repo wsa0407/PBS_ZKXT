@@ -1,224 +1,96 @@
-import { computed, defineComponent, onMounted, ref } from "vue";
-import { ElMessageBox } from "element-plus";
-import { api, call, fileToBase64, fmtTime, meta, pickFile, runJob } from "../api.js";
+import { computed, defineComponent, ref, onMounted } from "vue";
+import { api, call, pickFile, loadMeta } from "../api.js";
+import ProductList from "./products-list.js";
 
-const blank = () => ({ id: null, name: "", summary: "", capabilities: "", limits: "", xinchuang: "", unit: "套" });
-
+const lines = (s) => String(s ?? "").split("\n").map((v) => v.trim()).filter(Boolean);
+const solutionFields = { activities: "业务活动", deliverables: "交付物", acceptance: "验收口径", boundaries: "适用边界", clarifications: "待澄清问题" };
 export default defineComponent({
+  components: { ProductList },
   setup() {
-    const products = ref([]);
-    const docs = ref([]);
-    const loading = ref(true);
-    const kw = ref("");
-    const editing = ref(null);
-    const draft = ref(null);
-    const probe = ref({ query: "", result: null, busy: false });
-
-    const load = async () => {
-      loading.value = true;
-      [products.value, docs.value] = await Promise.all([call(() => api("/products")), call(() => api("/docs"))]).then((r) => [r[0] ?? [], r[1] ?? []]);
-      loading.value = false;
-    };
+    const tab = ref("solutions"); const catalog = ref(null); const selected = ref(""); const editing = ref(null); const importPlan = ref(null); const busy = ref(false);
+    const load = async () => { catalog.value = await call(() => api("/catalog")); };
     onMounted(load);
-
-    const shown = computed(() => products.value.filter((p) => !kw.value || `${p.name}${p.summary}${p.capabilities.join("")}`.includes(kw.value)));
-    const docsOf = (pid) => docs.value.filter((d) => d.product_id === pid);
-    const pendingDocs = computed(() => docs.value.filter((d) => d.status !== "已入库"));
-
-    const edit = (p) => {
-      editing.value = p ? { ...p, capabilities: p.capabilities.join("\n"), limits: p.limits.join("\n") } : blank();
+    const pack = computed(() => catalog.value?.pack);
+    const products = computed(() => pack.value?.products ?? []);
+    const activeProducts = computed(() => products.value.filter((p) => p.metadata.active));
+    const productName = (id) => products.value.find((p) => p.id === id)?.name ?? id;
+    const current = computed(() => pack.value?.solutions.find((s) => s.id === selected.value) ?? pack.value?.solutions[0]);
+    const openEntry = (kind, row) => {
+      const entry = row ? JSON.parse(JSON.stringify(row)) : kind === "solutions" ? { id: "S-" + Date.now(), version: "1.0.0", name: "", scenario: "", data_kind: "人工维护", activities: [], deliverables: [], acceptance: [], boundaries: [], clarifications: [], reference_ids: [], products: [] } : { id: "BOM-" + Date.now(), version: "1.0.0", product_ref: "", kind: "模拟产品组成", basis: "人工维护；待业务审核", lines: [] };
+      const textFields = {};
+      if (kind === "solutions") for (const key of Object.keys(solutionFields)) textFields[key] = entry[key].join("\n");
+      editing.value = { kind, entry, textFields, fingerprint: catalog.value.fingerprint };
     };
     const save = async () => {
       const e = editing.value;
-      const body = { name: e.name, summary: e.summary, capabilities: e.capabilities, limits: e.limits, xinchuang: e.xinchuang, unit: e.unit };
-      if (await call(() => api(e.id ? `/products/${e.id}` : "/products", { method: e.id ? "PUT" : "POST", body }), "已保存")) {
-        editing.value = null;
-        load();
-      }
+      if (e.kind === "solutions") for (const key of Object.keys(solutionFields)) e.entry[key] = lines(e.textFields[key]);
+      const result = await call(() => api(`/catalog/${e.kind}/${e.entry.id}`, { method: "PUT", body: { entry: e.entry, fingerprint: e.fingerprint } }), "目录条目已保存");
+      if (result) { editing.value = null; catalog.value = result; }
     };
-    const remove = async (p) => {
-      await ElMessageBox.confirm(`删除产品「${p.name}」？已经生成的 PBS 不受影响，但之后无法再匹配到它。`, "删除产品", { type: "warning" });
-      await call(() => api(`/products/${p.id}`, { method: "DELETE" }), "已删除");
-      load();
+    const addBomLine = () => editing.value.entry.lines.push({ id: "L-" + Date.now(), name: "", product_ref: null, qty: null, unit: "件", source: "外采", optional: false, condition: "", note: "" });
+    const chooseComponent = (line) => {
+      const p = products.value.find((p) => p.id === line.product_ref);
+      if (p) Object.assign(line, { name: p.name, unit: p.unit, source: p.metadata.delivery_source });
     };
-
-    const importExcel = async () => {
-      const f = await pickFile(".xlsx");
-      if (!f) return;
-      const r = await call(async () => api("/products/import", { method: "POST", body: { base64: await fileToBase64(f) } }));
-      if (!r) return;
-      if (r.errors.length) await ElMessageBox.alert(r.errors.join("\n"), `导入完成：新增 ${r.created}，更新 ${r.updated}，${r.errors.length} 行有误`);
-      else await call(async () => r, `导入完成：新增 ${r.created} 个，更新 ${r.updated} 个`);
-      load();
+    const upload = async () => {
+      const f = await pickFile(".json"); if (!f) return;
+      importPlan.value = await call(async () => api("/catalog/preview", { method: "POST", body: { pack: JSON.parse(await f.text()) } }));
     };
-
-    // manual upload → model drafts capabilities/limits → human confirms
-    const uploadManual = async (productId = null) => {
-      const f = await pickFile(meta.fileTypes.join(","));
-      if (!f) return;
-      const res = await runJob("模型阅读产品手册", async () => api("/docs", { method: "POST", body: { productId, file: { name: f.name, base64: await fileToBase64(f) } } }));
-      await load();
-      if (res) {
-        const doc = docs.value[0];
-        if (doc) openDraft(doc.id);
-      }
+    const applyImport = async () => {
+      busy.value = true;
+      const r = await call(() => api("/catalog/import", { method: "POST", body: { pack: importPlan.value.pack, token: importPlan.value.token } }), "数据包已更新；冲突条目保留当前内容");
+      busy.value = false;
+      if (r) { importPlan.value = null; catalog.value = r; await loadMeta(); }
     };
-    const openDraft = async (docId) => {
-      const doc = await call(() => api(`/docs/${docId}`));
-      if (!doc?.draft) return;
-      const existing = doc.product_id ? products.value.find((p) => p.id === doc.product_id) : null;
-      draft.value = {
-        doc,
-        productId: existing?.id ?? "",
-        form: {
-          name: existing?.name ?? doc.draft.name,
-          summary: doc.draft.summary,
-          unit: doc.draft.unit,
-          xinchuang: doc.draft.xinchuang,
-          capabilities: doc.draft.capabilities.map((c) => ({ ...c, keep: true })),
-          limits: doc.draft.limits.map((c) => ({ ...c, keep: true })),
-        },
-      };
-    };
-    const useExisting = (pid) => {
-      const p = products.value.find((x) => x.id === pid);
-      if (p) draft.value.form.name = p.name;
-    };
-    const confirmDraft = async () => {
-      const d = draft.value;
-      const f = d.form;
-      const product = {
-        name: f.name,
-        summary: f.summary,
-        unit: f.unit,
-        xinchuang: f.xinchuang,
-        capabilities: f.capabilities.filter((c) => c.keep).map((c) => c.text),
-        limits: f.limits.filter((c) => c.keep).map((c) => c.text),
-      };
-      if (d.productId) {
-        const old = products.value.find((p) => p.id === d.productId);
-        product.capabilities = [...new Set([...old.capabilities, ...product.capabilities])];
-        product.limits = [...new Set([...old.limits, ...product.limits])];
-        product.xinchuang = product.xinchuang || old.xinchuang;
-      }
-      if (await call(() => api(`/docs/${d.doc.id}/confirm`, { method: "POST", body: { productId: d.productId || null, product } }), "已入库，手册已加入检索")) {
-        draft.value = null;
-        load();
-      }
-    };
-    const removeDoc = async (d) => {
-      await ElMessageBox.confirm(`删除手册「${d.name}」及其检索内容？`, "删除手册", { type: "warning" });
-      await call(() => api(`/docs/${d.id}`, { method: "DELETE" }));
-      load();
-    };
-
-    const search = async () => {
-      probe.value.busy = true;
-      probe.value.result = await call(() => api("/products/search", { method: "POST", body: { query: probe.value.query } }));
-      probe.value.busy = false;
-    };
-
-    return { products, docs, loading, kw, shown, docsOf, pendingDocs, editing, draft, probe, meta, edit, save, remove, importExcel, uploadManual, openDraft, useExisting, confirmDraft, removeDoc, search, fmtTime };
+    const refresh = async (name) => { if (name !== "products") await load(); };
+    return { tab, catalog, pack, products, activeProducts, productName, selected, current, editing, solutionFields, openEntry, save, addBomLine, chooseComponent, upload, importPlan, busy, applyImport, refresh };
   },
   template: `
-  <div class="page-head">
-    <div><h1>产品库</h1><div class="sub">共 {{ products.length }} 个产品。拆解时系统先从这里和产品手册中检索，再让模型匹配；“能力”和“限制”写得越具体，匹配越准。</div></div>
-    <div class="actions">
-      <el-input v-model="kw" placeholder="搜索产品" clearable style="width:180px" />
-      <a href="/api/products/template.xlsx"><el-button>下载 Excel 模板</el-button></a>
-      <el-button @click="importExcel">导入 Excel</el-button>
-      <el-button @click="uploadManual(null)">上传产品手册</el-button>
-      <el-button type="primary" @click="edit(null)">新增产品</el-button>
-    </div>
-  </div>
-
-  <el-alert v-if="pendingDocs.length" type="warning" :closable="false" show-icon style="margin-bottom:12px" title="有手册等待确认入库">
-    <div v-for="d in pendingDocs" :key="d.id">《{{ d.name }}》{{ d.status }} <el-button v-if="d.status === '待确认'" link type="primary" @click="openDraft(d.id)">查看模型整理的草稿</el-button><el-button link type="danger" @click="removeDoc(d)">删除</el-button></div>
-  </el-alert>
-
-  <el-card shadow="never" body-style="padding:0" v-loading="loading">
-    <el-table :data="shown" empty-text="产品库是空的，先新增或导入">
-      <el-table-column label="产品" width="220">
-        <template #default="{ row }"><b>{{ row.name }}</b> <span class="muted">{{ row.id }}</span><div class="muted">{{ row.summary }}</div></template>
-      </el-table-column>
-      <el-table-column label="能力（匹配依据）" min-width="260">
-        <template #default="{ row }"><el-tag v-for="c in row.capabilities" :key="c" type="success" size="small" class="wrap">{{ c }}</el-tag></template>
-      </el-table-column>
-      <el-table-column label="限制（拆出外采/自研的依据）" min-width="260">
-        <template #default="{ row }"><el-tag v-for="c in row.limits" :key="c" type="warning" size="small" class="wrap">{{ c }}</el-tag><span v-if="!row.limits.length" class="muted">—</span></template>
-      </el-table-column>
-      <el-table-column label="信创适配" prop="xinchuang" width="180"><template #default="{ row }"><span class="muted">{{ row.xinchuang }}</span></template></el-table-column>
-      <el-table-column label="手册" width="110">
-        <template #default="{ row }">
-          <div v-for="d in docsOf(row.id)" :key="d.id" class="muted" :title="d.name">📄 {{ d.name.slice(0, 8) }}</div>
-          <el-button link size="small" @click="uploadManual(row.id)">上传</el-button>
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="110" fixed="right">
-        <template #default="{ row }"><div class="ops"><el-button link type="primary" @click="edit(row)">编辑</el-button><el-button link type="danger" @click="remove(row)">删除</el-button></div></template>
-      </el-table-column>
-    </el-table>
-  </el-card>
-
-  <el-card shadow="never" style="margin-top:16px">
-    <template #header><b>检索测试</b><span class="muted" style="margin-left:8px">输入一句需求，看系统会检索到哪些产品资料</span></template>
-    <div class="row"><el-input v-model="probe.query" placeholder="例如：夜间能发现路面上的事故和违停" @keyup.enter="search" /><el-button type="primary" :loading="probe.busy" :disabled="!probe.query.trim()" @click="search">检索</el-button></div>
-    <el-alert v-if="probe.result && probe.result.mode.kind !== 'hybrid'" type="info" :closable="false" style="margin-top:10px" :title="'当前为关键词检索：' + probe.result.mode.reason" />
-    <div v-if="probe.result" style="margin-top:10px">
-      <div v-for="h in probe.result.hits" :key="h.chunk.id" class="chunk">
-        <el-tag size="small" type="info">{{ h.chunk.kind === 'manual' ? '手册' : h.chunk.kind === 'history' ? '历史项目' : h.chunk.kind === 'limit' ? '限制' : h.chunk.kind === 'capability' ? '能力' : '资料' }}</el-tag>
-        <b>{{ h.product || '' }}</b> {{ h.chunk.text }}
-        <span class="muted"> 得分 {{ h.score.toFixed(3) }}<template v-if="h.keyword !== null"> · 关键词 {{ h.keyword }}</template><template v-if="h.vector !== null"> · 向量 {{ h.vector }}</template></span>
+  <div class="page-head"><div><h1>解决方案与产品库</h1><div class="sub">解决方案 → 产品组合 → 产品 BOM · 独立目录维护</div></div><div v-if="catalog" class="actions"><el-tag>{{ pack.version }}</el-tag><span class="muted">修订 {{ catalog.revision }}</span></div></div>
+  <el-alert type="info" :closable="false" show-icon title="当前为低空业务 MOCK 目录。公司能力、方案组合和 BOM 均为模拟；厂商条目附公开资料来源，采购配置与适配条件需核验。" style="margin-bottom:16px" />
+  <el-tabs v-model="tab" @tab-change="refresh">
+    <el-tab-pane label="解决方案" name="solutions">
+      <div v-if="pack" class="grid-2" style="grid-template-columns:300px minmax(0,1fr)">
+        <el-card shadow="never"><template #header><b>{{ pack.solutions.length }} 个方案模板</b> <el-button link @click="openEntry('solutions', null)">新增</el-button></template>
+          <div v-for="s in pack.solutions" :key="s.id" style="margin-bottom:12px"><el-button text :type="current?.id === s.id ? 'primary' : 'default'" style="white-space:normal;height:auto;text-align:left" @click="selected = s.id">{{ s.name }}</el-button><div class="muted">{{ s.id }} · {{ s.version }}</div></div>
+        </el-card>
+        <el-card v-if="current" shadow="never"><template #header><b>{{ current.name }}</b><el-button link type="primary" @click="openEntry('solutions', current)" style="float:right">编辑方案</el-button></template>
+          <p>{{ current.scenario }}</p>
+          <div v-for="(label, key) in solutionFields" :key="key" style="margin:14px 0"><b>{{ label }}</b><div v-for="(s,i) in current[key]" :key="i" class="muted" style="margin-top:5px">{{ i+1 }}. {{ s }}</div></div>
+          <b>产品组合</b><el-table :data="current.products" size="small"><el-table-column label="产品" min-width="200"><template #default="{row}">{{ productName(row.product_ref) }}</template></el-table-column><el-table-column prop="role" label="角色" width="70" /><el-table-column label="用途与数量边界" min-width="210"><template #default="{row}">{{ row.purpose }}<div class="muted">{{ row.alternative_group ? '备选组：' + row.alternative_group + ' · ' : '' }}{{ row.quantity_note }}</div></template></el-table-column></el-table>
+        </el-card>
       </div>
-      <div v-if="!probe.result.hits.length" class="muted">没有检索到相关资料</div>
-    </div>
-  </el-card>
-
-  <el-dialog :model-value="!!editing" @close="editing = null" :title="editing?.id ? '编辑产品 ' + editing.id : '新增产品'" width="720px">
-    <el-form v-if="editing" label-position="top">
-      <div class="row"><el-form-item label="产品名称" style="flex:1" required><el-input v-model="editing.name" /></el-form-item><el-form-item label="单位"><el-input v-model="editing.unit" style="width:90px" placeholder="套/台/架" /></el-form-item></div>
-      <el-form-item label="简介"><el-input v-model="editing.summary" /></el-form-item>
-      <div class="grid-2">
-        <el-form-item label="能力（每行一条）"><el-input v-model="editing.capabilities" type="textarea" :rows="8" /></el-form-item>
-        <el-form-item label="限制（每行一条：不包含、不支持、需定制或外购的内容）"><el-input v-model="editing.limits" type="textarea" :rows="8" /></el-form-item>
-      </div>
-      <el-form-item label="信创适配"><el-input v-model="editing.xinchuang" placeholder="例如：已适配麒麟、统信操作系统，达梦数据库" /></el-form-item>
-    </el-form>
-    <template #footer><el-button @click="editing = null">取消</el-button><el-button type="primary" :disabled="!editing?.name.trim()" @click="save">保存</el-button></template>
+    </el-tab-pane>
+    <el-tab-pane label="产品目录" name="products" lazy><ProductList :key="catalog?.revision" /></el-tab-pane>
+    <el-tab-pane label="产品 BOM" name="boms">
+      <div class="actions" style="margin-bottom:12px"><el-button type="primary" @click="openEntry('boms', null)">新增产品 BOM</el-button><span class="muted">单产品组成用量；待确认填空，可选项默认不纳入。BOM组成不另加PBS报价。</span></div>
+      <el-collapse v-if="pack"><el-collapse-item v-for="b in pack.boms" :key="b.id" :name="b.id"><template #title><b>{{ productName(b.product_ref) }}</b><el-tag size="small" style="margin:0 12px">{{ b.version }}</el-tag><span class="muted">{{ b.kind }} · {{ b.lines.length }} 项</span></template>
+        <p class="muted">{{ b.basis }}</p><el-button link type="primary" @click="openEntry('boms', b)">编辑 BOM</el-button>
+        <el-table :data="b.lines" size="small"><el-table-column prop="name" label="组成项" min-width="240" /><el-table-column label="单产品用量" width="130"><template #default="{row}">{{ row.qty ?? '待确认' }} {{ row.unit }}</template></el-table-column><el-table-column prop="source" label="来源" width="90" /><el-table-column label="条件" min-width="200"><template #default="{row}">{{ row.optional ? '可选：' + row.condition : '必需' }}<div class="muted">{{ row.product_ref ? '关联产品：' + row.product_ref : row.note }}</div></template></el-table-column></el-table>
+      </el-collapse-item></el-collapse>
+    </el-tab-pane>
+    <el-tab-pane label="数据包维护" name="maintenance">
+      <el-card v-if="pack" shadow="never"><h2>{{ pack.name }}</h2><p>{{ pack.description }}</p><p>{{ pack.solutions.length }} 个方案 · {{ activeProducts.length }} 个启用产品 · {{ pack.boms.length }} 份 BOM</p><div class="actions"><a href="/api/catalog/export.json"><el-button>导出完整 JSON 数据包</el-button></a><el-button type="primary" @click="upload">导入并预览变更</el-button></div><p class="muted">方案与BOM可在页面独立编辑。批量更换行业或维护资料来源、参数规则时，导出后编辑JSON再导入。导入前校验引用、数量和循环；冲突保留人工修改。重启不会覆盖数据。</p><h3>资料来源</h3><div v-for="r in pack.references" :key="r.id" style="margin:10px 0"><a :href="r.url" target="_blank" rel="noopener noreferrer">{{ r.title }}</a><span class="muted"> · 核对 {{ r.checked_at }}</span></div></el-card>
+    </el-tab-pane>
+  </el-tabs>
+  <el-dialog :model-value="!!editing" @close="editing = null" :title="editing?.kind === 'solutions' ? '维护解决方案模板' : '维护产品 BOM'" width="960px">
+    <el-form v-if="editing" label-position="top"><div class="row"><el-form-item label="编号"><el-input v-model="editing.entry.id" disabled /></el-form-item><el-form-item label="版本"><el-input v-model="editing.entry.version" /></el-form-item></div>
+      <template v-if="editing.kind === 'solutions'">
+        <el-form-item label="方案名称"><el-input v-model="editing.entry.name" /></el-form-item><el-form-item label="适用场景"><el-input v-model="editing.entry.scenario" type="textarea" /></el-form-item>
+        <div class="grid-2"><el-form-item v-for="(label,key) in solutionFields" :key="key" :label="label + '（每行一条）'"><el-input v-model="editing.textFields[key]" type="textarea" :rows="3" /></el-form-item></div>
+        <b>产品组合</b><div v-for="(line,i) in editing.entry.products" :key="i" style="margin:12px 0;padding:10px;background:var(--el-fill-color-light)"><div class="row"><el-select v-model="line.product_ref" filterable style="width:360px"><el-option v-for="p in activeProducts" :key="p.id" :value="p.id" :label="p.name" /></el-select><el-select v-model="line.role" style="width:100px"><el-option v-for="r in ['必选','可选','备选']" :key="r" :value="r" :label="r" /></el-select><el-input v-model="line.alternative_group" placeholder="备选组（备选时必填）" /><el-button link type="danger" @click="editing.entry.products.splice(i,1)">移除</el-button></div><el-input v-model="line.purpose" placeholder="承接的需求或用途" style="margin-top:8px" /><el-input v-model="line.quantity_note" placeholder="数量口径与澄清边界" style="margin-top:8px" /></div>
+        <el-button @click="editing.entry.products.push({product_ref:'',role:'必选',purpose:'',alternative_group:'',quantity_note:'按项目确认数量'})">添加产品</el-button>
+      </template>
+      <template v-else>
+        <div class="row"><el-form-item label="所属产品" style="flex:1"><el-select v-model="editing.entry.product_ref" filterable><el-option v-for="p in products" :key="p.id" :value="p.id" :label="p.id + ' ' + p.name" /></el-select></el-form-item><el-form-item label="组成类型"><el-select v-model="editing.entry.kind"><el-option value="模拟产品组成" label="模拟产品组成" /><el-option value="模拟交付配置" label="模拟交付配置" /></el-select></el-form-item></div>
+        <el-form-item label="BOM依据与版本说明"><el-input v-model="editing.entry.basis" type="textarea" /></el-form-item>
+        <div v-for="(line,i) in editing.entry.lines" :key="line.id" style="margin-bottom:16px;padding:12px;background:var(--el-fill-color-light)">
+          <div class="row"><el-input v-model="line.name" placeholder="组成项名称" /><el-select v-model="line.product_ref" clearable filterable placeholder="关联目录产品（可选）" style="width:340px" @change="chooseComponent(line)"><el-option v-for="p in products" :key="p.id" :value="p.id" :label="p.id + ' ' + p.name" /></el-select><el-button link type="danger" @click="editing.entry.lines.splice(i,1)">移除</el-button></div>
+          <div class="row" style="margin-top:8px"><span>单产品用量</span><el-input-number :model-value="line.qty" :min="0" :precision="3" :controls="false" placeholder="待确认" @update:model-value="line.qty = $event ?? null" /><el-input v-model="line.unit" placeholder="单位" style="width:80px" /><el-select v-model="line.source" style="width:120px"><el-option v-for="r in ['自有产品','外采','自研','服务']" :key="r" :value="r" :label="r" /></el-select><el-checkbox v-model="line.optional">可选</el-checkbox><el-input v-model="line.condition" placeholder="可选条件" /></div>
+        </div><el-button @click="addBomLine">添加组成项</el-button>
+      </template>
+    </el-form><template #footer><el-button @click="editing = null">取消</el-button><el-button type="primary" @click="save">保存并形成目录修订</el-button></template>
   </el-dialog>
-
-  <el-dialog :model-value="!!draft" @close="draft = null" title="确认模型整理的产品资料" width="820px">
-    <template v-if="draft">
-      <el-alert type="info" :closable="false" show-icon style="margin-bottom:10px" :title="'来自《' + draft.doc.name + '》。取消勾选的条目不会入库；带 ⚠ 的条目，模型给出的原文引用在手册里找不到，请对照手册核实。'" />
-      <el-form label-position="top">
-        <div class="row">
-          <el-form-item label="产品名称" style="flex:1"><el-input v-model="draft.form.name" /></el-form-item>
-          <el-form-item label="合并到已有产品（可选）">
-            <el-select v-model="draft.productId" clearable filterable placeholder="作为新产品入库" style="width:240px" @change="useExisting">
-              <el-option v-for="p in products" :key="p.id" :value="p.id" :label="p.id + ' ' + p.name" />
-            </el-select>
-          </el-form-item>
-        </div>
-        <el-form-item label="简介"><el-input v-model="draft.form.summary" /></el-form-item>
-        <el-form-item label="信创适配"><el-input v-model="draft.form.xinchuang" /></el-form-item>
-        <div class="grid-2">
-          <div>
-            <b>能力（{{ draft.form.capabilities.length }}）</b>
-            <div v-for="(c, i) in draft.form.capabilities" :key="'c' + i" class="draft-item">
-              <el-checkbox v-model="c.keep" /><el-input v-model="c.text" size="small" /><el-tooltip :content="c.verified ? '引用已在手册中核实' : '手册中找不到这段引用'"><span>{{ c.verified ? '✓' : '⚠' }}</span></el-tooltip>
-            </div>
-          </div>
-          <div>
-            <b>限制（{{ draft.form.limits.length }}）</b>
-            <div v-for="(c, i) in draft.form.limits" :key="'l' + i" class="draft-item">
-              <el-checkbox v-model="c.keep" /><el-input v-model="c.text" size="small" /><el-tooltip :content="c.verified ? '引用已在手册中核实' : '手册中找不到这段引用'"><span>{{ c.verified ? '✓' : '⚠' }}</span></el-tooltip>
-            </div>
-            <div v-if="!draft.form.limits.length" class="muted">手册中没有写明限制。建议补充，否则系统无法判断哪些需求要外采或自研。</div>
-          </div>
-        </div>
-        <div v-if="draft.doc.draft.truncated" class="muted">手册较长，模型只阅读了前 24000 字。</div>
-      </el-form>
-    </template>
-    <template #footer><el-button @click="draft = null">稍后确认</el-button><el-button type="primary" :disabled="!draft?.form.name.trim()" @click="confirmDraft">确认入库</el-button></template>
-  </el-dialog>`,
+  <el-dialog :model-value="!!importPlan" @close="importPlan = null" title="数据包导入预览" width="760px"><template v-if="importPlan"><p>{{ importPlan.pack.name }} · {{ importPlan.pack.version }}</p><p>将执行 {{ importPlan.changes.length }} 项变更，{{ importPlan.conflicts.length }} 项冲突保留本地内容。</p><el-table :data="importPlan.changes" max-height="260"><el-table-column prop="kind" label="类型" /><el-table-column prop="id" label="编号" /><el-table-column prop="action" label="变更" /></el-table><div v-for="c in importPlan.conflicts" :key="c.kind+c.id" class="muted">{{ c.kind }} / {{ c.id }}：{{ c.reason }}</div></template><template #footer><el-button @click="importPlan = null">取消</el-button><el-button type="primary" :loading="busy" @click="applyImport">应用预览中的变更</el-button></template></el-dialog>
+  `,
 });

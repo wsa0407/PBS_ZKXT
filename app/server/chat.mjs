@@ -1,5 +1,5 @@
 import { CATEGORIES } from "../engine/extract.mjs";
-import { loadConfig } from "./db.mjs";
+import { runtimeConfig } from "./catalog.mjs";
 import * as repo from "./repo.mjs";
 import * as svc from "./services.mjs";
 import * as scenarios from "./scenarios.mjs";
@@ -52,7 +52,7 @@ const SYSTEM = `你是 PBS 拆解助手，和售前、方案人员对话，帮�
 // ---------- context the model sees ----------
 
 function context(projectId, view) {
-  const { sizing } = loadConfig();
+  const { sizing } = runtimeConfig(projectId);
   const s = view.steps;
   const lines = [];
   lines.push(`项目：${view.project.name}（客户：${view.project.customer || "未填"}，行业：${view.project.industry || "未填"}）`);
@@ -106,8 +106,8 @@ function context(projectId, view) {
     for (const c of view.conflicts) lines.push(`- ${c.product_name} 不满足 ${c.req_id}：${c.evidence}`);
   }
 
-  const products = repo.listProducts();
-  lines.push(`\n产品库共 ${products.length} 个产品：${products.map((p) => `${p.id} ${p.name}`).join("、")}`);
+  const products = repo.listProducts().filter((p) => p.metadata.active !== false);
+  lines.push(`\n产品库共 ${products.length} 个产品：${products.map((p) => `${p.id} ${p.name}（${p.metadata.delivery_source ?? "自有产品"}，${p.metadata.availability ?? "待核实"}）`).join("、")}`);
   return lines.join("\n");
 }
 
@@ -127,7 +127,7 @@ function plan(action, view, ctx) {
   const reqs = new Map(view.requirements.map((r) => [r.code, r]));
   const items = new Map(view.items.map((i) => [i.id, i]));
   const questions = new Map(view.questions.map((q) => [q.id, q]));
-  const { sizing } = loadConfig();
+  const { sizing } = runtimeConfig(view.project.id);
   const a = action ?? {};
   const needReq = () => {
     const r = reqs.get(String(a.code));

@@ -23,7 +23,9 @@ import { applySizing, CONFIRMED, missingRules, resolveParams } from "../engine/s
 import { assignReviewTiers, runAudit } from "../engine/audit.mjs";
 import { buildCapabilities } from "../engine/capability.mjs";
 import { hash } from "../engine/scenario.mjs";
-import { loadConfig, tx } from "./db.mjs";
+import { usesSingleLicense, DELIVERY_SOURCES } from "../engine/catalog.mjs";
+import * as catalog from "./catalog.mjs";
+import { tx } from "./db.mjs";
 import { badRequest, HttpError } from "./errors.mjs";
 import * as repo from "./repo.mjs";
 import * as rag from "./rag.mjs";
@@ -88,7 +90,7 @@ export function addMaterial(projectId, { kind, title, text, fileName }) {
  * Requirements a person touched (confirmed, edited, added, from answers) are never replaced.
  */
 export async function analyzeMaterials(projectId, { all = false, llm, progress }) {
-  const { sizing, checklists } = loadConfig();
+  const { sizing, checklists } = catalog.runtimeConfig(projectId);
   const project = repo.getProject(projectId);
   const materials = repo.listMaterials(projectId).filter((m) => all || !m.extracted_at);
   if (!materials.length) throw badRequest("没有需要处理的新材料");
@@ -184,7 +186,7 @@ const PARAM_SOURCE_LABEL = { 客户答复: "客户答复", 人工: "人工设定
  * With `reason`, quantities that changed are written back and the lines are flagged for review.
  */
 export function computeState(projectId, { reason = "" } = {}) {
-  const config = loadConfig();
+  const config = catalog.runtimeConfig(projectId);
   const { sizing, template } = config;
   const project = repo.getProject(projectId);
   const allReqs = repo.listRequirements(projectId);
@@ -337,6 +339,7 @@ export function computeState(projectId, { reason = "" } = {}) {
       project,
       steps,
       ...scenarioState,
+      catalog: catalog.projectCatalogView(projectId),
       sourceSnapshots: repo.listSourceSnapshots(projectId),
       materials: repo.listMaterials(projectId).map((m) => ({ ...m, kindLabel: MATERIAL_KINDS[m.kind] })),
       segments: segments.map((s) => ({ uid: s.uid, seg_id: s.seg_id, material_no: s.material_no, material_title: s.material_title, chapter: s.chapter, text: s.text, star: s.star, triangle: s.triangle })),
@@ -447,7 +450,7 @@ export function addRequirement(projectId, body) {
 }
 
 export function setParam(projectId, name, body) {
-  const { sizing } = loadConfig();
+  const { sizing } = catalog.runtimeConfig(projectId);
   if (!sizing.params[name]) throw badRequest("参数不存在");
   if (body.value === null || body.value === "") {
     repo.clearOverride(projectId, name);
@@ -499,7 +502,7 @@ export async function proposeAnswer(projectId, id, body, llm) {
   const answer = String(body.answer ?? "").trim();
   if (!answer) throw badRequest("请填写客户答复");
   const q = repo.getQuestion(projectId, id);
-  const { sizing } = loadConfig();
+  const { sizing } = catalog.runtimeConfig(projectId);
   const state = computeState(projectId);
   const proposal = await proposeChanges({
     question: q,
@@ -580,7 +583,7 @@ function rematchVersion(projectId, item) {
 
 /** Retrieval for a set of requirements: candidate products (with scores), context chunks, similar projects. */
 async function retrieve(reqs, { keepProducts = [], topProducts = 12, topChunks = 40 } = {}) {
-  const products = repo.listProducts();
+  const products = repo.listProducts().filter((p) => p.metadata.active !== false);
   const productById = new Map(products.map((p) => [p.id, p]));
   const queries = reqs.map((r) => r.text);
   const hits = queries.length ? await rag.search(queries, { topK: 6 }) : [];
@@ -604,7 +607,7 @@ async function retrieve(reqs, { keepProducts = [], topProducts = 12, topChunks =
 }
 
 async function similarProjects(reqs, industry) {
-  const { history } = loadConfig();
+  const { history } = catalog.runtimeConfig();
   const query = reqs.map((r) => r.text).join("；").slice(0, 2000);
   const [hits] = await rag.search([query], { kinds: ["history"], topK: 4 });
   const ranked = hits.map((h) => h.chunk.history_id);
@@ -736,7 +739,7 @@ export function confirmCapabilities(projectId, codes) {
 }
 
 export async function generateProjectPbs(projectId, { llm, progress }) {
-  const { template, sizing, history } = loadConfig();
+  const { template, sizing, history } = catalog.runtimeConfig(projectId);
   const project = repo.getProject(projectId);
   const state = computeState(projectId);
   const inputVersion = hash(pbsInputState(projectId));
@@ -749,6 +752,8 @@ export async function generateProjectPbs(projectId, { llm, progress }) {
   const scenarioContext = scenarios.scenarioView(projectId);
   const liveScenarios = scenarioContext.scenarios.filter((s) => s.status !== "已归档");
   scenarioContext.scenarios = liveScenarios;
+  scenarioContext.solution_designs = catalog.solutionContext(projectId);
+  scenarioContext.reference_templates = catalog.readCatalog()?.pack.solutions ?? [];
   scenarioContext.questions = repo.listQuestions(projectId).filter((q) => ["待处理", "待答复", "已答复"].includes(q.status));
   const capabilities = repo.listCapabilities(projectId, { includeDeleted: false });
   // Retrieve by business capability when there are any: it uses the business's words, so a requirement
@@ -842,22 +847,25 @@ function nextItemCode(items, parent, exceptId) {
   return `${parent}.${Math.max(0, ...used) + 1}`;
 }
 
-function validateItem(item, others = []) {
-  const { template, sizing } = loadConfig();
+function validateItem(item, others = [], projectId) {
+  const { template, sizing } = catalog.runtimeConfig(projectId);
   if (!template.level1.some((g) => g.code === item.parent)) throw badRequest("一级分类不存在");
   if (!["自有产品", "外采", "自研", "服务"].includes(item.source)) throw badRequest("来源不正确");
   if (!String(item.name ?? "").trim()) throw badRequest("名称不能为空");
   if (item.sizing_rule && !sizing.rules.some((r) => r.id === item.sizing_rule)) throw badRequest("测算规则不存在");
+  const selectedRule = sizing.rules.find((r) => r.id === item.sizing_rule);
+  if (selectedRule?.strict_product && selectedRule.product_ref !== item.product_ref) throw badRequest("测算规则与所选产品不一致");
   const clash = item.sizing_rule && others.find((o) => o.id !== item.id && o.sizing_rule === item.sizing_rule);
   if (clash) throw badRequest(`测算规则 ${item.sizing_rule} 已用于「${clash.code} ${clash.name}」，同一规则只能用一次，否则会重复计量`);
   if (item.product_ref) {
     const product = repo.getProduct(item.product_ref);
     if (!product) throw badRequest("产品不存在");
+    if (product.metadata.delivery_source) item.source = product.metadata.delivery_source;
+    if (!item.unit) item.unit = product.unit;
     item.matched_capabilities = (item.matched_capabilities ?? []).filter((c) => product.capabilities.includes(c));
   } else {
     item.matched_capabilities = [];
   }
-  if (item.source !== "自有产品") item.product_ref = null;
   if (item.blocked_by?.product_ref) {
     const blocker = repo.getProduct(item.blocked_by.product_ref);
     if (!blocker || !blocker.limits.includes(item.blocked_by.limit)) throw badRequest("所选限制不在该产品的限制清单中");
@@ -873,7 +881,7 @@ export function saveItem(projectId, id, body) {
   for (const k of ITEM_EDITABLE) if (body[k] !== undefined) item[k] = body[k];
   item.parent = String(item.parent ?? "");
   item.sizing_rule = item.sizing_rule || null;
-  validateItem(item, items);
+  validateItem(item, items, projectId);
   const activeReqIds = new Set(repo.listRequirements(projectId, { includeDeleted: false }).filter((r) => !NON_DELIVERABLE.has(r.category)).map((r) => r.code));
   if (!Array.isArray(item.req_ids) || item.req_ids.some((code) => !activeReqIds.has(code))) throw badRequest("关联需求不存在或已删除");
   item.scenario_ids = scenarios.listScenarios(projectId).filter((s) => s.status !== "已归档" && s.links.some((l) => item.req_ids.includes(l.req_id))).map((s) => s.code);
@@ -891,7 +899,7 @@ export function saveItem(projectId, id, body) {
   }
   if (!item.manual_qty && !item.sizing_rule) {
     const product = item.product_ref ? repo.getProduct(item.product_ref) : null;
-    if (product?.unit === "套") Object.assign(item, { qty: 1, unit: "套", qty_basis: "产品许可" });
+    if (usesSingleLicense(product)) Object.assign(item, { qty: 1, unit: product.unit, qty_basis: "产品许可" });
     else if (item.qty_basis !== "原文数量") Object.assign(item, { qty: null, qty_basis: "待估" });
   }
   item.edited = true;
@@ -925,7 +933,7 @@ export function deleteItem(projectId, id) {
 
 /** Ask the model to re-decide one line; the result is returned as a suggestion and saved only when accepted. */
 export async function rematchItem(projectId, id, { instruction = "", llm }) {
-  const { template, sizing, history } = loadConfig();
+  const { template, sizing, history } = catalog.runtimeConfig(projectId);
   const state = computeState(projectId);
   const item = repo.getItem(projectId, id);
   const leaf = leafFromItem(item);
@@ -963,11 +971,11 @@ export function acceptRematch(projectId, id, suggestion) {
   next.parent = String(next.parent);
   next.scenario_ids = scenarios.listScenarios(projectId).filter((s) => s.status !== "已归档" && s.links.some((l) => item.req_ids.includes(l.req_id))).map((s) => s.code);
   next.sizing_rule = next.sizing_rule || null;
-  validateItem(next, repo.listItems(projectId));
+  validateItem(next, repo.listItems(projectId), projectId);
   if (next.parent !== item.parent) next.code = nextItemCode(repo.listItems(projectId), next.parent, id);
   if (!next.manual_qty && !next.sizing_rule) {
     const product = next.product_ref ? repo.getProduct(next.product_ref) : null;
-    Object.assign(next, product?.unit === "套" ? { qty: 1, unit: "套", qty_basis: "产品许可" } : { qty: null, qty_basis: "待估" });
+    Object.assign(next, usesSingleLicense(product) ? { qty: 1, unit: product.unit, qty_basis: "产品许可" } : { qty: null, qty_basis: "待估" });
   }
   next.edited = true;
   next.confirmed = false;
@@ -999,14 +1007,27 @@ export function cleanProduct(input) {
 
 export function saveProduct(id, input) {
   const clean = cleanProduct(input);
+  const old = id ? repo.getProduct(id) : null;
+  clean.metadata = { kind: "未分类", delivery_source: "自有产品", availability: "待核实", data_kind: "人工维护", quantity_policy: "unknown", active: true, requires_validation: true, compatibility: [], deliverables: [], reference_ids: [], ...old?.metadata, ...input.metadata };
+  if (!DELIVERY_SOURCES.includes(clean.metadata.delivery_source)) throw badRequest("产品来源错误");
   const same = repo.findProductByName(clean.name);
   if (same && same.id !== id) throw badRequest(`已有同名产品 ${same.id}`);
-  const product = repo.saveProduct(id, clean);
-  rag.indexProduct(product);
+  const product = tx(() => {
+    const saved = repo.saveProduct(id, clean);
+    catalog.recordProductChange();
+    return saved;
+  });
+  if (product.metadata.active === false) rag.removeProductChunks(product.id); else rag.indexProduct(product);
   return product;
 }
 
 export function deleteProduct(id) {
+  if (catalog.readCatalog()) {
+    const p = repo.getProduct(id);
+    if (!p) return false;
+    saveProduct(id, { ...p, metadata: { ...p.metadata, active: false } });
+    return true;
+  }
   if (!repo.deleteProduct(id)) return false;
   rag.removeProductChunks(id);
   return true;
@@ -1057,8 +1078,10 @@ export function deleteManual(docId) {
 
 /** (Re)build product and history chunks; manuals keep their chunks. */
 export function rebuildIndex() {
-  for (const p of repo.listProducts()) rag.indexProduct(p);
-  rag.indexHistory(loadConfig().history);
+  for (const p of repo.listProducts()) {
+    if (p.metadata.active === false) rag.removeProductChunks(p.id); else rag.indexProduct(p);
+  }
+  rag.indexHistory(catalog.runtimeConfig().history);
 }
 
 const SEED_MANUALS = [
@@ -1068,7 +1091,7 @@ const SEED_MANUALS = [
 
 /** First start only: attach the sample manuals so retrieval has real passages to show. */
 export function seedManuals() {
-  if (repo.listDocs(null).length) return;
+  if (catalog.readCatalog() || repo.listDocs(null).length) return;
   for (const { file, product } of SEED_MANUALS) {
     const owner = repo.findProductByName(product);
     if (!owner) continue;

@@ -9,7 +9,7 @@ import { getDb, tx } from "./db.mjs";
  * Falls back to BM25 only when the embeddings endpoint is unavailable.
  */
 
-const PRODUCT_KINDS = ["summary", "capability", "limit", "xinchuang", "manual"];
+const PRODUCT_KINDS = ["summary", "capability", "limit", "xinchuang", "compatibility", "manual"];
 let mode = { kind: "keyword", model: null, reason: "尚未检测向量服务" };
 let version = 0;
 let index = null;
@@ -73,6 +73,7 @@ function syncChunks(where, args, chunks) {
 
 export function indexProduct(product) {
   const chunks = [{ kind: 'summary', productId: product.id, text: `${product.name}：${product.summary || product.name}` }];
+  for (const c of product.metadata?.compatibility ?? []) chunks.push({ kind: "compatibility", productId: product.id, text: `${product.name} 适配条件：${c}` });
   for (const c of product.capabilities) chunks.push({ kind: 'capability', productId: product.id, text: `${product.name} 能力：${c}` });
   for (const l of product.limits) chunks.push({ kind: 'limit', productId: product.id, text: `${product.name} 限制：${l}` });
   if (product.xinchuang) chunks.push({ kind: 'xinchuang', productId: product.id, text: `${product.name} 信创适配：${product.xinchuang}` });
@@ -144,7 +145,7 @@ function tokens(text) {
 }
 
 function buildIndex() {
-  const chunks = getDb().prepare("SELECT c.*, d.name AS doc_name FROM chunks c LEFT JOIN product_docs d ON d.id = c.doc_id WHERE c.active = 1").all();
+  const chunks = getDb().prepare("SELECT c.*, d.name AS doc_name FROM chunks c LEFT JOIN product_docs d ON d.id = c.doc_id WHERE c.active = 1 AND (c.product_id IS NULL OR EXISTS (SELECT 1 FROM products p WHERE p.id=c.product_id AND coalesce(json_extract(p.metadata, '$.active'), 1) != 0))").all();
   const df = new Map();
   const docs = chunks.map((chunk) => {
     const tf = new Map();

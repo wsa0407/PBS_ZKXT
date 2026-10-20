@@ -139,7 +139,7 @@ test("claimed capabilities and limits must exist in the catalogue", () => {
   ];
   enforceLeaves(leaves, ctx);
   assert.deepEqual(leaves[0].matched_capabilities, ["违停识别"]);
-  assert.equal(leaves[1].product_ref, null, "non-product sources do not keep product_ref");
+  assert.equal(leaves[1].product_ref, null, "the blocking product is not the custom gap work product");
   assert.equal(leaves[1].blocked_by.product_name, "AI 视觉识别引擎 VisionAI");
   assert.equal(leaves[2].blocked_by, null);
   assert.ok(ctx.issues.some((i) => i.message.includes("车牌识别取证")));

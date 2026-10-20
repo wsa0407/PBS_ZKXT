@@ -4,7 +4,7 @@ import { notFound } from "./errors.mjs";
 // ---------- products ----------
 
 export function rowToProduct(row) {
-  return row && { ...row, capabilities: parse(row.capabilities, []), limits: parse(row.limits, []) };
+  return row && { ...row, capabilities: parse(row.capabilities, []), limits: parse(row.limits, []), metadata: parse(row.metadata, {}) };
 }
 
 export function listProducts() {
@@ -24,20 +24,21 @@ export function saveProduct(id, p) {
   const db = getDb();
   if (id) {
     if (!db.prepare("SELECT 1 FROM products WHERE id = ?").get(id)) throw notFound("产品");
-    db.prepare("UPDATE products SET name = ?, summary = ?, capabilities = ?, limits = ?, xinchuang = ?, unit = ?, updated_at = ? WHERE id = ?").run(
+    db.prepare("UPDATE products SET name = ?, summary = ?, capabilities = ?, limits = ?, xinchuang = ?, unit = ?, metadata = ?, updated_at = ? WHERE id = ?").run(
       p.name,
       p.summary,
       json(p.capabilities),
       json(p.limits),
       p.xinchuang,
       p.unit,
+      json(p.metadata ?? getProduct(id).metadata),
       now(),
       id,
     );
     return getProduct(id);
   }
   const newId = nextProductId();
-  db.prepare("INSERT INTO products (id, name, summary, capabilities, limits, xinchuang, unit, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(
+  db.prepare("INSERT INTO products (id, name, summary, capabilities, limits, xinchuang, unit, metadata, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
     newId,
     p.name,
     p.summary,
@@ -45,6 +46,7 @@ export function saveProduct(id, p) {
     json(p.limits),
     p.xinchuang,
     p.unit,
+    json(p.metadata ?? {}),
     now(),
   );
   return getProduct(newId);
