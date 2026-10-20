@@ -29,6 +29,6 @@ node app/scripts/verify-harness.mjs --live --approve-test-scope
 
 这两个命令必须显式提供 `--live`，会真实调用已配置的 BAI。前者验证工具错误恢复与持久会话；后者走当前协作入口，在合成材料上验证需求、场景和人工确认前不生成 PBS。只有追加 `--approve-test-scope` 才确认本次合成范围并继续 PBS。业务验收脚本始终创建独立临时数据库，不支持向实际项目数据库注入测试数据。离线检查使用 `npm run check --prefix app`。
 
-应用层通过 `collaboration_*` 和 `conversation_*` 表保存活动、角色会话、咨询、收件与认领；`agent_operations` 和 `agent_coverage` 保存幂等结果及材料处理记录。`agent_runs` 仅保留历史兼容。取消执行先关闭 dsh、阻止后续写入并等待在途工具结束，再结束项目任务锁。
+应用层通过 `collaboration_*` 和 `conversation_*` 表保存活动、角色会话、咨询、收件与认领；`agent_operations` 和 `agent_coverage` 保存幂等结果及材料处理记录。`agent_runs` 继续记录当前每次角色活动的状态、会话及 token 用量，并保留旧运行记录。取消执行先关闭 dsh、阻止后续写入并等待在途工具结束，再结束项目任务锁。
 
 默认限制每次运行 15 分钟、160 个模型步骤、100 万累计 token；同一工具的同类校验错误重复5次停止尝试。整轮协作另设 300 万累计 token 上限。可以通过 `.env.example` 中的预算参数调整。达到预算会保留草稿，不把任务标记成业务项目完成。

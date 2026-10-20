@@ -3,7 +3,7 @@
 ## 当前规范
 
 - [研发规则](../AGENTS.md)：代码层次、权限边界、数据保护和验证命令。
-- [当前架构](architecture.md)：实际执行入口、人工确认、角色协作与迁移边界。
+- [当前技术架构](architecture.md)：技术栈与组件、Agent/Skill 设计、知识分域、BM25/向量/RRF 检索、运行保障与迁移边界。
 - [Agent 包](../agents/pbs/README.md)：三个角色、共享 Skills 和公司工作台适配要求。
 - [运行时](../runtime/README.md)：dsh 配置、生命周期和真实模型验证。
 - [产品与 BOM 数据](../app/catalogs/README.md)：独立数据包维护。

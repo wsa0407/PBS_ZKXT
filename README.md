@@ -39,7 +39,7 @@ npm run check --prefix app
 包含全仓 ESLint、模块依赖/循环检查、角色与 Skill 契约检查、Vue 模板编译和离线测试，不调用真实模型。
 
 - [研发规则](AGENTS.md)
-- [当前架构与业务边界](docs/architecture.md)
+- [当前技术架构：Agent、Skills 与知识检索](docs/architecture.md)
 - [本次清理与核查记录](docs/2026-10-21-repository-audit.md)
 - [Agent 包与迁移契约](agents/pbs/README.md)
 - [运行时与真实模型验收](runtime/README.md)
