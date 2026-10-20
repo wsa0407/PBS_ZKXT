@@ -22,8 +22,11 @@ const qty = (v, label) => { if (v !== null && (typeof v !== "number" || !Number.
 const strings = (v, label) => { list(v, label); for (const s of v) text(s, label); };
 
 export function validatePack(input) {
-  if (!input || input.schema_version !== 1) fail("仅支持 schema_version=1");
+  if (!input || ![1, 2].includes(input.schema_version)) fail("仅支持 schema_version=1/2");
+  if (input.schema_version === 2 && Object.hasOwn(input, "solutions")) fail("解决方案属于客户项目，不能存入产品库数据包");
   const pack = structuredClone(input);
+  pack.schema_version = 2;
+  delete pack.solutions; // Legacy v1 templates are ignored; project solutions remain untouched.
   text(pack.id, "数据包编号"); text(pack.version, "数据包版本"); text(pack.name, "数据包名称");
   if (!/^[A-Za-z0-9_.-]{1,80}$/.test(pack.id)) fail("数据包编号格式错误");
   const refs = unique(pack.references, "资料来源");
@@ -48,22 +51,6 @@ export function validatePack(input) {
     if (m.requires_validation !== undefined && typeof m.requires_validation !== "boolean") fail("专项验证标记须为布尔值");
     if (typeof m.active !== "boolean") fail(`${p.id} active 必须为布尔值`);
     strings(m.compatibility, "产品适配条件"); strings(m.deliverables, "产品交付物"); checkRefs(m.reference_ids);
-  }
-  unique(pack.solutions, "解决方案");
-  for (const s of pack.solutions) {
-    text(s.name, "方案名称"); text(s.scenario, "适用场景"); text(s.version, "方案版本");
-    for (const key of ["activities", "deliverables", "acceptance", "boundaries", "clarifications"]) strings(s[key], `方案${key}`);
-    checkRefs(s.reference_ids);
-    list(s.products, "方案产品组合");
-    const seen = new Set();
-    for (const line of s.products) {
-      if (!products.has(line.product_ref)) fail(`方案产品不存在：${line.product_ref}`);
-      if (seen.has(line.product_ref)) fail(`方案重复产品：${line.product_ref}`);
-      seen.add(line.product_ref);
-      if (!["必选", "可选", "备选"].includes(line.role)) fail("方案产品角色错误");
-      if (line.role === "备选") text(line.alternative_group, "备选组");
-      text(line.purpose, "产品用途"); text(line.quantity_note, "数量口径");
-    }
   }
   unique(pack.boms, "BOM");
   const byProduct = new Map();

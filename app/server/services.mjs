@@ -25,6 +25,7 @@ import { buildCapabilities } from "../engine/capability.mjs";
 import { hash } from "../engine/scenario.mjs";
 import { usesSingleLicense, DELIVERY_SOURCES } from "../engine/catalog.mjs";
 import * as catalog from "./catalog.mjs";
+import * as projectSolutions from "./project-solutions.mjs";
 import { tx } from "./db.mjs";
 import { badRequest, HttpError } from "./errors.mjs";
 import * as repo from "./repo.mjs";
@@ -339,7 +340,7 @@ export function computeState(projectId, { reason = "" } = {}) {
       project,
       steps,
       ...scenarioState,
-      catalog: catalog.projectCatalogView(projectId),
+      catalog: projectSolutions.projectCatalogView(projectId),
       sourceSnapshots: repo.listSourceSnapshots(projectId),
       materials: repo.listMaterials(projectId).map((m) => ({ ...m, kindLabel: MATERIAL_KINDS[m.kind] })),
       segments: segments.map((s) => ({ uid: s.uid, seg_id: s.seg_id, material_no: s.material_no, material_title: s.material_title, chapter: s.chapter, text: s.text, star: s.star, triangle: s.triangle })),
@@ -752,8 +753,7 @@ export async function generateProjectPbs(projectId, { llm, progress }) {
   const scenarioContext = scenarios.scenarioView(projectId);
   const liveScenarios = scenarioContext.scenarios.filter((s) => s.status !== "已归档");
   scenarioContext.scenarios = liveScenarios;
-  scenarioContext.solution_designs = catalog.solutionContext(projectId);
-  scenarioContext.reference_templates = catalog.readCatalog()?.pack.solutions ?? [];
+  scenarioContext.solution_designs = projectSolutions.solutionContext(projectId);
   scenarioContext.questions = repo.listQuestions(projectId).filter((q) => ["待处理", "待答复", "已答复"].includes(q.status));
   const capabilities = repo.listCapabilities(projectId, { includeDeleted: false });
   // Retrieve by business capability when there are any: it uses the business's words, so a requirement

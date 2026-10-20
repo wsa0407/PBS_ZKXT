@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { INPUT_TYPES, CATEGORIES } from "../engine/extract.mjs";
 import { fileToText, SUPPORTED } from "../engine/ingest.mjs";
 import * as catalog from "./catalog.mjs";
+import * as projectSolutions from "./project-solutions.mjs";
 import { openDb } from "./db.mjs";
 import * as chat from "./chat.mjs";
 import * as models from "./models.mjs";
@@ -113,8 +114,8 @@ post("/api/catalog/preview", (_, body) => {
 });
 post("/api/catalog/import", (_, body) => catalog.importCatalog(body));
 put("/api/catalog/:kind/:id", ({ kind, id }, body) => catalog.saveEntry(kind, id, body.entry, body.fingerprint));
-put("/api/projects/:id/solutions", ({ id }, body) => catalog.saveProjectSolutions(id, body.designs, body.input_hash));
-post("/api/projects/:id/bom/snapshot", ({ id }) => { svc.computeState(id); return catalog.captureProjectBom(id); });
+put("/api/projects/:id/solutions", ({ id }, body) => projectSolutions.saveProjectSolutions(id, body.designs, body.input_hash));
+post("/api/projects/:id/bom/snapshot", ({ id }) => { svc.computeState(id); return projectSolutions.captureProjectBom(id); });
 get("/api/products", () => repo.listProducts());
 post("/api/products", (_, body) => svc.saveProduct(null, body));
 put("/api/products/:id", ({ id }, body) => svc.saveProduct(id, body));

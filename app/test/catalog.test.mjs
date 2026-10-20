@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
-import { defaultPack, installDefaultCatalog, readCatalog, previewImport, importCatalog, saveEntry, runtimeConfig, saveProjectSolutions, captureProjectBom, projectCatalogView } from "../server/catalog.mjs";
+import { defaultPack, installDefaultCatalog, readCatalog, previewImport, importCatalog, saveEntry, runtimeConfig } from "../server/catalog.mjs";
+import { saveProjectSolutions, captureProjectBom, projectCatalogView, solutionContext } from "../server/project-solutions.mjs";
 import { expandBom, validatePack, digest } from "../engine/catalog.mjs";
 import { createContext, enforceLeaves, normalizeLeaf, productText } from "../engine/pbs.mjs";
 import { resolveParams, missingRules } from "../engine/sizing.mjs";
@@ -12,7 +13,7 @@ import { exportProject } from "../server/xlsx.mjs";
 
 beforeEach(() => { resetDb(":memory:"); rag.setRetrievalMode({ kind: "keyword" }); });
 const installed = () => installDefaultCatalog();
-const changePack = (fn) => { const p = defaultPack(); p.version = "1.1.0"; fn(p); return p; };
+const changePack = (fn) => { const p = defaultPack(); p.version = "1.2.0"; fn(p); return p; };
 const importPack = (pack) => { const p = previewImport(pack); return importCatalog({ pack, token: p.token }); };
 function projectWithItems() {
   installed();
@@ -24,7 +25,7 @@ function projectWithItems() {
 
 test("professional pack is complete, source-linked and does not claim OEM manufacturing BOMs", () => {
   const p = validatePack(defaultPack());
-  assert.equal(p.products.length, 23); assert.equal(p.solutions.length, 6); assert.equal(p.boms.length, 23);
+  assert.equal(p.products.length, 23); assert.ok(!Object.hasOwn(p, "solutions")); assert.equal(p.boms.length, 23);
   for (const product of p.products.filter((p) => p.metadata.data_kind === "厂商公开参考")) {
     assert.ok(product.metadata.reference_ids.length);
     assert.equal(p.boms.find((b) => b.product_ref === product.id).kind, "模拟交付配置");
@@ -33,7 +34,7 @@ test("professional pack is complete, source-linked and does not claim OEM manufa
 });
 
 test("pack validator rejects broken references, duplicate products, invalid quantities and BOM cycles", () => {
-  let p = defaultPack(); p.solutions[0].products[0].product_ref = "missing"; assert.throws(() => validatePack(p), /不存在/);
+  let p = defaultPack(); p.boms[0].lines[0].product_ref = "missing"; assert.throws(() => validatePack(p), /不存在/);
   p = defaultPack(); p.products.push(p.products[0]); assert.throws(() => validatePack(p), /重复/);
   p = defaultPack(); p.boms[0].lines[0].qty = -1; assert.throws(() => validatePack(p), /非负数/);
   p = defaultPack(); p.boms[0].lines[0].product_ref = p.boms[0].product_ref; p.boms[0].lines[0].unit = p.products[0].unit; assert.throws(() => validatePack(p), /循环/);
@@ -108,19 +109,16 @@ test("BOM multiplies nested quantities, propagates unknowns and excludes optiona
   assert.equal(expandBom(p, "LA-P07", 0).find((l) => l.product_ref === "LA-E01").total_qty, 0);
 });
 
-test("three-way import updates unchanged records and preserves manual products, solution edits and BOM versions", () => {
+test("three-way product import updates unchanged records and preserves manual products and BOM versions", () => {
   installed(); svc.saveProduct("LA-P01", { ...repo.getProduct("LA-P01"), summary: "业务同事维护" });
   let current = readCatalog(); const bom = structuredClone(current.pack.boms[0]); bom.lines[0].qty = 2;
   current = saveEntry("boms", bom.id, bom, current.fingerprint); assert.equal(current.pack.boms[0].version, "1.0.1");
-  const solution = structuredClone(current.pack.solutions[0]); solution.name = "本地业务方案";
-  saveEntry("solutions", solution.id, solution, current.fingerprint);
-  const incoming = changePack((p) => { p.products[0].summary = "上游变化"; p.products[1].summary = "可更新资料"; p.boms[0].lines[0].qty = 3; p.solutions[0].name = "上游业务方案"; });
+  const incoming = changePack((p) => { p.products[0].summary = "上游变化"; p.products[1].summary = "可更新资料"; p.boms[0].lines[0].qty = 3; });
   const plan = previewImport(incoming);
   assert.ok(plan.conflicts.some((c) => c.id === "LA-P01")); assert.ok(plan.conflicts.some((c) => c.id === bom.id));
   importCatalog({ pack: incoming, token: plan.token });
   assert.equal(repo.getProduct("LA-P01").summary, "业务同事维护"); assert.equal(repo.getProduct("LA-P02").summary, "可更新资料");
   assert.equal(readCatalog().pack.boms[0].lines[0].qty, 2);
-  assert.equal(readCatalog().pack.solutions[0].name, "本地业务方案");
 });
 
 test("import refuses stale previews and invalid local edits roll back atomically", () => {
@@ -141,7 +139,7 @@ test("exported data pack can be re-imported without false conflicts caused by JS
 
 test("solution and BOM snapshots keep historical data after catalogue edits and show stale state", () => {
   const { id, req, item } = projectWithItems();
-  saveProjectSolutions(id, [{ id: "PS1", name: "道路项目方案", template_id: "LA-S01", req_ids: [req], scenario_ids: [], item_ids: [item], design_notes: "本期值守3站" }]);
+  saveProjectSolutions(id, [{ id: "PS1", name: "道路项目方案", req_ids: [req], scenario_ids: [], item_ids: [item], design_notes: "本期值守3站" }]);
   const snap = captureProjectBom(id);
   assert.equal(snap.solutions[0].products[0].qty, 3); assert.equal(snap.products.length, 1); assert.equal(projectCatalogView(id).snapshot_stale, false);
   const current = readCatalog(); const bom = structuredClone(current.pack.boms.find((b) => b.product_ref === "LA-P07")); bom.lines[0].qty = 2;
@@ -171,7 +169,7 @@ test("project solution links reject foreign records and require customer context
 });
 
 test("data pack removal archives products and keeps historical references; new automatic matches cannot use them", () => {
-  installed(); const incoming = changePack((p) => { p.products = p.products.filter((p) => p.id !== "LA-C02"); p.boms = p.boms.filter((b) => b.product_ref !== "LA-C02"); p.solutions.forEach((s) => { s.products = s.products.filter((l) => l.product_ref !== "LA-C02"); }); });
+  installed(); const incoming = changePack((p) => { p.products = p.products.filter((p) => p.id !== "LA-C02"); p.boms = p.boms.filter((b) => b.product_ref !== "LA-C02"); });
   importPack(incoming); assert.equal(repo.getProduct("LA-C02").metadata.active, false);
   const config = runtimeConfig(); const ctx = createContext({ ...config, requirements: [], segments: [], products: repo.listProducts() });
   const node = normalizeLeaf({ parent: "3", name: "archived", source: "自研", product_ref: "LA-C02" }, ctx);
@@ -194,6 +192,7 @@ test("BOM product units must match and project unit mismatches never produce fal
 
 test("professional generation receives solution context and never revives the legacy mock catalogue", async () => {
   const { id, req } = projectWithItems();
+  saveProjectSolutions(id, [{ id: "CUSTOM", name: "客户道路专用方案", req_ids: [req], scenario_ids: [], item_ids: repo.listItems(id).map((i) => i.id) }]);
   let prompt = "";
   const llm = { async json({ step, user }) {
     if (step === "pbs") {
@@ -203,7 +202,51 @@ test("professional generation receives solution context and never revives the le
     return { links: [], new_nodes: [] };
   } };
   await svc.generateProjectPbs(id, { llm, progress: { step() {} } });
-  assert.match(prompt, /reference_templates/); assert.match(prompt, /模拟解决方案模板/);
+  assert.match(prompt, /客户道路专用方案/); assert.doesNotMatch(prompt, /reference_templates|模拟解决方案模板/);
   assert.ok(repo.listItems(id).some((i) => i.product_ref === "LA-E04" && i.source === "外采"));
   assert.ok(repo.listItems(id).every((i) => !/^P\d+$/.test(i.product_ref ?? "")));
+});
+
+test("product packs reject solution templates while legacy imports ignore them with an explicit notice", () => {
+  installed();
+  const pack = defaultPack(); pack.solutions = [{ id: "SHARED", name: "不应入库的方案" }];
+  assert.throws(() => validatePack(pack), /属于客户项目/);
+  assert.throws(() => saveEntry("solutions", "SHARED", pack.solutions[0], readCatalog().fingerprint), /客户项目/);
+  pack.schema_version = 1;
+  const plan = previewImport(pack);
+  assert.ok(plan.warnings.length); assert.ok(!Object.hasOwn(plan.merged, "solutions"));
+  importCatalog({ pack, token: plan.token });
+  assert.equal(readCatalog().pack.schema_version, 2); assert.ok(!Object.hasOwn(readCatalog().pack, "solutions"));
+});
+
+test("existing catalogues migrate without changing customer combinations or historical snapshots", () => {
+  const { id, req, item } = projectWithItems();
+  repo.updateProject(id, { pbs_meta: { solution_designs: [{ id: "CUSTOM", name: "人工客户方案", template_id: "OLD", req_ids: [req], scenario_ids: [], item_ids: [item], design_notes: "自定义范围" }] } });
+  const snapshot = captureProjectBom(id);
+  const legacy = readCatalog().pack; legacy.schema_version = 1; legacy.solutions = [{ id: "OLD", name: "旧库模板" }];
+  getDb().prepare("INSERT INTO catalog_revisions(data,reason,created_at) VALUES(?,?,?)").run(JSON.stringify(legacy), "legacy fixture", new Date().toISOString());
+  svc.saveProduct("LA-P01", { ...repo.getProduct("LA-P01"), summary: "人工维护的产品能力" });
+  // Simulate an old persisted pack again after the product edit.
+  getDb().prepare("INSERT INTO catalog_revisions(data,reason,created_at) VALUES(?,?,?)").run(JSON.stringify(legacy), "legacy fixture", new Date().toISOString());
+  installed();
+  assert.ok(!Object.hasOwn(readCatalog().pack, "solutions"));
+  assert.equal(repo.getProduct("LA-P01").summary, "人工维护的产品能力");
+  assert.equal(solutionContext(id)[0].name, "人工客户方案");
+  assert.ok(!Object.hasOwn(solutionContext(id)[0], "template_id"));
+  assert.deepEqual(repo.getProject(id).pbs_meta.catalog_snapshot, snapshot);
+  assert.equal(installed().revision, readCatalog().revision);
+});
+
+test("each customer freely combines the shared products without changing the product library", () => {
+  const a = projectWithItems();
+  const b = repo.createProject({ name: "另一客户" }).id;
+  const req = svc.addRequirement(b, { text: "现场巡检仅做影像取证", category: "功能" });
+  const item = svc.saveItem(b, null, { parent: "2", name: "机动载荷", source: "外采", product_ref: "LA-E04", req_ids: [req], qty: 1 });
+  const before = readCatalog().fingerprint;
+  saveProjectSolutions(a.id, [{ id: "CUSTOM", name: "道路客户组合", req_ids: [a.req], scenario_ids: [], item_ids: [a.item] }]);
+  saveProjectSolutions(b, [{ id: "CUSTOM", name: "机动客户组合", req_ids: [req], scenario_ids: [], item_ids: [item] }]);
+  assert.equal(solutionContext(a.id)[0].name, "道路客户组合");
+  assert.equal(solutionContext(b)[0].name, "机动客户组合");
+  assert.notEqual(captureProjectBom(a.id).solutions[0].products[0].product_ref, captureProjectBom(b).solutions[0].products[0].product_ref);
+  assert.equal(readCatalog().fingerprint, before);
 });
