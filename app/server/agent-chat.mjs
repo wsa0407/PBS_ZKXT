@@ -11,6 +11,7 @@ const GOALS = {
   resume_agent: "继续上次未完成的工作，先读取项目状态与处理覆盖，保留已保存内容，仅处理剩余事项。",
 };
 export const agentGoal = (action) => GOALS[action.type];
+const CHAT_REPLY_STYLE = "对话窗口约定：右侧工作区已展示完整业务成果。最终回复默认最多3个短句、120个中文字，只说关键结论和最优先的待办；省略页面已有的条目、问题清单、处理过程和系统字段。不加标题或表格。例：‘需求和场景草稿已保存。部署范围仍待确认，请先处理；详情见右侧需求理解。’实际内容必须依据本次工具结果。用户明确要求详细解释、完整清单或逐项比较时，按请求展开。保留影响决策的风险与未完成信息。";
 
 export async function agentChatTurn(projectId, body, ctx) {
   if (body.actions?.length && body.actions.every((a) => !agentGoal(a))) return chat.chatTurn(projectId, body, ctx);
@@ -31,10 +32,11 @@ export async function agentChatTurn(projectId, body, ctx) {
   }
   try {
     const resume = body.actions?.find((a) => a.type === "resume_agent");
-    const result = await runAgent(projectId, goal, { ...ctx, resume: Boolean(resume), resumeRunId: resume?.run_id });
+    const result = await runAgent(projectId, `${goal}\n\n${CHAT_REPLY_STYLE}`, { ...ctx, resume: Boolean(resume), resumeRunId: resume?.run_id });
     const view = svc.projectView(projectId);
     const tab = body.actions?.some((a) => a.type === "generate_pbs") || (!body.actions?.length && !isMaterial && /生成|调整|组合/.test(text) && /PBS/i.test(text)) ? "pbs" : /需求|场景|澄清|材料/.test(goal) ? "understanding" : null;
-    const messageId = repo.addChat(projectId, "assistant", result.reply || result.report.finished?.summary || "本次工作已记录，请查看成果和待审事项。", { execution: "deepseek-harness", runId: result.runId, cards: result.cards, results: [], open: tab ? { tab } : null, suggestions: chat.suggestions(view) });
+    const reply = result.reply?.trim() || (result.status === "needs_review" ? "本次处理已结束，结果与待办见工作区。仍有待核验或待确认的内容，请先复核。" : "本次处理已结束，请在工作区查看结果。");
+    const messageId = repo.addChat(projectId, "assistant", reply, { execution: "deepseek-harness", runId: result.runId, cards: result.cards, results: [], open: tab ? { tab } : null, suggestions: chat.suggestions(view) });
     return { messageId, runId: result.runId };
   } catch (error) {
     repo.addChat(projectId, "assistant", ctx.signal?.aborted ? "任务已停止，已保存的草稿保留，可继续处理。" : `本次工作未完成：${error.message}`, { error: !ctx.signal?.aborted, suggestions: error.agentRunId ? [{ label: "继续未完成的工作", actions: [{ type: "resume_agent", run_id: error.agentRunId }] }] : [] });
