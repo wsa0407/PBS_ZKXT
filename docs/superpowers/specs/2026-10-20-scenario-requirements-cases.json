@@ -1,0 +1,132 @@
+{
+  "version": 1,
+  "purpose": "场景性需求原文对应与业务验收案例；期望为待业务评审的候选标准，不是已执行测试结果",
+  "path_base": "repository_root",
+  "cases": [
+    {
+      "id": "POLICE-01",
+      "critical": true,
+      "sources": [{"path": "app/seed/samples/tender_police.md", "clause": "2.1.2", "quote": "支持按时段定时巡逻，以及接警后一键起飞飞抵现场。"}],
+      "expect": ["保留定时巡逻和接警起飞两个触发条件", "两项要求可共同引用一个条款，且能关联不同场景"],
+      "forbid": ["按引用重叠去重而删除其中一种触发条件", "自行指定巡逻频次或接警响应时限"]
+    },
+    {
+      "id": "POLICE-02",
+      "critical": true,
+      "sources": [{"path": "app/seed/samples/tender_police.md", "clause": "2.2.1", "quote": "★ 系统应自动识别交通事故、违停、拥堵和道路抛洒物，识别准确率不低于 90%。"}],
+      "expect": ["保留交通事故、违停、拥堵、道路抛洒物四个对象", "保留不低于90%的指标与强制标记", "提出指标定义和验收数据集的澄清，保留指标对对象的原文作用范围"],
+      "forbid": ["删除任何一种事件", "将90%改为95%", "无依据认定90%就是召回率或逐类别指标"]
+    },
+    {
+      "id": "POLICE-03",
+      "critical": true,
+      "sources": [{"path": "app/seed/samples/tender_police.md", "clause": "2.2.3", "quote": "识别到的事件应自动推送至交警集成指挥平台，并生成处置工单。"}],
+      "expect": ["同时保留事件推送和工单生成", "保留接收系统名称", "跨系统接口可用性若未明确，列为待确认"],
+      "forbid": ["自行认定接口开放", "自动增加签收、结案和绩效考核为客户既定要求"]
+    },
+    {
+      "id": "POLICE-04",
+      "critical": true,
+      "sources": [
+        {"path": "app/seed/samples/tender_police.md", "clause": "3.1.1", "quote": "自动机场应能在 -30℃～50℃ 环境下正常工作，防护等级不低于 IP55。"},
+        {"path": "app/seed/samples/tender_police.md", "clause": "3.2.2", "quote": "视频与识别数据须在公安视频专网内存储，存储期限不少于 90 天。"}
+      ],
+      "expect": ["保留温度上下限、设备对象和防护等级", "保留两类数据、公安视频专网及至少90天", "约束有明确适用范围，能够传递到下游"],
+      "forbid": ["只保留最低温度而丢失最高温度", "将不少于90天变成固定90天", "为满足场景覆盖率而虚构操作场景"]
+    },
+    {
+      "id": "POLICE-05",
+      "critical": true,
+      "sources": [
+        {"path": "app/seed/samples/tender_police.md", "clause": "4.1.2", "quote": "中标方应为采购人培训不少于 8 名飞手，并取得民航局认可的无人机驾驶员执照。"},
+        {"path": "app/seed/samples/tender_police.md", "clause": "4.1.4", "quote": "项目初验后提供 2 年免费运维服务，含电池等易损件更换。"}
+      ],
+      "expect": ["培训人数下限、取证结果进入交付服务要求", "运维起点、时长、免费及易损件更换均保留", "服务要求进入后续PBS输入"],
+      "forbid": ["仅保存培训和运维两个泛化名称", "将培训要求误认为已有8名飞手", "因为不属于软件功能而删除"]
+    },
+    {
+      "id": "POLICE-06",
+      "critical": true,
+      "sources": [{"path": "app/seed/samples/tender_police.md", "clause": "5.1.2", "quote": "★ 投标人须提供近三年不少于 2 个公安低空类项目业绩。"}],
+      "expect": ["保留时间范围、业绩数量下限和行业要求", "保留在商务资质审阅清单并显示强制标记"],
+      "forbid": ["转换成采购两个项目或产品", "不生成能力便认定已经满足资格"]
+    },
+    {
+      "id": "FOREST-01",
+      "critical": true,
+      "sources": [
+        {"path": "app/seed/samples/minutes_forest.md", "quote": "山里很多地方没有手机信号，护林员上报靠对讲机。"},
+        {"path": "app/seed/samples/minutes_forest.md", "quote": "发现火点后，告警和位置要推送到县应急指挥平台，并通知附近的护林员。"},
+        {"path": "app/seed/samples/minutes_forest.md", "quote": "县应急指挥平台是省里统一建的，接口能不能开放还要问省厅。"}
+      ],
+      "expect": ["场景关联告警、位置推送、护林员通知", "保留平台接口开放未知", "发现无手机信号与通知方式之间需要澄清", "附近人员的确定方法仍为未知"],
+      "forbid": ["假定已有标准接口", "默认通过手机短信成功送达", "增加已确定的告警时限"]
+    },
+    {
+      "id": "FOREST-02",
+      "critical": true,
+      "sources": [{"path": "app/seed/samples/minutes_forest.md", "quote": "要能夜间巡查，晚上也要能发现火点，最好能测出火点温度。"}],
+      "expect": ["保留夜间巡查和火点发现", "温度测量保留最好能的期望强度"],
+      "forbid": ["将所有内容统一标为强制", "自行增加温度测量精度"]
+    },
+    {
+      "id": "FOREST-03",
+      "critical": false,
+      "sources": [
+        {"path": "app/seed/samples/minutes_forest.md", "quote": "赵局长希望在林区建几个无人机自动机场，防火期每天定时巡查，发现烟火能自动告警。"},
+        {"path": "app/seed/samples/minutes_forest.md", "quote": "发生火情时，希望有一台能长时间悬停在火场上空的无人机，做现场监控和通信中继。"}
+      ],
+      "expect": ["区分日常巡查和发生火情时的现场任务", "保留监控和通信中继两个用途", "机场数量几个保持未明确", "长时间悬停的时长提出澄清"],
+      "forbid": ["把几个换成确定的机场数量", "自行填入续航小时数", "归并后遗漏通信中继"]
+    },
+    {
+      "id": "FOREST-04",
+      "critical": false,
+      "sources": [
+        {"path": "app/seed/samples/minutes_forest.md", "quote": "机场点位的供电和网络，孙科长说要去和林业站、电力公司协调。"},
+        {"path": "app/seed/samples/minutes_forest.md", "quote": "需要培训 6 名飞手，局里自己的人来飞，不打算长期请外包。"}
+      ],
+      "expect": ["供电和网络作为点位依赖待确认", "培训6名飞手及客户自运营边界保留"],
+      "forbid": ["默认点位条件已具备", "把长期外包飞行作为客户已确定交付内容"]
+    },
+    {
+      "id": "CITY-01",
+      "critical": true,
+      "sources": [
+        {"path": "app/seed/samples/oral_cityadmin.txt", "quote": "他们想用无人机每个月把中心城区巡一遍，范围大概 80 平方公里，主要是查违建，最好能跟去年的影像自动比对，把新增的违建标出来。"},
+        {"path": "app/seed/samples/oral_cityadmin.txt", "quote": "另外规划部门想要一套城区的三维实景模型，顺便一起做了。"}
+      ],
+      "expect": ["每月、中心城区、约80平方公里、违建对象保留", "影像比对及新增违建标记的期望保留", "三维模型作为独立业务目标", "历史影像可取得性列为待确认"],
+      "forbid": ["自行认定去年影像已提供", "遗漏三维模型", "把大概80改为已确认的精确测绘面积"]
+    },
+    {
+      "id": "CITY-02",
+      "critical": true,
+      "sources": [{"path": "app/seed/samples/oral_cityadmin.txt", "quote": "周队长说他们局里没有飞手，希望我们直接提供飞行服务，按月出巡查报告，发现的违建要能派单给各街道去核查处理。"}],
+      "expect": ["交付边界保留我方提供飞行服务", "月度报告、向街道派单、核查处理均保留"],
+      "forbid": ["替换为客户自运营", "仅匹配硬件便认定满足", "无依据增加客户飞手培训"]
+    },
+    {
+      "id": "CITY-03",
+      "critical": true,
+      "sources": [
+        {"path": "app/seed/samples/oral_cityadmin.txt", "quote": "数据不能上互联网，要放在他们局里的机房。"},
+        {"path": "app/seed/samples/oral_cityadmin.txt", "quote": "他还提了一句，以后可能想加渣土车的监管，这次先不做。"}
+      ],
+      "expect": ["局内机房和禁止上互联网作为项目约束", "渣土车监管保留为本期范围外"],
+      "forbid": ["默认公有云交付", "渣土车监管进入本期场景或PBS", "删除范围外记录后失去排除依据"]
+    }
+  ],
+  "engineering_cases": [
+    {"id": "ENG-01", "expect": "编号条款续行中的条件和数字完整保留，段落定位正确"},
+    {"id": "ENG-02", "expect": "场景重生成保留人工新增、编辑、确认及归档结果，旧ID不复用"},
+    {"id": "ENG-03", "expect": "场景合并拆分保留前后关系，重新分配的来源可查，新场景待确认"},
+    {"id": "ENG-04", "expect": "应用澄清后仅相关场景及PBS待复核，取消相关PBS确认，无关结果不变"},
+    {"id": "ENG-05", "expect": "索引重建及产品资料变化后，历史证据仍可查看；内容变化产生复核提示"},
+    {"id": "ENG-06", "expect": "未知数字保留未知，非法或跨项目引用被拒绝，并给出可处理的问题"},
+    {"id": "ENG-07", "expect": "旧数据库增量迁移保留数据，不推定历史场景已经确认"},
+    {"id": "ENG-08", "expect": "生成失败和版本冲突不覆盖已有结果；完成请求重试不重复写入"},
+    {"id": "ENG-09", "expect": "保存编辑不自动确认；有效引用不自动等同于语义正确或已满足"},
+    {"id": "ENG-10", "expect": "PBS重新生成不覆盖场景记录，并可通过场景和原始需求回溯原文"}
+  ]
+}

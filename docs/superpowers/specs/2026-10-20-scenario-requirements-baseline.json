@@ -1,0 +1,143 @@
+{
+  "recorded_at": "2026-10-20T15:46:02.269Z",
+  "code_revision": "ab3d8c013b621154ab2e37b2a787e675931848d3",
+  "node_version": "v22.22.2",
+  "baseline_kind": "existing deterministic engineering tests and source inspection; not a model quality evaluation",
+  "existing_tests": {
+    "command": "node --test app/test/*.test.mjs",
+    "total": 34,
+    "passed": 34,
+    "failed": 0,
+    "model": "scripted mock",
+    "exceljs_installed": false,
+    "excel_export_exercised": false
+  },
+  "acceptance_sources": {
+    "cases": 13,
+    "checked_quotes": 21,
+    "all_quotes_present": true,
+    "numbered_clause_references_verified": true,
+    "business_approval": "pending"
+  },
+  "samples": [
+    {
+      "path": "app/seed/samples/tender_police.md",
+      "material_type": "tender",
+      "numbered": true,
+      "segment_count": 28,
+      "segment_ids": [
+        "1.1.1",
+        "1.1.2",
+        "1.1.3",
+        "1.1.4",
+        "2.1.1",
+        "2.1.2",
+        "2.1.3",
+        "2.2.1",
+        "2.2.2",
+        "2.2.3",
+        "2.3.1",
+        "2.3.2",
+        "2.4.1",
+        "2.4.2",
+        "3.1.1",
+        "3.1.2",
+        "3.2.1",
+        "3.2.2",
+        "3.3.1",
+        "4.1.1",
+        "4.1.2",
+        "4.1.3",
+        "4.1.4",
+        "4.1.5",
+        "5.1.1",
+        "5.1.2",
+        "5.1.3",
+        "5.1.4"
+      ]
+    },
+    {
+      "path": "app/seed/samples/minutes_forest.md",
+      "material_type": "minutes",
+      "numbered": false,
+      "segment_count": 14,
+      "segment_ids": [
+        "S001",
+        "S002",
+        "S003",
+        "S004",
+        "S005",
+        "S006",
+        "S007",
+        "S008",
+        "S009",
+        "S010",
+        "S011",
+        "S012",
+        "S013",
+        "S014"
+      ]
+    },
+    {
+      "path": "app/seed/samples/oral_cityadmin.txt",
+      "material_type": "oral",
+      "numbered": false,
+      "segment_count": 7,
+      "segment_ids": [
+        "S001",
+        "S002",
+        "S003",
+        "S004",
+        "S005",
+        "S006",
+        "S007"
+      ]
+    }
+  ],
+  "observed_regressions": [
+    {
+      "id": "ENG-01",
+      "input_type": "synthetic",
+      "input": "# 编号条款续行验证\n## 功能要求\n2.1.1 支持夜间巡查。\n识别准确率不低于90%。\n2.1.2 支持自动告警。\n2.1.3 支持事件查询。",
+      "actual_segments": [
+        {
+          "id": "2.1.1",
+          "chapter": "功能要求",
+          "section": "",
+          "text": "支持夜间巡查。",
+          "star": false,
+          "triangle": false,
+          "rejectRule": false
+        },
+        {
+          "id": "2.1.2",
+          "chapter": "功能要求",
+          "section": "",
+          "text": "支持自动告警。",
+          "star": false,
+          "triangle": false,
+          "rejectRule": false
+        },
+        {
+          "id": "2.1.3",
+          "chapter": "功能要求",
+          "section": "",
+          "text": "支持事件查询。",
+          "star": false,
+          "triangle": false,
+          "rejectRule": false
+        }
+      ],
+      "continuation_lost": true,
+      "status": "reproduced, unfixed"
+    }
+  ],
+  "real_model_quality": {
+    "status": "not_run",
+    "reason": "This baseline validates source fixtures and current deterministic behavior; it does not execute a real model."
+  },
+  "proposed_engineering_cases": {
+    "count": 10,
+    "status": "acceptance definitions only; not implemented or passed"
+  }
+}
