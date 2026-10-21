@@ -88,13 +88,15 @@ export function editScenario(projectId, code, body) {
     const content = Object.fromEntries(SCENARIO_FIELDS.map((key) => [key, body[key] ?? scene[key]]));
     const changed = SCENARIO_FIELDS.some((key) => JSON.stringify(content[key]) !== JSON.stringify(scene[key]));
     if (status === "已确认" && changed) throw badRequest("请先保存修改，再确认当前版本");
-    const data = changed ? validated(projectId, content, scene) : content;
+    // Saving a reviewed scene also refreshes the requirement revisions behind its links.
+    const data = changed || status === "待确认" || status === "已确认" ? validated(projectId, content, scene) : content;
     if (status === "已确认") {
       const reqs = repo.listRequirements(projectId, { includeDeleted: false });
       const sources = new Map(repo.listSourceSnapshots(projectId).map((s) => [s.uid, s]));
       if (scene.links.some((l) => !reqs.some((r) => r.code === l.req_id)) || scene.evidence.some((e) => e.kind === "material" && !sources.get(e.seg_uid)?.active)) throw badRequest("有关联需求或来源已失效，请先修正");
     }
     const next = { ...scene, ...data, status, revision: scene.revision + 1, edited: true, review_reason: status === "待复核" ? body.reason : "" };
+    if (changed) flagPbs(projectId, [code], `场景 ${code} 已变更，请复核`);
     write(projectId, next, body.reason || (changed ? "人工修改" : `状态改为${status}`));
     if (changed || status === "已归档" || scene.status === "已归档") flagPbs(projectId, [code], `场景 ${code} 已变更，请复核`);
     repo.logEvent(projectId, "场景", `${code} ${changed ? "已修改，待确认" : status}`);
@@ -192,10 +194,29 @@ export function scenarioView(projectId) {
 
 /** Agent tool boundary: deterministic validation and persistence, with no model call. */
 export function submitAgentScenario(projectId, raw) {
+  if (raw.code) {
+    const previous = getScenario(projectId, raw.code);
+    assertVersion(previous, raw.revision);
+    if (!live(previous) || previous.edited || previous.status === "已确认") throw badRequest(`${previous.code} 为人工维护、已确认或归档成果；请用 propose_change 的 edit_scenario 提出具体差异，不能自动覆盖`);
+    if (SCENARIO_FIELDS.filter(k => k !== "supersedes").some(k => raw[k] === undefined)) throw badRequest("更新场景需提交完整内容，保留未变化字段；请先读取 list_scenarios");
+    const result = validateScenario(raw, { requirements: repo.listRequirements(projectId), sources: repo.listSourceSnapshots(projectId) });
+    if (result.errors.length) throw badRequest(result.errors.join("；"));
+    if (listScenarios(projectId).some(s => live(s) && s.code !== previous.code && s.name === result.data.name)) throw badRequest("该名称已用于其他场景，请保留原编号或明确合并建议");
+    const data = { ...result.data, supersedes: previous.supersedes };
+    const changed = SCENARIO_FIELDS.some(k => JSON.stringify(data[k]) !== JSON.stringify(previous[k]));
+    if (!changed && previous.status !== "待复核") return { code: previous.code, revision: previous.revision, kept: true };
+    const changes = { added: data.links.filter(l => !previous.links.some(p => p.req_id === l.req_id)).map(l => l.req_id), removed: previous.links.filter(l => !data.links.some(n => n.req_id === l.req_id)).map(l => l.req_id), refreshed: data.links.filter(l => previous.links.some(p => p.req_id === l.req_id && p.req_revision !== l.req_revision)).map(l => l.req_id) };
+    flagPbs(projectId, [previous.code], `场景 ${previous.code} 的需求关联已更新，请复核`);
+    const next = { ...previous, ...data, revision: previous.revision + 1, status: "待确认", review_reason: "" };
+    write(projectId, next, "Agent根据最新需求更新场景与关联");
+    flagPbs(projectId, [previous.code], `场景 ${previous.code} 的需求关联已更新，请复核`);
+    repo.touchProject(projectId);
+    return { code: next.code, revision: next.revision, changes };
+  }
   const result = validateScenario(raw, { requirements: repo.listRequirements(projectId), sources: repo.listSourceSnapshots(projectId) });
   if (result.errors.length) throw badRequest(result.errors.join("；"));
   const same = listScenarios(projectId).find((s) => live(s) && s.name === result.data.name);
-  if (same) return { code: same.code, kept: true, reason: "已存在同名场景，保留当前版本；修改需显式审阅" };
+  if (same) return { code: same.code, revision: same.revision, kept: true, reason: "已存在同名场景；如需适配新需求，读取当前内容后携带 code、revision 显式更新，人工成果使用变更建议" };
   const code = nextCode(projectId);
   write(projectId, { ...result.data, code, revision: 1, status: "待确认", origin: "系统", edited: false }, "Agent提交场景草稿");
   repo.touchProject(projectId);

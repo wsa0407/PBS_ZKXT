@@ -9,7 +9,7 @@ const loose = { type: "object", additionalProperties: true };
 const operation = { operation_id: short };
 const tool = (name, description, properties, required = [], write = false) => ({ name, description, inputSchema: object(properties, required), annotations: { readOnlyHint: !write, destructiveHint: false, idempotentHint: true } });
 const requirement = object({ evidence_id: short, text: str, quote: str, category: { type: "string", enum: ["功能", "性能", "环境", "安全", "信创", "集成", "实施", "服务", "商务", "资质", "背景", "范围外"] }, priority: { type: "string", enum: ["必须", "重要", "一般"] }, inferred: { type: "boolean", description: "是否含原文之外的推断，不代表人工确认或引用核验状态。招标需求不接受推断；非招标推断仍需原文依据。" }, params: list(object({ name: short, value: { type: "number" }, quote: str }, ["name", "value", "quote"])) }, ["evidence_id", "text", "quote", "category", "priority"]);
-const scenario = object({ name: str, goal: str, actors: strings, context: str, trigger: str,
+const scenario = object({ code: short, revision: integer, name: str, goal: str, actors: strings, context: str, trigger: str,
   activities: list(object({ text: str, req_ids: strings }, ["text", "req_ids"])), outcomes: strings, boundaries: strings,
   assumptions: list(object({ text: str, reason: str }, ["text", "reason"])),
   links: list(object({ req_id: short, role: { type: "string", enum: ["核心要求", "支撑要求", "适用约束"] } }, ["req_id", "role"])),
@@ -31,7 +31,7 @@ export const TOOLS = [
   tool("list_scenarios", "分页读取场景全文、来源和需求映射。", { cursor: integer, limit: { type: "integer", minimum: 1, maximum: 20 } }),
   tool("list_pbs", "分页读取现有PBS明细、产品关联、数量依据和待审状态。", { cursor: integer, limit: { type: "integer", minimum: 1, maximum: 30 } }),
   tool("submit_requirements", "校验并保存有原文依据的需求初稿，引用通过不代表人工确认；招标材料拒绝推断需求。逐项返回accepted/errors，失败项修正后用新operation_id提交，已成功项不重复提交。", { ...operation, document_id: short, document_version: short, requirements: list(requirement), ignored: list(object({ evidence_id: short, reason: str }, ["evidence_id", "reason"])) }, ["operation_id", "document_id", "document_version", "requirements"], true),
-  tool("submit_scenarios", "保存有依据的场景初稿，需求待确认不阻止草拟；推断放assumptions。必须填写links:[{req_id,role}]和evidence:[{field_path,seg_uid,quote}]。expected_version取project_state的workspace_version或上次提交的新版本。", { ...operation, expected_version: short, scenarios: list(scenario, 12) }, ["operation_id", "expected_version", "scenarios"], true),
+  tool("submit_scenarios", "新增有依据的场景，或以code、revision和完整字段更新未人工维护的草稿及需求关联；人工或已确认成果用propose_change提出edit_scenario。需求待确认不阻止草拟，场景无需单独确认。links:[{req_id,role}]；evidence:[{field_path,seg_uid,quote}]；推断放assumptions。expected_version取project_state的workspace_version或上次提交的新版本。", { ...operation, expected_version: short, scenarios: list(scenario, 12) }, ["operation_id", "expected_version", "scenarios"], true),
   tool("submit_questions", "保存影响当前判断且需客户补充的问题；可独立存在或关联真实需求/场景，不给每条需求自动建问题。reason说明判断影响及有依据的建议确认角色、补充材料方向，不自行答复或宣称已指派人员。", { ...operation, questions: list(object({ question: str, reason: str, impact: { type: "string", enum: ["影响方案", "影响报价", "影响废标风险"] }, req_ids: strings, scenario_ids: strings, field_paths: strings }, ["question", "reason", "impact"])) }, ["operation_id", "questions"], true),
   tool("read_product", "读取真实产品的能力、限制、资料和BOM组成。", { product_id: short }, ["product_id"]),
   tool("submit_pbs", "分批合并PBS草稿，校验来源、约束、需求与场景、数量。同名更新未人工修改的草稿；其他项和人工成果保留。删除须另提人工变更。expected_version取project_state的pbs_version。", { ...operation, expected_version: short, items: list(pbsItem, 80) }, ["operation_id", "expected_version", "items"], true),

@@ -1,6 +1,6 @@
 ---
 name: pbs-scenario-modeling
-description: 将需求按客户目标组织为角色、触发、活动、结果及边界明确的业务场景；用于场景草拟、归并和需求理解审阅，不按产品目录划分场景。
+description: 将需求按客户目标组织为角色、触发、活动、结果及边界明确的业务场景；用于场景草拟、归并、需求变更后的关联适配和整体范围审阅，不按产品目录划分场景。
 ---
 
 ## 适用范围与权限
@@ -23,9 +23,17 @@ description: 将需求按客户目标组织为角色、触发、活动、结果�
 
 例如巡查发现异常并推送客户已有工单系统，可组织为“巡查告警与推送”场景；没有证据时不能补出派单、处置和关闭的完整闭环。该例说明边界判断，不是低空项目的必填流程。
 
+## 增量适配
+
+场景与具体需求在同一工作区一起输出，不要求人先确认场景再确认需求。场景应能回答“要完成哪些工作”，再展示支持该工作的具体要求及原文；一条需求可支撑多个场景，始终使用同一个需求编号，不复制需求或因此累加产品数量。
+
+新增需求后先检查已有场景及未归类要求，判断是补充已有目标还是形成新的独立目标。修改需求后沿 links 检查活动、范围、结果、边界与适用约束是否仍成立；需求文本同步显示不代表语义关联已经核对。新增场景也要检查可复用要求和项目级约束。背景、交付、商务与范围外事项保留在对应分组，不强塞进场景。
+
+已有未人工维护的草稿，可用 submit_scenarios 的 code、revision 及完整场景字段原位更新；不得只因名称相同就跳过，也不得用改名新建来规避版本保护。删去关联时说明原因并检查相关业务活动，原需求仍保留，可进入待安排分组。人工维护或已确认内容使用 propose_change 的 edit_scenario，携带实际变化字段（包括需要变化时的 links、activities、evidence）；不得自动覆盖。
+
 ## 保存与交付
 
-submit_scenarios 每项含 name、goal、actors、context、trigger、activities、outcomes、boundaries、assumptions、links、evidence。活动为 {text,req_ids}；links 为 {req_id,role}，role 只能为核心要求、支撑要求、适用约束；evidence 为 {field_path,seg_uid,quote}，field_path 对应支持的字段（如 goal 或 activities.0.text）。
+新增场景不填 code；更新现有草稿需填写读取到的 code、revision。submit_scenarios 每项含 name、goal、actors、context、trigger、activities、outcomes、boundaries、assumptions、links、evidence。活动为 {text,req_ids}；links 为 {req_id,role}，role 只能为核心要求、支撑要求、适用约束；evidence 为 {field_path,seg_uid,quote}，field_path 对应支持的字段（如 goal 或 activities.0.text）。
 
 提交时提供 operation_id，读取 project_state 的 workspace_version 作为 expected_version。提交后使用工具返回的新 workspace_version；版本冲突时重新读取需求，不能只替换版本号而忽略人工修改。具体字段与限额以当前工具 schema 为准。
 
@@ -33,6 +41,6 @@ submit_scenarios 每项含 name、goal、actors、context、trigger、activities
 
 使用现有字段承载业务分析：actors 写有依据的参与角色；服务对象与业务情境写 context；目标、触发、活动和结果分别写 goal、trigger、activities、outcomes；责任边界和外部依赖写 boundaries。不要自建 objects、dependencies、owner 或置信度字段。角色、依赖的推断仍放 assumptions，不能夹入事实字段。
 
-提交审阅时组织客户目标、范围、角色职责、关键约束、保留假设与未决问题，关联已保存需求和场景。它们共同构成本轮需求理解基线，确认范围与版本以宿主实际请求为准；不要求先签一份 Markdown 报告，也不把全部问题清零作为场景草拟的前置条件。详细成果留在工作区，对话仅提示影响本轮决定的内容。
+提交审阅时组织客户目标、范围、角色职责、关键约束、保留假设与未决问题，关联已保存需求和场景。它们共同构成本轮需求理解基线，确认范围与版本以宿主实际请求为准；不要求先签一份 Markdown 报告，也不把全部问题清零作为场景草拟的前置条件。场景不设独立确认关卡，只在交给 PBS 前统一确认场景、支撑需求及适用约束的本轮范围。详细成果留在工作区，对话仅提示影响本轮决定的内容。
 
 交付时区分场景已保存、需求范围待确认和客户问题待答复。发现条目遗漏时回到具体证据或发起咨询，不重复整份材料抽取，不自行启动 PBS。

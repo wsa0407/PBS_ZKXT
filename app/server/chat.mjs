@@ -4,7 +4,7 @@ import { runtimeConfig } from "./catalog.mjs";
 import * as repo from "./repo.mjs";
 import * as svc from "./services.mjs";
 import * as scenarios from "./scenarios.mjs";
-import { hash } from "../engine/scenario.mjs";
+import { hash, SCENARIO_FIELDS } from "../engine/scenario.mjs";
 import { isConversationMessage } from "../shared/chat-events.mjs";
 
 const AGENT_CHANGE_TYPES = new Set(["set_param", "edit_requirement", "add_requirement", "delete_requirement", "edit_scenario", "confirm_scenarios", "confirm_requirements", "edit_item", "confirm_items", "delete_item", "finish", "show"]);
@@ -75,8 +75,10 @@ function plan(action, view, ctx) {
     case "edit_scenario": {
       const scene = view.scenarios.find((s) => s.code === a.code);
       if (!scene) throw new Error("场景不存在");
-      const fields = Object.fromEntries(["name", "goal", "context", "trigger"].filter((k) => a[k] !== undefined).map((k) => [k, a[k]]));
-      return { label: "修改场景", steps: [], run: () => (scenarios.editScenario(ctx.projectId, scene.code, { ...fields, revision: scene.revision }), { text: `${scene.code} 已保存，待确认`, open: "scenarios" }) };
+      const fields = Object.fromEntries(SCENARIO_FIELDS.filter(k => k !== "supersedes" && a[k] !== undefined).map(k => [k, a[k]]));
+      if (!Object.keys(fields).length) throw new Error("没有要修改的场景内容或需求关联");
+      const linked = fields.links ? `；关联需求调整为 ${fields.links.map(l => l.req_id).join("、")}` : "";
+      return { label: `修改 ${scene.code}「${scene.name}」${linked}`, steps: [], run: () => (scenarios.editScenario(ctx.projectId, scene.code, { ...fields, revision: scene.revision }), { text: `${scene.code} 内容与需求关联已更新`, open: "scenarios" }) };
     }
     case "edit_item": {
       const it = needItem();

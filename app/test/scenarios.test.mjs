@@ -7,6 +7,7 @@ import { getDb, resetDb } from "../server/db.mjs";
 import * as repo from "../server/repo.mjs";
 import * as svc from "../server/services.mjs";
 import * as scenes from "../server/scenarios.mjs";
+import { proposeAgentChange, resolveCard } from "../server/chat.mjs";
 import * as rag from "../server/rag.mjs";
 import { segmentText } from "../engine/segment.mjs";
 import { exportProject } from "../server/xlsx.mjs";
@@ -69,6 +70,55 @@ function item(req, scenarioIds = []) {
   repo.saveItems(project, [{ ...row, confirmed: true, scenario_ids: scenarioIds }]);
   return id;
 }
+
+test("incremental scenario updates retain IDs, refresh requirement versions and protect human work", async () => {
+  await generate();
+  const previous = scenes.listScenarios(project)[0];
+  const oldPbs = item("R002");
+  svc.editRequirement(project, "R001", { text: "客户要求调整巡查业务范围" });
+  const current = scenes.getScenario(project, previous.code);
+  const raw = Object.fromEntries(Object.entries(draft().scenarios[0]).filter(([key]) => !["key", "questions"].includes(key)));
+  raw.activities = raw.activities.slice(0, 1);
+  raw.evidence = raw.evidence.slice(0, 1);
+  raw.links = raw.links.slice(0, 1);
+  const task = createCollaboration(project, { role: "understanding", goal: "增量适配" });
+  const adapter = collaborationAdapter(task, nextActivation(task.id));
+  const response = await adapter.execute("submit_scenarios", { operation_id: "update-association", expected_version: projectInputHash(project), scenarios: [{ ...raw, code: current.code, revision: current.revision }] });
+  assert.equal(response.ok, true);
+  assert.deepEqual(response.data.errors, []);
+  const result = response.data.accepted[0];
+  assert.equal(result.code, previous.code);
+  assert.equal(scenes.listScenarios(project).length, 1);
+  assert.deepEqual(result.changes.removed, ["R002"]);
+  assert.deepEqual(result.changes.refreshed, ["R001"]);
+  assert.equal(scenes.getScenario(project, result.code).links[0].req_revision, repo.getRequirement(project, "R001").revision);
+  assert.ok(repo.getItem(project, oldPbs).stale, "removed links also invalidate PBS built on the old requirement");
+  assert.notEqual(repo.getRequirement(project, "R002").status, "已删除");
+  assert.throws(() => scenes.submitAgentScenario(project, { ...raw, code: result.code, revision: current.revision }), /已被修改/);
+  assert.throws(() => scenes.submitAgentScenario(project, { name: raw.name, code: result.code, revision: result.revision, links: raw.links, evidence: raw.evidence }), /完整内容/);
+  const manual = scenes.editScenario(project, result.code, { revision: result.revision, goal: "人工维护的业务目标" });
+  assert.throws(() => scenes.submitAgentScenario(project, { ...raw, code: manual.code, revision: manual.revision }), /不能自动覆盖/);
+  assert.equal(scenes.getScenario(project, manual.code).goal, "人工维护的业务目标");
+  const card = proposeAgentChange(project, { type: "edit_scenario", code: manual.code, links: draft().scenarios[0].links });
+  assert.equal(scenes.getScenario(project, manual.code).links.length, 1, "proposing must not overwrite manual relationships");
+  const message = repo.addChat(project, "assistant", "补充关联建议", { cards: [card] });
+  resolveCard(project, message, 0, "accept");
+  assert.equal(scenes.getScenario(project, manual.code).links.length, 2, "acceptance applies the actual relationship change");
+  assert.equal(scenes.getScenario(project, manual.code).goal, "人工维护的业务目标", "unrelated human fields remain intact");
+});
+
+test("saving reviewed associations refreshes their requirement snapshot without separate scene approval", async () => {
+  await generate();
+  svc.editRequirement(project, "R001", { text: "更新客户巡查要求" });
+  const scene = scenes.listScenarios(project)[0];
+  assert.equal(scene.status, "待复核");
+  const saved = scenes.editScenario(project, scene.code, { revision: scene.revision });
+  assert.equal(saved.links[0].req_revision, repo.getRequirement(project, "R001").revision);
+  assert.equal(saved.status, "待确认", "persistence status remains a draft, without requiring a separate UI approval");
+  const preview = approvalPreview(project);
+  const approval = approveUnderstanding(project, { version: preview.version, requirements: preview.requirements.map(r => r.code), scenarios: [scene.code] });
+  assert.equal(approval.snapshot.scenarios[0].status, "已确认");
+});
 
 test("numbered clause continuation and unnumbered introductions are not lost or appended across headings", () => {
   const doc = segmentText(material.replace("## 技术要求", "## 技术要求\n设备由中标方提供。"));

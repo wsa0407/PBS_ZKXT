@@ -204,7 +204,7 @@ post("/api/projects/:id/requirements/confirm", ({ id }, body) => (svc.confirmReq
 put("/api/projects/:id/params/:name", ({ id, name }, body) => (svc.setParam(id, name, body), { ok: true }));
 
 // Scenario requirements: every mutation uses the same versioned service as chat.
-post("/api/projects/:id/scenarios/generate", ({ id }) => collaboration.submitCollaboration(id, { text: "继续整理客户场景与待澄清事项", target: "understanding" }));
+post("/api/projects/:id/scenarios/generate", ({ id }) => collaboration.submitCollaboration(id, { text: "根据当前材料与需求，一起整理业务场景、支撑需求和待明确事项。先读取已有场景，增量适配新增或修改的需求，保留编号和人工内容，检查共用需求与共性约束，不重复创建同名场景。场景不单独要求确认，交给 PBS 前统一确认本轮理解范围。", target: "understanding" }));
 post("/api/projects/:id/scenarios", ({ id }, body) => scenarios.addScenario(id, body));
 get("/api/projects/:id/scenarios/:code", ({ id, code }) => ({ scenario: scenarios.getScenario(id, code), revisions: scenarios.revisions(id, code) }));
 put("/api/projects/:id/scenarios/:code", ({ id, code }, body) => scenarios.editScenario(id, code, body));

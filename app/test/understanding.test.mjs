@@ -4,7 +4,7 @@ import { resetDb } from "../server/db.mjs";
 import * as repo from "../server/repo.mjs";
 import * as svc from "../server/services.mjs";
 import { localAgentAdapter } from "../server/agent-adapter.mjs";
-import { workspaceTarget, questionPending, questionUnlinked, questionsForRequirement, questionActions, questionLinkLabel, understandingAction, approvalSelectionIssue } from "../shared/understanding.js";
+import { workspaceTarget, questionPending, questionUnlinked, questionsForRequirement, questionActions, questionLinkLabel, understandingAction, approvalSelectionIssue, understandingBoard } from "../shared/understanding.js";
 import { approvalPreview } from "../server/collaboration-approval.mjs";
 
 test("materials accept an upload without a category and keep uploader context separate from evidence", async () => {
@@ -91,4 +91,45 @@ test("stale selections cannot revive deleted requirements and selected scenes re
   assert.ok(approvalSelectionIssue(data, [], []));
   data.requirements.pop();
   assert.match(approvalSelectionIssue(data, [live], ["SC001"]), /已删除/);
+});
+
+test("scene-first board shares requirement identity, exposes changed links and keeps new or orphaned requirements visible", () => {
+  const r = { code: "R001", text: "夜间巡查", revision: 1, status: "待确认" };
+  const view = { requirements: [r], scenarios: ["SC001", "SC002"].map(code => ({ code, name: code, status: "待确认", links: [{ req_id: r.code, req_revision: 1, role: "核心要求" }] })), questions: [
+    { id: 1, status: "待答复", req_ids: [r.code], scenario_ids: [] },
+    { id: 2, status: "已应用", req_ids: [r.code], scenario_ids: [] },
+    { id: 3, status: "待处理", req_ids: [], scenario_ids: ["SC001"] },
+    { id: 4, status: "待处理", req_ids: [], scenario_ids: [] },
+  ] };
+  let board = understandingBoard(view);
+  assert.equal(board.shared, 1);
+  assert.equal(board.requirements.length, 1);
+  assert.equal(board.unassigned, 0);
+  assert.equal(board.groups[0].rows[0].req, board.groups[1].rows[0].req);
+  assert.deepEqual(board.groups[0].rows[0].questions.map(q => q.id), [1]);
+  assert.deepEqual(board.groups[0].questions.map(q => q.id), [3]);
+  assert.deepEqual(board.otherQuestions.map(q => q.id), [4]);
+  r.text = "改为日间巡查"; r.revision++;
+  view.requirements.push({ code: "R002", text: "新增告警要求", status: "待确认", revision: 1 });
+  board = understandingBoard(view);
+  assert.ok(board.groups.every(g => g.rows[0].changed && g.rows[0].req.text === r.text));
+  assert.equal(board.needsUpdate, 2);
+  assert.equal(board.unassigned, 1);
+  view.scenarios.forEach(s => { s.status = "已归档"; });
+  assert.equal(understandingBoard(view).unassigned, 2, "archiving must not hide requirements");
+  view.scenarios[0].status = "待确认"; r.status = "已删除";
+  board = understandingBoard(view);
+  assert.deepEqual(board.groups[0].missing, [r.code]);
+  assert.equal(board.groups[0].rows.length, 0, "deleted requirements are not silently restored");
+});
+
+test("new scenes inherit project constraints while scoped constraints retain their explicit scope", () => {
+  const view = { requirements: ["R001", "R002", "R003"].map(code => ({ code, status: "已确认", revision: 1 })), scenarios: ["SC001", "SC002"].map(code => ({ code, status: "待确认", links: [{ req_id: "R001" }] })), dispositions: [
+    { req_id: "R002", kinds: ["跨场景约束"], scenario_ids: [] },
+    { req_id: "R003", kinds: ["跨场景约束"], scenario_ids: ["SC001"] },
+  ] };
+  const board = understandingBoard(view);
+  assert.deepEqual(board.groups[0].constraints.map(e => e.req.code), ["R002", "R003"]);
+  assert.deepEqual(board.groups[1].constraints.map(e => e.req.code), ["R002"]);
+  assert.equal(board.unassigned, 0);
 });

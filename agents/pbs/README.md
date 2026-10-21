@@ -12,6 +12,8 @@
 - `roles/understanding/AGENTS.md`：需求理解、场景和待澄清事项。
 - `roles/pbs/AGENTS.md`：确认范围内的PBS编制、产品匹配和多轮求证。
 
+场景与需求一并输出，在交给 PBS 前统一确认本轮范围，不要求单独确认场景。需求理解专家按变化增量维护关联：`submit_scenarios` 支持以 `code`、`revision` 和完整字段更新未人工维护的草稿；人工或已确认成果由 `propose_change` 的 `edit_scenario` 提案承载。所有宿主仍需校验工作区版本并保护人工成果，不能只更新工具描述。
+
 根目录 `AGENTS.md` 保存共用业务概念、证据、授权及简短表达规则。每份角色文件定义目标、输入、能力、成果责任、边界、协作与完成条件。具体工作方法维护在共享 Skills，避免角色指令变成重复的操作手册。
 
 `roles.mjs` 定义当前角色权限及咨询方向；`collaboration_state.capabilities` 返回当前活动可用的业务工具与咨询对象。`contracts/collaboration.mjs` 是咨询、答复、人工补充的可迁移契约。角色会话存储隔离；当前宿主顺序调度，允许专家在后续活动中继续咨询。

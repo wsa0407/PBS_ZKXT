@@ -5,7 +5,8 @@ import { highlight, TIER_TYPE, REVIEW_HELP, reviewLabel, requirementStatusLabel 
 import { questionPending, questionsForRequirement } from "../../../shared/understanding.js";
 
 export default defineComponent({
-  setup() {
+  props: { editorOnly: Boolean },
+  setup(props, { expose }) {
     const { id, view, reload } = inject("project");
     const { open, focus } = inject("workspace");
     const filter = ref({ status: "", tier: "", category: "", kw: "", needsClarification: false });
@@ -54,6 +55,7 @@ export default defineComponent({
       source.value = { req: r, seg: s, context: i < 0 ? [s] : siblings.slice(Math.max(0, i - 2), i + 3) };
     };
     watch(() => focus.value, async (code) => {
+      if (props.editorOnly) return;
       const r = view.value.requirements.find((r) => r.code === code);
       if (!r) return;
       filter.value = { status: r.status === "已删除" ? "已删除" : "", tier: "", category: "", kw: "", needsClarification: false };
@@ -70,7 +72,7 @@ export default defineComponent({
 
     const save = async () => {
       const r = editing.value;
-      if (await call(() => api(`/projects/${id}/requirements/${r.code}`, { method: "PUT", body: { text: r.text, category: r.category, priority: r.priority } }), "已保存，请重新核对描述")) { editing.value = null; reload(); }
+      if (await call(() => api(`/projects/${id}/requirements/${r.code}`, { method: "PUT", body: { text: r.text, category: r.category, priority: r.priority, revision: r.revision } }), "已保存，请重新核对描述")) { editing.value = null; reload(); }
     };
     const remove = async (r) => {
       const { value: reason } = await ElMessageBox.prompt(`删除 ${r.code}「${r.text}」的原因`, "删除需求", { inputPattern: /\S/, inputErrorMessage: "请填写原因", confirmButtonText: "删除" });
@@ -92,9 +94,11 @@ export default defineComponent({
       if (await call(() => api(`/projects/${id}/params/${paramEdit.value.name}`, { method: "PUT", body: { value } }), "已更新取值方式，相关自动数量已重新计算")) { paramEdit.value = null; reload(); }
     };
 
+    expose({ edit: r => { editing.value = { ...r }; }, openSource, add: () => { adding.value = { text: "", category: "功能", priority: "重要", source_note: "" }; } });
     return { view, filter, rows, counts, selected, selectedCodes, source, editing, adding, paramEdit, usedParams, meta, open, focus, openQuestions, pendingQuestions, segByUid, segLabel, openSource, confirm, save, remove, restore, add, saveParam, highlight, TIER_TYPE, REVIEW_HELP, reviewLabel, requirementStatusLabel };
   },
   template: `
+  <template v-if="!editorOnly">
   <div v-if="!view.requirements.length" class="empty">
     还没有需求条目。<el-button link type="primary" @click="open('materials')">去添加材料并开始理解</el-button>，或
     <el-button link type="primary" @click="adding = { text: '', category: '功能', priority: '重要', source_note: '' }">手动新增一条</el-button>
@@ -183,6 +187,7 @@ export default defineComponent({
     </el-card>
   </template>
 
+  </template>
   <el-drawer :model-value="!!source" @close="source = null" title="原文" size="760px">
     <template v-if="source">
       <div class="muted">材料{{ source.seg.material_no }}「{{ source.seg.material_title }}」{{ source.seg.chapter ? ' · ' + source.seg.chapter : '' }}</div>
@@ -201,7 +206,7 @@ export default defineComponent({
       <el-form-item label="类别"><el-select v-model="editing.category"><el-option v-for="c in meta.categories" :key="c" :value="c" :label="c" /></el-select></el-form-item>
       <el-form-item label="优先级"><el-radio-group v-model="editing.priority"><el-radio-button v-for="p in ['必须', '重要', '一般']" :key="p" :value="p">{{ p }}</el-radio-button></el-radio-group></el-form-item>
     </el-form>
-    <div class="muted">修改内容后需重新确认描述。人工修改会保留，相关 PBS 项会提示复核。</div>
+    <div class="muted">同一需求在所有关联场景中同步显示。保存后会提示重新核对场景关联与相关 PBS。</div>
     <template #footer><el-button @click="editing = null">取消</el-button><el-button type="primary" :disabled="!editing?.text.trim()" @click="save">保存</el-button></template>
   </el-dialog>
 

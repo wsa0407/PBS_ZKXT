@@ -8,8 +8,8 @@ const CHANGE_LABEL = { set_param: "设定参数", update_requirement: "修改需
 const CHANGE_TYPE = { set_param: "primary", update_requirement: "warning", add_requirement: "success", remove_requirement: "danger", update_scenario: "warning" };
 
 export default defineComponent({
-  props: { requirementCode: String, embedded: Boolean },
-  setup(props) {
+  props: { requirementCode: String, embedded: Boolean, editorOnly: Boolean },
+  setup(props, { expose }) {
     const { id, view, reload } = inject("project");
     const { open, focus } = inject("workspace");
     const filter = ref(props.embedded ? "all" : "open");
@@ -32,6 +32,7 @@ export default defineComponent({
     const reqByCode = computed(() => new Map(view.value.requirements.map((r) => [r.code, r])));
     const newQuestion = () => { adding.value = { question: "", impact: "影响方案", reason: "", req_ids: relatedRequirementCode.value ? [relatedRequirementCode.value] : [], scenario_ids: [], field_paths: [] }; };
     watch(() => focus.value, async (qid) => {
+      if (props.editorOnly) return;
       if (qid?.requirementCode) { filter.value = "open"; return; }
       if (props.embedded || typeof qid !== "number" || !related.value.some((q) => q.id === qid)) return;
       filter.value = "all";
@@ -94,9 +95,11 @@ export default defineComponent({
       }
     };
 
+    expose({ startAnswer, openReview, newQuestion });
     return { SCENARIO_FIELD_LABELS, scenarioFieldLabel, scenarioValue, view, filter, related, relatedRequirementCode, needsResolution, questions, count, reqByCode, answering, review, adding, meta, open, focus, newQuestion, questionPending, questionUnlinked, questionActions, assign, ignore, restore, remove, startAnswer, submitAnswer, openReview, apply, toggle, addQuestion, CHANGE_LABEL, CHANGE_TYPE, IMPACT_TYPE, Q_STATUS_TYPE, questionStatusLabel, originLabel, impactLabel };
   },
   template: `
+  <template v-if="!editorOnly">
   <div v-if="relatedRequirementCode && !embedded" class="toolbar"><span>关联需求：{{ relatedRequirementCode }}</span><el-button link type="primary" @click="open('questions')">查看全部问题</el-button></div>
   <div v-if="!related.length" class="empty">
     {{ relatedRequirementCode ? '这条需求暂无关联问题。' : '暂无澄清事项。理解材料时发现的信息缺口会保留在这里。' }}
@@ -148,6 +151,7 @@ export default defineComponent({
     </el-card>
   </template>
 
+  </template>
   <el-dialog :model-value="!!answering" @close="answering = null" title="录入客户答复" width="560px">
     <template v-if="answering">
       <div class="q-text">{{ answering.q.question }}</div>

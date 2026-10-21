@@ -47,7 +47,7 @@ export function exportReview(view) {
     { key: "materials", label: "材料处理", count: s.materials.pending, tab: "materials", text: `${s.materials.pending} 份材料仍有原文待处理` },
     { key: "requirements", label: "需求描述", count: s.requirements.pending, tab: "requirements", text: `${s.requirements.confirmed} / ${s.requirements.total} 条描述已确认，${s.requirements.pending} 条待审阅` },
     { key: "quotes", label: "需求原文引用", count: quotesPending, tab: "requirements", text: quotesPending ? `${quotesPending} 条需求的原文引用待核对` : "已关联原文的需求引用可定位；人工来源说明和引用是否支持需求仍需审阅" },
-    { key: "scenarios", label: "场景与要求归类", count: s.scenarios.pending + s.scenarios.unmapped.length, tab: "scenarios", text: `${s.scenarios.pending} 个场景待确认或复核，${s.scenarios.unmapped.length} 条需求待归类` },
+    { key: "scenarios", label: "场景与要求归类", count: s.scenarios.pending + s.scenarios.unmapped.length, tab: "scenarios", text: `${s.scenarios.pending} 个场景尚未纳入确认范围或关联需核对，${s.scenarios.unmapped.length} 条需求待归类` },
     { key: "questions", label: "澄清处理", count: s.questions.open + s.questions.answered, tab: "questions", text: `${s.questions.open} 项待处理，${s.questions.answered} 项客户答复待采纳` },
     { key: "coverage", label: "需求与 PBS 对应", count: s.pbs.uncovered, tab: "pbs", text: s.pbs.uncovered ? `${s.pbs.uncovered} 条必须需求尚未关联 PBS 项` : "每条必须需求均已关联 PBS 项，是否满足要求仍需核对选型依据" },
     { key: "pbs", label: "PBS 项审阅", count: view.items.filter((i) => !i.confirmed || i.stale).length, tab: "pbs", text: `${s.pbs.items - s.pbs.confirmed} 项待确认，${s.pbs.stale} 项因依据变化待复核（可能重叠）` },

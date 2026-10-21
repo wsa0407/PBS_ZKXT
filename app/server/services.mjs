@@ -305,6 +305,7 @@ export function editRequirement(projectId, code, body) {
 
 function editRequirementContent(projectId, code, body) {
   const req = repo.getRequirement(projectId, code);
+  if (body.revision !== undefined && body.revision !== req.revision) throw new HttpError(409, `${code} 已变化，请重新读取后修改`);
   const fields = {};
   let contentChanged = false;
   for (const k of ["text", "category", "priority"]) {
