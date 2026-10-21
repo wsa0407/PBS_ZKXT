@@ -18,7 +18,7 @@ export function highlight(text, quote) {
   return safe.includes(q) ? safe.replace(q, `<mark>${q}</mark>`) : safe;
 }
 
-export const SCENARIO_FIELD_LABELS = { name: "场景名称", goal: "业务目标", actors: "参与角色", context: "时间、地点与条件", trigger: "触发条件", activities: "业务活动", outcomes: "预期结果与验收条件", boundaries: "范围、约束与依赖", assumptions: "分析推断" };
+export const SCENARIO_FIELD_LABELS = { name: "场景名称", goal: "业务目标", actors: "参与角色与职责", context: "业务对象、情境与条件", trigger: "触发条件", activities: "业务活动", outcomes: "预期结果与验收条件", boundaries: "范围、约束与依赖", assumptions: "分析推断" };
 export function scenarioFieldLabel(path) {
   const [field, index] = String(path).split(".");
   return (SCENARIO_FIELD_LABELS[field] ?? field) + (index === undefined ? "" : ` ${Number(index) + 1}`);

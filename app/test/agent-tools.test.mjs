@@ -29,6 +29,26 @@ test("Agent rejects an invalid quote, then accepts a corrected submission withou
   assert.equal(repo.listRequirements(id)[0].status, "待确认");
 });
 
+test("tender inference is rejected instead of silently relabelled as a source fact, without losing valid batch items", async () => {
+  const out = await submit([req(), req({ text: "夜间巡逻必须全自动无人值守", inferred: true })]);
+  assert.equal(out.data.accepted.length, 1);
+  assert.equal(out.data.errors.length, 1);
+  assert.match(JSON.stringify(out.data.errors), /TENDER_INFERENCE/);
+  assert.equal(repo.listRequirements(id).length, 1);
+  assert.equal(repo.listRequirements(id)[0].status, "待确认");
+});
+
+test("a supported interview inference keeps its nature independently of quote verification and human approval", async () => {
+  const materialId = svc.addMaterial(id, { kind: "minutes", title: "访谈记录", text: "夜间值班人员难以覆盖全部巡查区域，希望改善夜间巡查效率。" });
+  const segment = repo.listSegments(id).find(s => s.material_id === materialId);
+  const out = await adapter.execute("submit_requirements", { operation_id: "interview-inference", document_id: `material:${materialId}`, document_version: hash(repo.getMaterial(id, materialId).text), requirements: [{ evidence_id: segment.uid, text: "可能需要辅助夜间巡查能力", quote: segment.text, inferred: true, category: "功能", priority: "一般" }] });
+  assert.equal(out.data.accepted.length, 1);
+  const saved = repo.listRequirements(id)[0];
+  assert.equal(saved.inferred, true);
+  assert.equal(saved.quote_verified, true);
+  assert.equal(saved.status, "待确认");
+});
+
 test("the run report distinguishes saved scenarios from requirement classification counts", async () => {
   await submit([req()]);
   const report = adapter.report();

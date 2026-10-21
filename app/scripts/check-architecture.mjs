@@ -44,10 +44,25 @@ for (const [id, role] of Object.entries(ROLES)) {
 }
 const skills = readdirSync(join(root, "agents/pbs/skills"));
 const names = new Set();
+const instructionFiles = [join(root, "agents/pbs/AGENTS.md"), ...Object.values(ROLES).map(role => join(root, "agents/pbs", role.instructions))];
 for (const skill of skills) {
-  const text = readFileSync(join(root, "agents/pbs/skills", skill, "SKILL.md"), "utf8");
+  const file = join(root, "agents/pbs/skills", skill, "SKILL.md");
+  const text = readFileSync(file, "utf8");
   const name = text.match(/^name:\s*(.+)$/m)?.[1];
   assert.ok(text.startsWith("---\n") && name === skill && /^description:\s*\S/m.test(text), `${skill}: invalid Skill metadata`);
+  assert.ok(/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name) && name.length < 64, `${skill}: invalid Skill name`);
   assert.ok(!names.has(name)); names.add(name);
+  instructionFiles.push(file);
+}
+// Role/method instructions must not keep directing the model to retired skill names.
+for (const file of instructionFiles) {
+  for (const [reference] of readFileSync(file, "utf8").matchAll(/\bpbs-[a-z0-9-]+\b/g)) {
+    assert.ok(names.has(reference), `${label(file)}: unavailable Skill ${reference}`);
+  }
+}
+const skillCases = JSON.parse(readFileSync(join(root, "agents/pbs/evals/skill-cases.json"), "utf8"));
+for (const example of skillCases.cases) {
+  assert.ok(ROLES[example.role], `${example.id}: unknown evaluation role`);
+  for (const name of example.expected_review.skills) assert.ok(names.has(name), `${example.id}: unavailable Skill ${name}`);
 }
 console.log(`Architecture checks passed: ${files.length} modules, ${all.length} tools, ${names.size} shared skills; no circular imports.`);

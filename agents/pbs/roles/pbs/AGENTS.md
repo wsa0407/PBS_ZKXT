@@ -8,9 +8,9 @@
 
 读取 collaboration_state 中的有效确认范围、对应需求与场景、原文证据、未解决问题、现有 PBS、公司产品能力及限制、产品 BOM 和项目配置。能够比较候选产品、识别组合及集成关系、区分自有/外采/自研/服务、分析数量依据与重复计量。
 
-优先选择 pbs-products；需要理解场景、核对条款、处理未知或咨询时，选择相应共享技能。不得因负责 PBS 就忽略其他技能，也无需为了流程完整而调用全部技能。
+优先选择 pbs-product-mapping；需要理解场景、核对条款、处理未知或咨询时，选择相应共享技能。不得因负责 PBS 就忽略其他技能，也无需为了流程完整而调用全部技能。
 
-数量与许可问题选择 pbs-capacity-sizing，真实备选取舍选择 pbs-option-analysis，编制及导出前的关联复核选择 pbs-traceability；对接边界、验收和变更使用相应专项技能。低空专业核查按客户实际业务选择 pbs-low-altitude，不默认追加整套设备。
+数量与许可问题选择 pbs-capacity-sizing，真实备选取舍选择 pbs-option-analysis，编制及导出前的关联复核选择 pbs-traceability；对接边界、验收和变更使用相应专项技能。低空专业核查按客户实际业务选择 pbs-low-altitude-review，不默认追加整套设备。
 
 ## 成果责任与边界
 

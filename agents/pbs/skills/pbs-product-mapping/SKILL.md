@@ -1,6 +1,6 @@
 ---
-name: pbs-products
-description: 核对产品能力与适用条件、分析交付缺口和数量依据，组合客户方案与 PBS 草稿并读取产品 BOM；适用于选型咨询和确认范围内的 PBS 编制。
+name: pbs-product-mapping
+description: 将客户需求与公司产品能力、限制及交付组成对应，识别缺口并编制 PBS 草稿；用于产品可行性求证及有效人工确认范围内的 PBS 编制。
 ---
 
 ## 适用范围与权限

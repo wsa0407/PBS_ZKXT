@@ -128,6 +128,7 @@ export function localAgentAdapter(projectId, { signal, onProgress = () => {}, ma
         const source = all.find((s) => s.uid === r.evidence_id);
         if (!source || !r.quote.trim() || !normalize(source.text).includes(normalize(r.quote))) throw new Error("QUOTE_MISMATCH：quote必须为对应原文片段的连续引用，请read_evidence回查");
         if (!r.text.trim()) throw new Error("需求内容不能为空");
+        if (d.kind === "tender" && r.inferred) throw new Error("TENDER_INFERENCE：招标需求仅接受有原文依据的要求，不能将推断作为原文事实保存；请回查并修正需求，或记录待澄清问题");
         const params = [], rejected = [];
         for (const p of r.params ?? []) {
           const spec = sizing.params[p.name];
@@ -141,7 +142,7 @@ export function localAgentAdapter(projectId, { signal, onProgress = () => {}, ma
           if (!existing.edited && existing.status === "待确认" && existing.origin === "系统") repo.updateRequirement(projectId, existing.code, { quote: r.quote, quote_verified: true, revision: existing.revision + 1 });
           recordCoverage(source.uid, d.document_version, "requirement"); return { code: existing.code, kept: true };
         }
-        const code = repo.insertRequirement(projectId, { text: r.text, seg_uid: source.uid, quote: r.quote, quote_verified: true, category: r.category, priority: r.priority, inferred: d.kind !== "tender" && Boolean(r.inferred), star: source.star, triangle: source.triangle, params, rejected_params: rejected, ord: source.ord * 10 });
+        const code = repo.insertRequirement(projectId, { text: r.text, seg_uid: source.uid, quote: r.quote, quote_verified: true, category: r.category, priority: r.priority, inferred: Boolean(r.inferred), star: source.star, triangle: source.triangle, params, rejected_params: rejected, ord: source.ord * 10 });
         recordCoverage(source.uid, d.document_version, "requirement"); return { code, rejected_params: rejected };
       });
       const ignored = batch(args.ignored ?? [], (v) => {

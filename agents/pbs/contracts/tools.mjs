@@ -8,7 +8,7 @@ const list = (items, maxItems = 30) => ({ type: "array", items, maxItems });
 const loose = { type: "object", additionalProperties: true };
 const operation = { operation_id: short };
 const tool = (name, description, properties, required = [], write = false) => ({ name, description, inputSchema: object(properties, required), annotations: { readOnlyHint: !write, destructiveHint: false, idempotentHint: true } });
-const requirement = object({ evidence_id: short, text: str, quote: str, category: { type: "string", enum: ["功能", "性能", "环境", "安全", "信创", "集成", "实施", "服务", "商务", "资质", "背景", "范围外"] }, priority: { type: "string", enum: ["必须", "重要", "一般"] }, inferred: { type: "boolean" }, params: list(object({ name: short, value: { type: "number" }, quote: str }, ["name", "value", "quote"])) }, ["evidence_id", "text", "quote", "category", "priority"]);
+const requirement = object({ evidence_id: short, text: str, quote: str, category: { type: "string", enum: ["功能", "性能", "环境", "安全", "信创", "集成", "实施", "服务", "商务", "资质", "背景", "范围外"] }, priority: { type: "string", enum: ["必须", "重要", "一般"] }, inferred: { type: "boolean", description: "是否含原文之外的推断，不代表人工确认或引用核验状态。招标需求不接受推断；非招标推断仍需原文依据。" }, params: list(object({ name: short, value: { type: "number" }, quote: str }, ["name", "value", "quote"])) }, ["evidence_id", "text", "quote", "category", "priority"]);
 const scenario = object({ name: str, goal: str, actors: strings, context: str, trigger: str,
   activities: list(object({ text: str, req_ids: strings }, ["text", "req_ids"])), outcomes: strings, boundaries: strings,
   assumptions: list(object({ text: str, reason: str }, ["text", "reason"])),
@@ -22,17 +22,17 @@ const pbsItem = object({ name: str, parent: short, source: { type: "string", enu
 }, ["name", "parent", "source", "req_ids"]);
 
 export const TOOLS = [
-  tool("project_state", "读取绑定项目的真实状态、材料目录、参数字典、成果版本和业务分组。首先调用。", {}),
-  tool("list_document_sections", "分页枚举整份标书的原文片段与处理状态；不能以Top-K替代全文覆盖。", { document_id: short, cursor: integer, limit: { type: "integer", minimum: 1, maximum: 30 } }, ["document_id"]),
+  tool("project_state", "开展业务分析或执行前读取绑定项目的真实状态、材料目录、参数字典、成果版本和业务分组；简单问候无需调用。", {}),
+  tool("list_document_sections", "分页枚举指定材料的原文片段与处理状态；不能以Top-K替代全文覆盖。", { document_id: short, cursor: integer, limit: { type: "integer", minimum: 1, maximum: 30 } }, ["document_id"]),
   tool("read_document_batch", "按原文顺序批量读取片段。后续分页携带上页document_version和next_cursor。完整拆解优先用此工具。", { document_id: short, document_version: short, cursor: short, limit: { type: "integer", minimum: 1, maximum: 60 } }, ["document_id"]),
   tool("read_evidence", "按稳定来源ID读取原文及相邻片段，核对版本。", { evidence_id: short, document_version: short, neighbors: { type: "integer", minimum: 0, maximum: 3 } }, ["evidence_id"]),
   tool("search_evidence", "检索项目材料或公司产品知识，命中不是完整覆盖证明。", { query: str, domain: { type: "string", enum: ["materials", "products"] }, limit: { type: "integer", minimum: 1, maximum: 12 } }, ["query", "domain"]),
   tool("list_requirements", "分页读取已保存的真实原始需求；unverified_only可只列需要修复原文引用的项。", { cursor: integer, limit: { type: "integer", minimum: 1, maximum: 50 }, unverified_only: { type: "boolean" } }),
   tool("list_scenarios", "分页读取场景全文、来源和需求映射。", { cursor: integer, limit: { type: "integer", minimum: 1, maximum: 20 } }),
   tool("list_pbs", "分页读取现有PBS明细、产品关联、数量依据和待审状态。", { cursor: integer, limit: { type: "integer", minimum: 1, maximum: 30 } }),
-  tool("submit_requirements", "校验并保存原始需求初稿，逐项返回accepted/errors。失败项修正后用新operation_id再次提交；已成功项不重复提交。", { ...operation, document_id: short, document_version: short, requirements: list(requirement), ignored: list(object({ evidence_id: short, reason: str }, ["evidence_id", "reason"])) }, ["operation_id", "document_id", "document_version", "requirements"], true),
-  tool("submit_scenarios", "校验来源和需求关联，保存场景初稿。必须填写links:[{req_id,role}]和evidence:[{field_path,seg_uid,quote}]。expected_version取project_state的workspace_version或上次提交返回的新版本。", { ...operation, expected_version: short, scenarios: list(scenario, 12) }, ["operation_id", "expected_version", "scenarios"], true),
-  tool("submit_questions", "保存需要客户确认的问题，关联真实需求和场景，不自行回答。", { ...operation, questions: list(object({ question: str, reason: str, impact: { type: "string", enum: ["影响方案", "影响报价", "影响废标风险"] }, req_ids: strings, scenario_ids: strings, field_paths: strings }, ["question", "reason", "impact"])) }, ["operation_id", "questions"], true),
+  tool("submit_requirements", "校验并保存有原文依据的需求初稿，引用通过不代表人工确认；招标材料拒绝推断需求。逐项返回accepted/errors，失败项修正后用新operation_id提交，已成功项不重复提交。", { ...operation, document_id: short, document_version: short, requirements: list(requirement), ignored: list(object({ evidence_id: short, reason: str }, ["evidence_id", "reason"])) }, ["operation_id", "document_id", "document_version", "requirements"], true),
+  tool("submit_scenarios", "保存有依据的场景初稿，需求待确认不阻止草拟；推断放assumptions。必须填写links:[{req_id,role}]和evidence:[{field_path,seg_uid,quote}]。expected_version取project_state的workspace_version或上次提交的新版本。", { ...operation, expected_version: short, scenarios: list(scenario, 12) }, ["operation_id", "expected_version", "scenarios"], true),
+  tool("submit_questions", "保存影响当前判断且需客户补充的问题；可独立存在或关联真实需求/场景，不给每条需求自动建问题。reason说明判断影响及有依据的建议确认角色、补充材料方向，不自行答复或宣称已指派人员。", { ...operation, questions: list(object({ question: str, reason: str, impact: { type: "string", enum: ["影响方案", "影响报价", "影响废标风险"] }, req_ids: strings, scenario_ids: strings, field_paths: strings }, ["question", "reason", "impact"])) }, ["operation_id", "questions"], true),
   tool("read_product", "读取真实产品的能力、限制、资料和BOM组成。", { product_id: short }, ["product_id"]),
   tool("submit_pbs", "分批合并PBS草稿，校验来源、约束、需求与场景、数量。同名更新未人工修改的草稿；其他项和人工成果保留。删除须另提人工变更。expected_version取project_state的pbs_version。", { ...operation, expected_version: short, items: list(pbsItem, 80) }, ["operation_id", "expected_version", "items"], true),
   tool("submit_solutions", "将已保存PBS产品项自由组合为本客户的解决方案，不写入共享产品库。expected_version取project_state的pbs_version。", { ...operation, expected_version: short, solutions: list(object({ id: short, name: str, req_ids: strings, scenario_ids: strings, item_ids: list(integer), design_notes: str }, ["id", "name", "req_ids", "scenario_ids", "item_ids"])) }, ["operation_id", "expected_version", "solutions"], true),

@@ -26,25 +26,24 @@
 
 ## 共享技能与按需加载
 
-十五个 Skills 对三个角色全部可见，不分配角色专属技能白名单。按具体缺口选择，表格顺序不代表调用顺序：
+十四个方法 Skills 对三个角色全部可见，不分配角色专属技能白名单。按具体缺口选择，表格顺序不代表调用顺序：
 
 | 技能 | 方法与适用范围 |
 | --- | --- |
-| pbs-requirements | 材料拆条、需求初稿、引用及全文覆盖 |
-| pbs-scenarios | 客户目标、活动、场景边界与需求关联 |
-| pbs-products | 产品匹配、能力缺口、PBS、方案及 BOM 读取 |
-| pbs-evidence | 来源、版本、连续引用和证据冲突 |
-| pbs-clarification | 未知事项、客户问题和补充影响 |
-| pbs-collaboration | 专家咨询、追问、处置及人工介入 |
-| [pbs-document-map](skills/pbs-document-map/SKILL.md) | 长标书、多附件、续表、版本关系和解析缺损 |
+| pbs-requirement-extraction | 材料拆条、需求初稿、引用及全文覆盖 |
+| pbs-scenario-modeling | 客户目标、活动、场景边界与需求关联 |
+| pbs-product-mapping | 产品匹配、能力缺口、PBS、方案及 BOM 读取 |
+| pbs-evidence-verification | 来源、版本、连续引用和证据冲突 |
+| pbs-clarification | 需要客户回答的问题、判断影响及建议补充方向 |
+| [pbs-document-map](skills/pbs-document-map/SKILL.md) | 多源材料用途、长标书、附件、版本关系和解析缺损 |
 | [pbs-requirement-quality](skills/pbs-requirement-quality/SKILL.md) | 歧义、复合要求、重复、冲突及无依据扩展 |
 | [pbs-interface-boundaries](skills/pbs-interface-boundaries/SKILL.md) | 接口语义、客户自备系统和交付/联调责任 |
-| [pbs-acceptance](skills/pbs-acceptance/SKILL.md) | 可核验条件、指标工况及验证证据 |
+| [pbs-acceptance-criteria](skills/pbs-acceptance-criteria/SKILL.md) | 可核验条件、指标工况及验证证据 |
 | [pbs-capacity-sizing](skills/pbs-capacity-sizing/SKILL.md) | 设备、容量、带宽、存储、许可与 BOM 计量 |
 | [pbs-option-analysis](skills/pbs-option-analysis/SKILL.md) | 产品组合、自研/外采路径、约束与不确定性比较 |
 | [pbs-traceability](skills/pbs-traceability/SKILL.md) | 原文到 PBS 的双向对应、漏项和假覆盖 |
-| [pbs-change-impact](skills/pbs-change-impact/SKILL.md) | 变更基准、受影响成果与确认范围 |
-| [pbs-low-altitude](skills/pbs-low-altitude/SKILL.md) | 按需选择的低空任务、机库、感知和平台专业核查 |
+| [pbs-change-impact](skills/pbs-change-impact/SKILL.md) | 已有草稿/确认成果的变更基准、影响及处理建议 |
+| [pbs-low-altitude-review](skills/pbs-low-altitude-review/SKILL.md) | 政府角色、业务对象、低空任务、运行前提和交付边界核查 |
 
 宿主为每个角色调用同一个 `pbsPreset`，挂载同一 `skills/` 目录。dsh 先将有效技能的名称、描述呈现给模型，模型通过 `skill` 按需加载正文。所有文件使用 `name`、`description` frontmatter，不关闭模型自动调用。技能目录只发现直接子目录中的 `SKILL.md`，不能自行增加角色子目录层级。
 
@@ -52,7 +51,11 @@
 
 新增技能使用当前已有业务工具，正文自包含；外部链接仅说明方法来源，不要求业务 Agent 浏览网页、执行 shell 或读取辅助文件。分析记录没有独立台账/API 的，使用本次摘要、咨询答复或实际已支持的成果字段，不能用提示词宣称新增了系统功能。行业核查单独维护，不将低空规则写死进通用角色或其他项目。
 
-当前 preset 的 `watch: false` 表示没有运行中目录热更新；新增/删除技能在下一次宿主激活重新发现，正文后续加载读取当前文件，历史已经加载的内容不会被自动改写。发布指令应在活动边界生效，不承诺正在生成中的模型即时采用新规则。
+协作的发起、等待、答复、采用及人工补充回执维护在共用 `AGENTS.md` 和协作工具契约中，始终随角色加载，不再作为可选方法技能。需求抽取、条目质量、场景建模、单条证据核验和跨成果追溯分别维护；澄清解决客户信息缺口，变更影响处理已有草稿或确认成果受到的连带变化。
+
+业务团队的政府项目方法已按职责融入：材料用途与适用关系进入文档地图，角色/对象与目标进入场景建模，确认角色和补充资料建议写入澄清的 `reason`，低空政府专业维度放在可单独替换的行业技能。沿用现有字段与来源编号，没有新增角色台账、自动派单或报告签字关卡。场景草拟属于需求理解，PBS 成果执行仍须有效人工确认。
+
+当前 preset 的 `watch: false` 表示没有运行中目录热更新；新增/删除/更名技能在下一次宿主激活重新发现；dsh 在名录变化时发布替换名录，正文后续加载读取当前文件。历史已经加载的正文不会被自动改写，跨活动继续任务须按当前名录重新加载相关方法。发布指令应在活动边界生效，不承诺正在生成中的模型即时采用新规则。
 
 ## 当前运行机制的差距
 
@@ -65,3 +68,5 @@
 宿主还需实现持久队列、事件、人工确认包、写入屏障、会话恢复与预算，不能只复制指令文件就获得完整协作行为。本地参考实现为 `collaboration-store.mjs`、`collaboration-approval.mjs`、`understanding-scope.mjs`、`collaboration-tools.mjs`、`collaboration-api.mjs` 与 `collaboration.mjs`。对话仅展示真实提交的业务问答，不展示模型内部推理。
 
 运行时、SDK 与插件版本必须兼容。项目数据及历史会话另行迁移。
+
+技能调整记录与边界核查见 [共享技能优化](../../docs/superpowers/specs/2026-10-21-skill-refinement-design.md)。`npm run check:architecture --prefix app` 同时检查角色/技能之间及行为评测资料中的失效技能引用。

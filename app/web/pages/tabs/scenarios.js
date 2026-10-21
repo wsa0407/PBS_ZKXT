@@ -6,8 +6,8 @@ import { questionLinkLabel } from "../../../shared/understanding.js";
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 const empty = () => ({ name: "", goal: "", actors: [], context: "", trigger: "", activities: [], outcomes: [], boundaries: [], assumptions: [], links: [], evidence: [], supersedes: [] });
-const textFields = { goal: "业务目标", context: "时间、地点与条件", trigger: "触发条件" };
-const arrayFields = { actors: "参与角色", outcomes: "预期结果与验收条件", boundaries: "范围、约束与依赖" };
+const textFields = Object.fromEntries(["goal", "context", "trigger"].map(field => [field, SCENARIO_FIELD_LABELS[field]]));
+const arrayFields = Object.fromEntries(["actors", "outcomes", "boundaries"].map(field => [field, SCENARIO_FIELD_LABELS[field]]));
 const dispositions = ["场景关联", "跨场景约束", "交付与服务", "商务与资质", "背景", "范围外", "待归类"];
 const typeOf = (status) => ({ 已确认: "success", 待复核: "warning", 已归档: "info", 待确认: "primary" })[status];
 

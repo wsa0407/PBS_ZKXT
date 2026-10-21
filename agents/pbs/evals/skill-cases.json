@@ -1,5 +1,5 @@
 {
-  "id": "pbs-specialist-skills-v1",
+  "id": "pbs-specialist-skills-v2",
   "description": "合成只读行为验收。expected_review 仅供评估者使用，不发送给模型。不调用生产写入工具，不代表覆盖全部技能场景。",
   "cases": [
     {
@@ -122,7 +122,7 @@
       "expected_review": {
         "skills": [
           "pbs-interface-boundaries",
-          "pbs-acceptance",
+          "pbs-acceptance-criteria",
           "pbs-change-impact"
         ],
         "checks": [
@@ -245,7 +245,7 @@
           "pbs-capacity-sizing",
           "pbs-option-analysis",
           "pbs-traceability",
-          "pbs-low-altitude"
+          "pbs-low-altitude-review"
         ],
         "checks": [
           "录像纯数据量为十进制25.92TB，不代表硬盘采购数量",
@@ -258,6 +258,70 @@
           "产品B已声明10路录制，未核实的是码率工况和实际适用性",
           "材料提到机库不等于本轮确认采购，先核对范围而非直接补采购项",
           "额外副本策略未给时不自行选数；1主加1额外完整副本为总共2份"
+        ]
+      }
+    },
+    {
+      "id": "government-multi-source-understanding",
+      "role": "understanding",
+      "goal": "请结合这批材料检查道路巡查项目的客户职责、场景边界和待补充信息。解释哪些内容已有依据、哪些只是建议，指出应找谁补充什么信息。当前需求尚未确认，可以整理场景理解草案；只做只读评审，不修改成果，不进行项目选型。",
+      "documents": [
+        {
+          "id": "material:1",
+          "title": "市级低空发展规划",
+          "text": "本市鼓励建设综合低空服务平台，探索物流配送、巡查和旅游等应用。本规划未列出本采购项目的建设清单。"
+        },
+        {
+          "id": "material:2",
+          "title": "道路巡查采购要求",
+          "text": "本项目用于道路巡查，值班中心接收异常告警，运营单位负责飞行作业，属地部门负责事件处置。异常推送客户现有工单系统，不新建事件处置平台。客户提供部署服务器。"
+        },
+        {
+          "id": "material:3",
+          "title": "访谈纪要",
+          "text": "客户希望提高夜间巡查效率。工单系统由信息中心维护，接口文档尚未提供。业务人员建议先研究自动识别，不代表已经确认新增算法采购。"
+        },
+        {
+          "id": "material:4",
+          "title": "另一县历史方案",
+          "text": "历史项目采购6套机库并自建派单处置平台。本文件仅供参考，与本项目不属于同一客户。"
+        }
+      ],
+      "requirements": [
+        {
+          "code": "R001",
+          "text": "道路巡查异常推送客户现有工单系统，不新建事件处置平台",
+          "quote": "异常推送客户现有工单系统，不新建事件处置平台",
+          "document_id": "material:2",
+          "status": "待确认",
+          "quote_verified": true
+        },
+        {
+          "code": "R002",
+          "text": "提高夜间巡查效率",
+          "quote": "客户希望提高夜间巡查效率",
+          "document_id": "material:3",
+          "status": "待确认",
+          "quote_verified": true
+        }
+      ],
+      "expected_review": {
+        "skills": [
+          "pbs-document-map",
+          "pbs-low-altitude-review",
+          "pbs-scenario-modeling",
+          "pbs-clarification"
+        ],
+        "checks": [
+          "区分值班中心、飞行运营单位、事件处置部门与信息中心，不能据采购主体推定全部职责",
+          "政策规划与历史方案不产生本项目物流、旅游、6套机库或处置平台采购需求",
+          "原文明确且引用匹配的要求仍可等待人工范围确认，不能用置信度混为一个状态",
+          "接口问题建议找信息中心提供接口文档和联调条件，不声称已经派发人员",
+          "自动识别保留为建议或待定范围，不升级为已确认算法采购",
+          "场景草拟无需额外前置确认，不因未确认就拒绝理解，也不生成PBS或项目选型",
+          "不强制逐项补齐角色表，不重复询问已经明确的处置和部署责任",
+          "没有旧成果受到修改时无需制造变更建议或加载全套变更分析",
+          "沿用实际证据定位，不补造页码、政策生效日期或审批已满足结论"
         ]
       }
     }
