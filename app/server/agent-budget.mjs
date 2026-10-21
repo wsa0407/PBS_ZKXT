@@ -28,6 +28,30 @@ export function runBudget({ scope = "agent", maxTokens, maxSteps = Infinity, tim
   };
 }
 
+// Track consecutive failures of each tool. Reading evidence between failed writes
+// must not reset a write streak; a successful submission of that tool does.
+export function validationFailureGuard(limit = 5) {
+  const failures = new Map();
+  return ({ name, result }) => {
+    const errors = [...new Set([
+      result?.error?.message,
+      ...(result?.data?.errors ?? []).map(e => e.message),
+      ...(result?.data?.ignored?.errors ?? []).map(e => e.message),
+    ].filter(Boolean))].sort();
+    if (!errors.length) {
+      if (result?.ok === true) failures.delete(name);
+      return null;
+    }
+    const signature = JSON.stringify(errors), previous = failures.get(name);
+    const count = previous?.signature === signature ? previous.count + 1 : 1;
+    failures.set(name, { signature, count });
+    if (count < limit) return null;
+    const error = new Error(`${name} 连续 ${count} 次未通过同类校验：${errors.join("；")}。已停止自动尝试，已保存成果保留。`);
+    error.code = "REPEATED_VALIDATION_FAILURE";
+    return error;
+  };
+}
+
 export const needsFreshContext = error => Boolean(error?.budget || error?.code === "BUDGET_EXHAUSTED"
   || /^(Agent运行预算已用完|协作已达到共同.*预算|本轮协作已达处理预算)/.test(error?.message ?? ""));
 

@@ -121,6 +121,33 @@ test("long source batching is lossless across bounded pages and keeps evidence i
   assert.equal(parts.join(""), original);
 });
 
+test("one full reading batch fits ignored submissions and overflow can be split without lost coverage", async () => {
+  const materialId = svc.addMaterial(id, { kind: "tender", title: "合成附件目录", text: Array.from({ length: 61 }, (_, i) => `${i + 1}.1 附件目录条目${i + 1}，此处仅为索引。`).join("\n") });
+  const document_id = `material:${materialId}`;
+  const first = (await adapter.execute("read_document_batch", { document_id })).data;
+  assert.equal(first.items.length, 60);
+  const document_version = first.document.document_version;
+  const last = (await adapter.execute("read_document_batch", { document_id, document_version, cursor: first.next_cursor })).data;
+  assert.equal(last.items.length, 1);
+  assert.equal(last.next_cursor, null);
+  const ignored = [...first.items, ...last.items].map(s => ({ evidence_id: s.evidence_id, reason: "目录索引，无实际要求" }));
+  const write = (items, operation_id) => adapter.execute("submit_requirements", { document_id, document_version, operation_id, requirements: [], ignored: items });
+  const tooLarge = await write(ignored, "oversized");
+  assert.equal(tooLarge.ok, false);
+  assert.match(tooLarge.error.message, /ignored.*60.*拆分/);
+  assert.equal(adapter.report().documents.find(d => d.document_id === document_id).processed, 0);
+  const saved = await write(ignored.slice(0, 60), "first-batch");
+  assert.equal(saved.data.ignored.accepted.length, 60);
+  assert.deepEqual(saved.data.ignored.errors, []);
+  assert.equal(saved.data.coverage.remaining, 1);
+  assert.deepEqual(await write(ignored.slice(0, 60), "first-batch"), JSON.parse(JSON.stringify(saved)));
+  const tail = await write(ignored.slice(60), "last-batch");
+  assert.equal(tail.data.coverage.processed, 61);
+  assert.equal(tail.data.coverage.remaining, 0);
+  assert.equal(tail.data.coverage.ignored_count, 61);
+  assert.deepEqual(repo.listSegments(id).filter(s => s.material_id === materialId).map(s => s.uid), ignored.map(s => s.evidence_id));
+});
+
 test("an Agent change remains a proposal until the human applies it, and stale proposals cannot apply", async () => {
   await submit([req()]);
   const out = await adapter.execute("propose_change", { operation_id: "change-1", action: { type: "edit_requirement", code: "R001", text: "支持夜间事故巡查" } });

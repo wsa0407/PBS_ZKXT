@@ -6,7 +6,7 @@ import * as svc from "../server/services.mjs";
 import { setAgentRuntimeFactory, createHarnessLlm } from "../server/agent-runner.mjs";
 import { createCollaboration, runCollaboration } from "../server/collaboration.mjs";
 import { activeJob, cancelJob, getJob, startJob } from "../server/jobs.mjs";
-import { budgetExceeded, runBudget } from "../server/agent-budget.mjs";
+import { budgetExceeded, failureNotice, runBudget, validationFailureGuard } from "../server/agent-budget.mjs";
 import * as store from "../server/collaboration-store.mjs";
 import { approval, approvalPreview, approveUnderstanding } from "../server/collaboration-approval.mjs";
 import { collaborationAdapter } from "../server/collaboration-tools.mjs";
@@ -81,6 +81,40 @@ test("budgets distinguish cumulative usage, steps and elapsed time", () => {
   time = 60000;
   assert.equal(runBudget({ ...options, clock: () => 0 }).check(), null);
   assert.equal(budget.check().code, "AGENT_TIME_LIMIT");
+});
+
+test("corrected submissions reset the failure streak, while unrelated reads cannot hide repeated failures", () => {
+  const guard = validationFailureGuard();
+  const failed = { name: "submit_requirements", result: { ok: false, error: { message: "arguments.ignored 每次最多 60 项，请拆分批次提交" } } };
+  const read = { name: "read_document_batch", result: { ok: true, data: { items: [] } } };
+  const saved = { name: failed.name, result: { ok: true, data: { accepted: [{ code: "R001" }], errors: [], ignored: { accepted: [], errors: [] } } } };
+  // The production failure alternated rejected batches with successful repairs.
+  for (let i = 0; i < 5; i++) {
+    assert.equal(guard(failed), null);
+    assert.equal(guard(read), null);
+    assert.equal(guard(saved), null);
+  }
+  for (let i = 0; i < 4; i++) {
+    assert.equal(guard(failed), null);
+    assert.equal(guard(read), null);
+  }
+  const error = guard(failed);
+  assert.equal(error.code, "REPEATED_VALIDATION_FAILURE");
+  const notice = failureNotice(error);
+  assert.ok(notice.payload.detail.includes(failed.name));
+  assert.ok(notice.payload.detail.includes(failed.result.error.message));
+  assert.equal(notice.payload.resumable, true);
+});
+
+test("ignored-item failures count even in an OK envelope, and a different failure starts a new streak", () => {
+  const guard = validationFailureGuard();
+  const partial = { name: "submit_requirements", result: { ok: true, data: { accepted: [], errors: [], ignored: { accepted: [], errors: [{ index: 0, message: "忽略必须引用真实片段并填写原因" }] } } } };
+  for (let i = 0; i < 4; i++) assert.equal(guard(partial), null);
+  assert.equal(guard({ name: partial.name, result: { ok: false, error: { message: "材料版本已变化，请重新读取" } } }), null);
+  for (let i = 0; i < 4; i++) assert.equal(guard(partial), null);
+  const error = guard(partial);
+  assert.equal(error.code, "REPEATED_VALIDATION_FAILURE");
+  assert.ok(error.message.includes(partial.result.data.ignored.errors[0].message));
 });
 
 test("token recovery starts fresh after cleanup, keeps idempotency, and permits only one automatic continuation", async () => {

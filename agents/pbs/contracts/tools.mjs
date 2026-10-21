@@ -30,7 +30,7 @@ export const TOOLS = [
   tool("list_requirements", "分页读取已保存的真实原始需求；unverified_only可只列需要修复原文引用的项。", { cursor: integer, limit: { type: "integer", minimum: 1, maximum: 50 }, unverified_only: { type: "boolean" } }),
   tool("list_scenarios", "分页读取场景全文、来源和需求映射。", { cursor: integer, limit: { type: "integer", minimum: 1, maximum: 20 } }),
   tool("list_pbs", "分页读取现有PBS明细、产品关联、数量依据和待审状态。", { cursor: integer, limit: { type: "integer", minimum: 1, maximum: 30 } }),
-  tool("submit_requirements", "校验并保存有原文依据的需求初稿，引用通过不代表人工确认；招标材料拒绝推断需求。逐项返回accepted/errors，失败项修正后用新operation_id提交，已成功项不重复提交。", { ...operation, document_id: short, document_version: short, requirements: list(requirement), ignored: list(object({ evidence_id: short, reason: str }, ["evidence_id", "reason"])) }, ["operation_id", "document_id", "document_version", "requirements"], true),
+  tool("submit_requirements", "校验并保存有原文依据的需求初稿，引用通过不代表人工确认；招标材料拒绝推断需求。每次最多30条requirements、60条ignored，超出分批提交。分别返回需求与ignored的accepted/errors，失败项修正后用新operation_id提交，已成功项不重复提交。", { ...operation, document_id: short, document_version: short, requirements: list(requirement), ignored: list(object({ evidence_id: short, reason: str }, ["evidence_id", "reason"]), 60) }, ["operation_id", "document_id", "document_version", "requirements"], true),
   tool("submit_scenarios", "新增有依据的场景，或以code、revision和完整字段更新未人工维护的草稿及需求关联；人工或已确认成果用propose_change提出edit_scenario。需求待确认不阻止草拟，场景无需单独确认。links:[{req_id,role}]；evidence:[{field_path,seg_uid,quote}]；推断放assumptions。expected_version取project_state的workspace_version或上次提交的新版本。", { ...operation, expected_version: short, scenarios: list(scenario, 12) }, ["operation_id", "expected_version", "scenarios"], true),
   tool("submit_questions", "保存影响当前判断且需客户补充的问题；可独立存在或关联真实需求/场景，不给每条需求自动建问题。reason说明判断影响及有依据的建议确认角色、补充材料方向，不自行答复或宣称已指派人员。", { ...operation, questions: list(object({ question: str, reason: str, impact: { type: "string", enum: ["影响方案", "影响报价", "影响废标风险"] }, req_ids: strings, scenario_ids: strings, field_paths: strings }, ["question", "reason", "impact"])) }, ["operation_id", "questions"], true),
   tool("read_product", "读取真实产品的能力、限制、资料和BOM组成。", { product_id: short }, ["product_id"]),
@@ -59,7 +59,8 @@ export function validateArguments(schema, value, path = "arguments") {
       else if (schema.additionalProperties === false) throw new Error(`${path}.${key} 不允许`);
     }
   } else if (schema.type === "array") {
-    if (!Array.isArray(value) || value.length > (schema.maxItems ?? Infinity)) throw new Error(`${path} 数组无效或过大`);
+    if (!Array.isArray(value)) throw new Error(`${path} 必须为数组`);
+    if (value.length > (schema.maxItems ?? Infinity)) throw new Error(`${path} 每次最多 ${schema.maxItems} 项，请拆分批次提交`);
     value.forEach((v, i) => validateArguments(schema.items, v, `${path}[${i}]`));
   } else if (schema.type === "string") {
     if (typeof value !== "string" || value.length < (schema.minLength ?? 0) || value.length > (schema.maxLength ?? Infinity)) throw new Error(`${path} 文本无效`);
