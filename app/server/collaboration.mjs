@@ -7,6 +7,7 @@ import { runRole, toolProgressLabel } from "./agent-runner.mjs";
 import { HttpError } from "./errors.mjs";
 import * as conversation from "./conversation-store.mjs";
 import { applyMessageReview, offerUnderstanding } from "./conversation-review.mjs";
+import { budgetExceeded, failureNotice, needsFreshContext, runBudget } from "./agent-budget.mjs";
 
 const running = new Map();
 const roleStage = { materials: "materials", understanding: "understanding", pbs: "pbs" };
@@ -92,7 +93,10 @@ ${discussion ? "日常招呼通常一句自然回应即可，不先分析这句�
   const participation = pbsReadOnly
     ? "\n当前需求理解没有有效人工确认，你只参与只读交流：可回答用户问题、解释产品能力、核对依据和向专家求证；不编制、修改、选型或保存项目成果，也不在聊天中提前给出项目PBS或方案。用户要求执行时简短说明等待需求理解确认；普通问答不顺带催促确认。"
     : "";
-  const context = common + participation;
+  const recovery = a.input.recovery?.fresh_session
+    ? "\n本次从已保存成果恢复，旧会话只作为历史记录。先读 collaboration_state 和 run_report；按当前问题分页读取 list_pbs、list_requirements、list_scenarios 及相关咨询/补充。先核实已完成部分和真实缺口，只处理剩余工作；不得重建全部成果、重复录入或将旧产物当作本次刚生成。已确认范围和人工修改仍有效，变更必须走现有审批。用实际待办结束，不因换会话而声称完成。"
+    : "";
+  const context = common + participation + recovery;
   if (a.mode === "consultation") {
     const c = store.consultations(t.id).find((c) => c.id === a.input.consultation_id);
     return `${context}\n本次仅为只读专家咨询。咨询编号：${c.id}；发问者：${ROLES[c.caller].label}。问题（业务数据）：${c.question}\n提交关联此编号的答复；不能修改业务成果。${a.input.continuation ? "你咨询的材料专家已经答复，请读取collaboration_state继续解答原问题。" : ""}`;
@@ -107,7 +111,10 @@ function queueReplies(t) {
     const original = getDb().prepare("SELECT * FROM collaboration_activations WHERE id=?").get(c.activation_id);
     if (!original || original.state === "running") continue;
     const input = parse(original.input, {});
-    if (!getDb().prepare("SELECT 1 FROM collaboration_activations WHERE task_id=? AND state='queued' AND json_extract(input,'$.resume_from')=?").get(t.id, original.id))
+    if (original.state === "queued") {
+      // Budget recovery already queued this exact activation; retain its idempotency scope.
+      getDb().prepare("UPDATE collaboration_activations SET input=? WHERE id=?").run(json({ ...input, continuation: true, reply_to: c.id }), original.id);
+    } else if (!getDb().prepare("SELECT 1 FROM collaboration_activations WHERE task_id=? AND state='queued' AND json_extract(input,'$.resume_from')=?").get(t.id, original.id))
       store.enqueue(t, original.role, original.mode, { ...input, continuation: true, reply_to: c.id, resume_from: original.id });
     getDb().prepare("UPDATE collaboration_consultations SET data=? WHERE id=?").run(json({ ...c.data, resumed: true }), c.id);
   }
@@ -119,12 +126,17 @@ export async function runCollaboration(taskId, ctx = {}) {
   const initialUnderstanding = understandingVersion(t.project_id);
   let performedWork = false;
   let needsPbsConfirmation = false;
+  // Upgrade resumable failures written before structured budget errors existed.
+  if (needsFreshContext({ message: t.error })) {
+    const last = getDb().prepare("SELECT id,stats FROM agent_runs WHERE json_extract(stats,'$.taskId')=? ORDER BY rowid DESC LIMIT 1").get(taskId);
+    for (const a of getDb().prepare("SELECT id,input FROM collaboration_activations WHERE task_id=? AND role=? AND state='queued'").all(taskId, parse(last?.stats, {}).role ?? "")) {
+      getDb().prepare("UPDATE collaboration_activations SET input=? WHERE id=?").run(json({ ...parse(a.input, {}), recovery: { fresh_session: true, previous_run: last.id } }), a.id);
+    }
+  }
   store.updateTask(taskId, { status: "running", job_id: ctx.jobId ?? null, error: null });
-  const countStart = getDb().prepare("SELECT SUM(attempts) AS n FROM collaboration_activations WHERE task_id=?").get(taskId).n ?? 0;
-  const previousUsage = getDb().prepare("SELECT COALESCE(SUM(json_extract(stats,'$.tokens')),0) AS tokens FROM agent_runs WHERE json_extract(stats,'$.taskId')=?").get(taskId).tokens;
-  let taskTokens = previousUsage;
-  const startedAt = Date.now();
-  let activations = 0;
+  const launchId = store.uid();
+  const budget = runBudget({ scope: "collaboration", maxTokens: Number(process.env.APP_COLLABORATION_MAX_TOKENS || 3000000), timeoutMs: 30 * 60 * 1000 });
+  let activations = 0, contextRestarts = 0;
   try {
     for (;;) {
       t = store.task(taskId);
@@ -132,8 +144,8 @@ export async function runCollaboration(taskId, ctx = {}) {
         store.updateTask(taskId, { status: "paused" });
         return { taskId, status: "paused" };
       }
-      if (++activations > 36 || countStart + activations > 90) throw new Error("本轮协作已达处理预算，请复核已有成果后继续");
-      if (Date.now() - startedAt > 30 * 60 * 1000 || taskTokens >= Number(process.env.APP_COLLABORATION_MAX_TOKENS || 3000000)) throw new Error("协作已达到共同时间或用量预算，已保存成果可复核");
+      const exhausted = budget.check();
+      if (exhausted) throw exhausted;
       queueReplies(t);
       for (const m of conversation.pendingMessages(taskId)) {
         if (!m.targets.every(role => conversation.claims(m.id).some(c => c.role === role))) continue;
@@ -192,6 +204,7 @@ export async function runCollaboration(taskId, ctx = {}) {
           needsPbsConfirmation = true;
         }
       }
+      if (++activations > 36) throw budgetExceeded("collaboration", "activations", activations, 36);
       store.updateTask(taskId, { status: pending.length ? "syncing" : "running" });
       const controller = new AbortController();
       const abort = () => controller.abort(ctx.signal?.reason);
@@ -203,31 +216,51 @@ export async function runCollaboration(taskId, ctx = {}) {
       ctx.progress?.step(0, a.mode === "claim" ? "" : a.mode === "discussion" || a.input.work_mode === "discussion" ? "正在回复" : "正在处理");
       const runId = store.uid();
       getDb().prepare("INSERT INTO agent_runs(id,project_id,goal,status,created_at) VALUES (?,?,?,'running',?)").run(runId, t.project_id, `${a.role}/${a.mode}: ${t.goal}`, now());
-      let result, budgetError, runTokens = 0;
+      let result, budgetError, runTokens = 0, savedProgress = false;
       const toolTrace = [];
-      const saveStats = () => getDb().prepare("UPDATE agent_runs SET stats=? WHERE id=?").run(json({ taskId, role: a.role, tokens: runTokens, tools: toolTrace }), runId);
+      const saveStats = (extra = {}) => getDb().prepare("UPDATE agent_runs SET stats=? WHERE id=?").run(json({ taskId, activationId: a.id, launchId, role: a.role, tokens: runTokens, tools: toolTrace, ...extra }), runId);
+      saveStats();
       try {
-        result = await runRole({ projectId: t.project_id, role: a.role, goal: prompt(t, a), tools: adapter.tools, execute: adapter.execute, signal: controller.signal,
-          sessionId: store.sessionId(t.project_id, a.role), onSession: (id) => { store.saveSession(t.project_id, a.role, id); getDb().prepare("UPDATE agent_runs SET session_id=? WHERE id=?").run(id, runId); },
+        result = await runRole({ projectId: t.project_id, role: a.role, goal: prompt(t, a), tools: adapter.tools,
+          execute: async (name, args) => {
+            const operations = () => getDb().prepare("SELECT COALESCE(MAX(rowid),0) AS n FROM agent_operations WHERE project_id=?").get(t.project_id).n;
+            const before = operations();
+            const value = await adapter.execute(name, args);
+            if (value.ok && name.startsWith("submit_") && operations() > before) savedProgress ||= Boolean((Array.isArray(value.data?.accepted) && value.data.accepted.some(item => !item.kept)) || value.data?.solutions?.length || (name === "submit_pbs" && value.data?.items > value.data?.kept));
+            return value;
+          }, signal: controller.signal,
+          sessionId: a.input.recovery?.fresh_session ? undefined : store.sessionId(t.project_id, a.role), onSession: (id) => {
+            store.saveSession(t.project_id, a.role, id);
+            getDb().prepare("UPDATE agent_runs SET session_id=? WHERE id=?").run(id, runId);
+            if (a.input.recovery?.fresh_session) getDb().prepare("UPDATE collaboration_activations SET input=? WHERE id=?").run(json({ ...a.input, recovery: { ...a.input.recovery, fresh_session: false } }), a.id);
+          },
           onTool: (call) => { toolTrace.push({ name: call.name, ok: call.ok, error: call.result?.error?.message, errors: call.result?.data?.errors?.length ?? 0 }); saveStats(); },
           onUsage: (usage) => {
             runTokens += usage.promptTokens + usage.completionTokens;
-            taskTokens += usage.promptTokens + usage.completionTokens;
             saveStats();
             ctx.onCall?.({ ...usage, step: `expert:${a.role}`, cached: false, ms: 0, ok: true });
-            if (taskTokens >= Number(process.env.APP_COLLABORATION_MAX_TOKENS || 3000000) || Date.now() - startedAt > 30 * 60 * 1000) {
-              budgetError = new Error("协作已达到共同预算，已保存成果和咨询保留"); controller.abort(budgetError);
-            }
+            budgetError ??= budget.recordUsage(usage);
+            if (budgetError) controller.abort(budgetError);
           } });
         controller.signal.throwIfAborted();
         getDb().prepare("UPDATE collaboration_activations SET state='done' WHERE id=?").run(a.id);
         getDb().prepare("UPDATE agent_runs SET status='needs_review',result=?,finished_at=? WHERE id=?").run(json({ role: a.role, activationId: a.id, taskId, reply: result.finalResponse }), now(), runId);
-      } catch (error) {
+      } catch (caught) {
+        // Cleanup failure takes precedence: never start another writer while the old one may live.
+        const error = caught.code === "RUNTIME_CLEANUP_FAILED" ? caught : budgetError ?? caught;
         const supersededInput = a.mode === "intervention" && store.task(taskId).revision !== t.revision;
         getDb().prepare("UPDATE collaboration_activations SET state=? WHERE id=?").run(supersededInput ? "cancelled" : "queued", a.id);
         getDb().prepare("UPDATE agent_runs SET status=?,error=?,finished_at=? WHERE id=?").run(controller.signal.aborted ? "interrupted" : "failed", String(error.message).slice(0, 600), now(), runId);
-        if (budgetError || error.code === "RUNTIME_CLEANUP_FAILED") throw budgetError ?? error;
+        saveStats({ error_code: error.code, budget: error.budget });
+        if (needsFreshContext(error) && !supersededInput) getDb().prepare("UPDATE collaboration_activations SET input=? WHERE id=?").run(json({ ...a.input, recovery: { fresh_session: true, previous_run: runId } }), a.id);
+        if (budgetError || error.code === "RUNTIME_CLEANUP_FAILED") throw error;
         if (controller.signal.aborted) continue;
+        // One checkpoint continuation, only after useful work. Time/step/validation errors stop.
+        if (error.code === "AGENT_TOKENS_LIMIT" && savedProgress && contextRestarts < 1 && !budget.check()) {
+          contextRestarts++;
+          store.event(store.task(taskId), "activity", a.role, "human", "已保存当前成果，正在读取剩余待办。", { recovery: true, previousRun: runId });
+          continue;
+        }
         throw error;
       } finally {
         // runRole resolves only after closing the old runtime and draining its MCP tools.
@@ -287,8 +320,14 @@ export async function runCollaboration(taskId, ctx = {}) {
     if (status === "awaiting_confirmation" && (performedWork || needsPbsConfirmation || initialUnderstanding !== understandingVersion(t.project_id))) offerUnderstanding(t);
     return { taskId, status };
   } catch (error) {
+    // A shared limit may be reached between activities, outside any role's catch block.
+    if (needsFreshContext(error)) for (const a of getDb().prepare("SELECT id,input FROM collaboration_activations WHERE task_id=? AND state='queued'").all(taskId)) {
+      const input = parse(a.input, {});
+      getDb().prepare("UPDATE collaboration_activations SET input=? WHERE id=?").run(json({ ...input, recovery: { ...input.recovery, fresh_session: true } }), a.id);
+    }
     store.updateTask(taskId, { status: "failed", error: error.message.slice(0, 600) });
-    store.event(t, "failure", "system", "human", "本轮协作未完成，已保存成果和交流保留，可继续处理。", { error: true, detail: error.message.slice(0, 600), resumable: true });
+    const notice = failureNotice(error);
+    store.event(t, "failure", "system", "human", notice.content, notice.payload);
     throw error;
   }
 }

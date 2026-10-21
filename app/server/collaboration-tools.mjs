@@ -12,6 +12,7 @@ import { approval, assertApproval, pbsParticipation, understandingVersion } from
 import * as conversation from "./conversation-store.mjs";
 import { latestReview, review, validateReviewReply, offerChange, offerUnderstanding } from "./conversation-review.mjs";
 import { changeVersion } from "./chat.mjs";
+import { confirmationIndex } from "./agent-context.mjs";
 
 const fail = (message) => { throw new Error(message); };
 export function collaborationAdapter(t, activation, { signal, onProgress } = {}) {
@@ -72,7 +73,7 @@ export function collaborationAdapter(t, activation, { signal, onProgress } = {})
         review_request: mode === "claim" ? review(conversation.message(activation.input.message_id)?.data.reviewId) : latestReview(t.project_id),
         capabilities: { business_tools: businessTools(live).map((tool) => tool.name),
           consultation_targets: mode === "claim" ? [] : ROLES[role].consult.map((target) => ({ role: target, label: ROLES[target].label })) },
-        confirmation: participation.can_execute ? approval(live.approval_id, t.project_id) : null, consultations: store.consultations(t.id), interventions: store.interventions(t.id),
+        confirmation: participation.can_execute ? confirmationIndex(approval(live.approval_id, t.project_id)) : null, consultations: store.consultations(t.id), interventions: store.interventions(t.id),
         rules: "只能使用实际工具答复。等待专家时结束本次活动，宿主将恢复。人工补充先read_interventions再处理。" };
     },
     respond_to_message(args) {

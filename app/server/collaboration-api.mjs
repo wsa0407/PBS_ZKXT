@@ -107,7 +107,7 @@ export function resumeProject(projectId) {
   const t = store.latestTask(projectId);
   if (!t || !["paused", "failed"].includes(t.status)) throw new HttpError(409, "当前没有可继续的协作任务");
   if (activeJob(projectId)) throw new HttpError(409, "正在结束上一次运行，请稍后继续");
-  store.event(t, "resume", "system", "human", "继续处理，先核对尚未处理的人工补充。", {});
+  store.event(t, "activity", "system", "human", store.pendingInputs(t.id).length ? "正在核对待处理的补充。" : "正在读取已保存成果与剩余待办。", { resumed: true });
   return launch(t);
 }
 export { approvalPreview };

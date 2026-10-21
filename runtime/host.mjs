@@ -28,6 +28,8 @@ export async function createHost({ home, endpoint, token, model, baseURL, apiKey
     { id: "llm-pi-ai", config: { providers: { bai: provider } } },
     { id: "system-prompt", config: { personaPrefix: "", includeHarnessIdentity: false, includeRuntimeContext: false } },
     { id: "sdk-jsonrpc-server", config: { maxTokensAsSuccess: false } },
+    // Compact well before the 262k context window fills; repeated history also consumes the run budget.
+    { id: "compaction-basic", config: { auto: true, thresholdRatio: 0.2, retainTokens: 12000, headroomTokens: 16000, maxTokens: 4000, compactionRetries: 1, maxOverflowRetries: 1 } },
     { id: "tool-result-pruner", config: { thresholdChars: 24000, headChars: 20000, tailChars: 2000 } },
     { insert: [
       { id: "pbs-preset-registry", name: "@deepseek-ai/dsh-agent-preset-registry", config: { default: "pbs" } },
