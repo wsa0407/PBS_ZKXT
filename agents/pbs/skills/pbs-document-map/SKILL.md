@@ -23,7 +23,7 @@ description: 盘点长文档或多源材料的阅读范围、来源用途、版�
 
 ## 覆盖与交付
 
-完整拆解沿 next_cursor 读取到结束，携带返回的 document_version，结合 run_report 核对未处理片段。检索用于定位，不代替全文覆盖；材料更新后按新版本复核相关部分。
+完整拆解或恢复时，用 read_document_batch 的 unprocessed_only:true 读取未处理部分，按批保存处理结果，再沿 next_cursor 与 document_version 继续；run_report 的 next_unprocessed_cursor 可定位最早遗漏或跨批未完成的位置，不必从头逐页寻找。局部上下文用 read_evidence 回查；检索用于定位，不代替全文覆盖。材料更新后按新版本复核相关部分，旧版本的处理记录不能证明新材料已处理。
 
 交付阅读范围、已处理/待处理章节、附件关联、冲突和解析缺口，引用真实来源。只有有写权限的活动才能提交需求或 ignored 记录；解析缺损不能用 ignored 消除。导航结果可以写入本次 finish_task 的摘要与待办；咨询用 submit_expert_answer，不虚构“文档地图保存接口”。
 

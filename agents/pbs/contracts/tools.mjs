@@ -24,7 +24,7 @@ const pbsItem = object({ name: str, parent: short, source: { type: "string", enu
 export const TOOLS = [
   tool("project_state", "开展业务分析或执行前读取绑定项目的真实状态、材料目录、参数字典、成果版本和业务分组；简单问候无需调用。", {}),
   tool("list_document_sections", "分页枚举指定材料的原文片段与处理状态；不能以Top-K替代全文覆盖。", { document_id: short, cursor: integer, limit: { type: "integer", minimum: 1, maximum: 30 } }, ["document_id"]),
-  tool("read_document_batch", "按原文顺序批量读取片段。后续分页携带上页document_version和next_cursor。完整拆解优先用此工具。", { document_id: short, document_version: short, cursor: short, limit: { type: "integer", minimum: 1, maximum: 60 } }, ["document_id"]),
+  tool("read_document_batch", "顺序读取材料；完整拆解或恢复时用unprocessed_only:true跳过当前版本已处理片段，按批保存后再继续。起点可用run_report的next_unprocessed_cursor；后续原样携带document_version与next_cursor，不用来源编号或猜测数字作游标。需要复核已处理原文时用read_evidence或unprocessed_only:false。", { document_id: short, document_version: short, cursor: short, unprocessed_only: { type: "boolean" }, limit: { type: "integer", minimum: 1, maximum: 60 } }, ["document_id"]),
   tool("read_evidence", "按稳定来源ID读取原文及相邻片段，核对版本。", { evidence_id: short, document_version: short, neighbors: { type: "integer", minimum: 0, maximum: 3 } }, ["evidence_id"]),
   tool("search_evidence", "检索项目材料或公司产品知识，命中不是完整覆盖证明。", { query: str, domain: { type: "string", enum: ["materials", "products"] }, limit: { type: "integer", minimum: 1, maximum: 12 } }, ["query", "domain"]),
   tool("list_requirements", "分页读取已保存的真实原始需求；unverified_only可只列需要修复原文引用的项。", { cursor: integer, limit: { type: "integer", minimum: 1, maximum: 50 }, unverified_only: { type: "boolean" } }),

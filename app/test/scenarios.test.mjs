@@ -279,7 +279,8 @@ test("v2 databases migrate without losing reviewed requirements, materials or PB
     repo.insertRequirement(oldProject, { text: "保留人工成果", category: "功能", priority: "重要", status: "已确认", edited: true });
     const oldItem = svc.saveItem(oldProject, null, { parent: "1", name: "历史确认交付", source: "服务", req_ids: ["R001"], qty: 5 });
     svc.confirmItems(oldProject, [oldItem]);
-    for (const [table, column] of [["pbs_items", "reviewed"], ["pbs_items", "scenario_ids"], ["requirements", "revision"], ["requirements", "retired"], ["requirements", "answer_evidence"], ["questions", "scenario_ids"], ["questions", "field_paths"], ["chunks", "active"]]) getDb().exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+    getDb().prepare("INSERT INTO agent_coverage(project_id,evidence_id,document_version,status,reason) VALUES (?,?,?,?,?)").run(oldProject, "M1:legacy", "legacy-version", "ignored", "历史目录处理记录");
+    for (const [table, column] of [["pbs_items", "reviewed"], ["pbs_items", "scenario_ids"], ["requirements", "revision"], ["requirements", "retired"], ["requirements", "answer_evidence"], ["questions", "scenario_ids"], ["questions", "field_paths"], ["chunks", "active"], ["agent_coverage", "processed_until"]]) getDb().exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
     getDb().exec("DROP TABLE source_snapshots; UPDATE meta SET value = '2' WHERE key = 'schema'");
     resetDb(file);
     assert.equal(repo.getRequirement(oldProject, "R001").text, "保留人工成果");
@@ -288,7 +289,11 @@ test("v2 databases migrate without losing reviewed requirements, materials or PB
     assert.equal(repo.getItem(oldProject, oldItem).qty, 5);
     assert.equal(repo.getItem(oldProject, oldItem).confirmed, true);
     assert.equal(repo.getItem(oldProject, oldItem).reviewed, true);
-    assert.equal(getDb().prepare("SELECT value FROM meta WHERE key = 'schema'").get().value, "7");
+    assert.equal(getDb().prepare("SELECT value FROM meta WHERE key = 'schema'").get().value, "8");
+    const coverage = getDb().prepare("SELECT * FROM agent_coverage WHERE project_id=?").get(oldProject);
+    assert.equal(coverage.status, "ignored");
+    assert.equal(coverage.reason, "历史目录处理记录");
+    assert.equal(coverage.processed_until, null);
     assert.equal(scenes.listScenarios(oldProject).length, 0);
   } finally { resetDb(":memory:"); rmSync(dir, { recursive: true, force: true }); }
 });

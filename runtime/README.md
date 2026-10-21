@@ -23,14 +23,17 @@ BAI 与 embedding 沿用仓库根目录 `.env`。密钥仅从环境注入子进�
 ```sh
 node runtime/scripts/smoke.mjs --live
 node app/scripts/verify-harness.mjs --live
+node app/scripts/verify-material-resume.mjs --live
 # 仅为合成测试材料明确授权 PBS 编制：
 node app/scripts/verify-harness.mjs --live --approve-test-scope
 ```
 
-这两个命令必须显式提供 `--live`，会真实调用已配置的 BAI。前者验证工具错误恢复与持久会话；后者走当前协作入口，在合成材料上验证需求、场景和人工确认前不生成 PBS。只有追加 `--approve-test-scope` 才确认本次合成范围并继续 PBS。业务验收脚本始终创建独立临时数据库，不支持向实际项目数据库注入测试数据。离线检查使用 `npm run check --prefix app`。
+这些命令必须显式提供 `--live`，会真实调用已配置的 BAI。smoke 验证工具错误恢复与持久会话；verify-harness 走当前协作入口，在合成材料上验证需求、场景和人工确认前不生成 PBS。只有追加 `--approve-test-scope` 才确认本次合成范围并继续 PBS。verify-material-resume 验证新会话只处理合成材料中的剩余片段，保护已有人工成果，使用较小的独立运行预算。业务验收脚本始终创建独立临时数据库，不支持向实际项目数据库注入测试数据。离线检查使用 `npm run check --prefix app`。
 
 应用层通过 `collaboration_*` 和 `conversation_*` 表保存活动、角色会话、咨询、收件与认领；`agent_operations` 和 `agent_coverage` 保存幂等结果及材料处理记录。`agent_runs` 继续记录当前每次角色活动的状态、会话及 token 用量，并保留旧运行记录。取消执行先关闭 dsh、阻止后续写入并等待在途工具结束，再结束项目任务锁。
 
 默认限制每次角色运行 15 分钟、160 个模型步骤、100 万累计 token；同一工具连续 5 次出现相同校验错误时停止尝试，该工具提交成功后清零，其他工具的成功调用不影响计数。每次用户发起的协作运行另设 30 分钟、36 次活动和 300 万累计 token 上限。内部续接共享这份预算；用户明确继续会启动新一轮预算，历史用量仍按 `agent_runs.stats.launchId` 保留。可以通过 `.env.example` 中的参数调整 token 和角色运行限制。
 
 `compaction-basic` 在配置窗口约 20% 的上下文压力下压缩历史（保留最近 12,000 token，摘要最多 4,000 token）；摘要报告的用量也计入运行预算。模型通过确认范围索引与分页工具按需读取资料，审批原始快照不裁剪。角色 token 额度耗尽且确有新成果保存时，关闭旧会话后最多自动续接一次，从保存结果重建上下文，operation_id 作用域不变。其他错误或整轮预算耗尽停止自动尝试，明确显示原因；用户继续后仍需通过现有权限与版本检查。达到预算不标记业务项目完成。
+
+材料恢复直接使用 `run_report.next_unprocessed_cursor` 和 `read_document_batch(unprocessed_only:true)`；按批保存后继续，跨批片段的位置由 `agent_coverage.processed_until` 持久化。新增的非需求处理覆盖也算有效进展，读取或重放已保存操作不算。无需为了恢复上下文先遍历所有已保存需求或从第一页寻找位置。

@@ -94,7 +94,7 @@ ${discussion ? "日常招呼通常一句自然回应即可，不先分析这句�
     ? "\n当前需求理解没有有效人工确认，你只参与只读交流：可回答用户问题、解释产品能力、核对依据和向专家求证；不编制、修改、选型或保存项目成果，也不在聊天中提前给出项目PBS或方案。用户要求执行时简短说明等待需求理解确认；普通问答不顺带催促确认。"
     : "";
   const recovery = a.input.recovery?.fresh_session
-    ? "\n本次从已保存成果恢复，旧会话只作为历史记录。先读 collaboration_state 和 run_report；按当前问题分页读取 list_pbs、list_requirements、list_scenarios 及相关咨询/补充。先核实已完成部分和真实缺口，只处理剩余工作；不得重建全部成果、重复录入或将旧产物当作本次刚生成。已确认范围和人工修改仍有效，变更必须走现有审批。用实际待办结束，不因换会话而声称完成。"
+    ? "\n本次从已保存成果恢复，旧会话只作为历史记录。先读 collaboration_state 和 run_report，只处理剩余工作；按当前问题读取相关成果和咨询，不为恢复上下文遍历全部已保存结果。材料剩余工作用read_document_batch的unprocessed_only:true和run_report返回的next_unprocessed_cursor、document_version读取，按批保存后再继续；不能连续通读全文而不保存本批处理结果。相关原文复核用read_evidence。不得重建全部成果、重复录入或将旧产物当作本次刚生成。已确认范围和人工修改仍有效，变更必须走现有审批。用实际待办结束，不因换会话而声称完成。"
     : "";
   const context = common + participation + recovery;
   if (a.mode === "consultation") {
@@ -226,7 +226,7 @@ export async function runCollaboration(taskId, ctx = {}) {
             const operations = () => getDb().prepare("SELECT COALESCE(MAX(rowid),0) AS n FROM agent_operations WHERE project_id=?").get(t.project_id).n;
             const before = operations();
             const value = await adapter.execute(name, args);
-            if (value.ok && name.startsWith("submit_") && operations() > before) savedProgress ||= Boolean((Array.isArray(value.data?.accepted) && value.data.accepted.some(item => !item.kept)) || value.data?.solutions?.length || (name === "submit_pbs" && value.data?.items > value.data?.kept));
+            if (value.ok && name.startsWith("submit_") && operations() > before) savedProgress ||= Boolean((Array.isArray(value.data?.accepted) && value.data.accepted.some(item => !item.kept || item.advanced)) || value.data?.ignored?.accepted?.some(item => item.advanced) || value.data?.solutions?.length || (name === "submit_pbs" && value.data?.items > value.data?.kept));
             return value;
           }, signal: controller.signal,
           sessionId: a.input.recovery?.fresh_session ? undefined : store.sessionId(t.project_id, a.role), onSession: (id) => {

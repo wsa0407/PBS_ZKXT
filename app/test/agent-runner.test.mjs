@@ -146,6 +146,33 @@ test("token recovery starts fresh after cleanup, keeps idempotency, and permits 
   assert.equal(failure.payload.budget.used, 1000010);
 });
 
+test("new ignored coverage permits a checkpoint continuation that reads only the remaining work", async () => {
+  const materialId = svc.addMaterial(id, { title: "合成目录", text: "1.1 合成附件目录条目一。\n1.2 合成附件目录条目二。" });
+  const document_id = `material:${materialId}`;
+  let turns = 0, firstId;
+  const t = createCollaboration(id, { role: "materials", goal: "处理合成目录" });
+  setAgentRuntimeFactory(async o => {
+    turns++;
+    assert.equal(o.sessionId, undefined);
+    o.onSession(`coverage-session-${turns}`);
+    const report = (await o.execute("run_report", {})).data.documents.find(d => d.document_id === document_id);
+    const batch = (await o.execute("read_document_batch", { document_id, document_version: report.document_version, cursor: report.next_unprocessed_cursor, unprocessed_only: true, limit: 1 })).data;
+    if (turns === 1) firstId = batch.items[0].evidence_id;
+    else assert.notEqual(batch.items[0].evidence_id, firstId);
+    const args = { document_id, document_version: report.document_version, operation_id: `coverage-${turns}`, requirements: [], ignored: batch.items.map(s => ({ evidence_id: s.evidence_id, reason: "附件目录，无实际要求" })) };
+    assert.equal((await o.execute("submit_requirements", args)).data.ignored.accepted[0].advanced, true);
+    if (turns === 1) {
+      o.onUsage({ model: "mock", promptTokens: 1000000, completionTokens: 10 });
+      throw budgetExceeded("agent", "tokens", 1000010, 1000000);
+    }
+    assert.equal((await o.execute("run_report", {})).data.documents.find(d => d.document_id === document_id).remaining, 0);
+    return { finalResponse: "合成目录已核对。" };
+  });
+  await runCollaboration(t.id);
+  assert.equal(turns, 2);
+  assert.equal(repo.listRequirements(id).length, 0);
+});
+
 test("shared budget stops continuation; explicit resume retains usage history and rechecks PBS approval", async () => {
   const savedLimit = process.env.APP_COLLABORATION_MAX_TOKENS;
   process.env.APP_COLLABORATION_MAX_TOKENS = "100";

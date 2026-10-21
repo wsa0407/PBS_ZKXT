@@ -148,6 +148,49 @@ test("one full reading batch fits ignored submissions and overflow can be split 
   assert.deepEqual(repo.listSegments(id).filter(s => s.material_id === materialId).map(s => s.uid), ignored.map(s => s.evidence_id));
 });
 
+test("pending reading resumes from the earliest hole, skips saved work, and is bound to the document version", async () => {
+  const materialId = svc.addMaterial(id, { kind: "tender", title: "恢复测试", text: Array.from({ length: 4 }, (_, i) => `${i + 1}.1 合成目录索引条目${i + 1}。`).join("\n") });
+  const document_id = `material:${materialId}`;
+  const initial = (await adapter.execute("read_document_batch", { document_id })).data;
+  const document_version = initial.document.document_version;
+  assert.equal(initial.items.length, 4);
+  const saved = await adapter.execute("submit_requirements", { document_id, document_version, operation_id: "save-alternate", requirements: [], ignored: [initial.items[0], initial.items[2]].map(s => ({ evidence_id: s.evidence_id, reason: "目录索引" })) });
+  assert.equal(saved.data.coverage.next_unprocessed_cursor, "1:0");
+  adapter = localAgentAdapter(id);
+  const remaining = (await adapter.execute("read_document_batch", { document_id, document_version, cursor: saved.data.coverage.next_unprocessed_cursor, unprocessed_only: true })).data;
+  assert.deepEqual(remaining.items.map(s => s.evidence_id), [initial.items[1].evidence_id, initial.items[3].evidence_id]);
+  const retry = (await adapter.execute("read_document_batch", { document_id, unprocessed_only: true })).data;
+  assert.deepEqual(retry.items, remaining.items); // Reading alone is not processing.
+  const reread = (await adapter.execute("read_document_batch", { document_id, unprocessed_only: false })).data;
+  assert.deepEqual(reread.items, initial.items);
+  getDb().prepare("UPDATE materials SET text=text||'补充版本' WHERE id=?").run(materialId);
+  assert.equal((await adapter.execute("read_document_batch", { document_id, document_version, cursor: "1:0", unprocessed_only: true })).error.code, "VERSION_CONFLICT");
+  assert.equal((await adapter.execute("read_document_batch", { document_id, unprocessed_only: true })).data.items.length, 4);
+});
+
+test("fresh adapters resume partial sources without losing short tails or long source text", async () => {
+  const materialId = svc.addMaterial(id, { title: "跨批恢复", text: "1.1 合成附件说明一。\n1.2 合成附件说明二。\n1.3 合成附件说明三。" });
+  const sources = repo.listSegments(id).filter(s => s.material_id === materialId);
+  assert.equal(sources.length, 3);
+  const texts = ["甲".repeat(5500), "乙".repeat(1000), "丙".repeat(13200)];
+  sources.forEach((s, i) => getDb().prepare("UPDATE segments SET text=? WHERE project_id=? AND uid=?").run(texts[i], id, s.uid));
+  const document_id = `material:${materialId}`, parts = new Map(sources.map(s => [s.uid, ""]));
+  for (let batch = 0; batch < 4; batch++) {
+    adapter = localAgentAdapter(id);
+    const before = adapter.report().documents.find(d => d.document_id === document_id);
+    const data = (await adapter.execute("read_document_batch", { document_id, document_version: before.document_version, cursor: before.next_unprocessed_cursor, unprocessed_only: true })).data;
+    data.items.forEach(s => parts.set(s.evidence_id, parts.get(s.evidence_id) + s.text));
+    assert.equal(adapter.report().documents.find(d => d.document_id === document_id).next_unprocessed_cursor, before.next_unprocessed_cursor);
+    const result = await adapter.execute("submit_requirements", { document_id, document_version: before.document_version, operation_id: `partial-${batch}`, requirements: [], ignored: data.items.map(s => ({ evidence_id: s.evidence_id, reason: "合成附件，无实质要求" })) });
+    assert.equal(result.data.ignored.errors.length, 0);
+    if (batch === 0) assert.equal(result.data.coverage.next_unprocessed_cursor, "1:500");
+  }
+  assert.deepEqual(sources.map(s => parts.get(s.uid)), texts);
+  adapter = localAgentAdapter(id);
+  assert.equal(adapter.report().documents.find(d => d.document_id === document_id).remaining, 0);
+  assert.equal((await adapter.execute("read_document_batch", { document_id, unprocessed_only: true })).data.items.length, 0);
+});
+
 test("an Agent change remains a proposal until the human applies it, and stale proposals cannot apply", async () => {
   await submit([req()]);
   const out = await adapter.execute("propose_change", { operation_id: "change-1", action: { type: "edit_requirement", code: "R001", text: "支持夜间事故巡查" } });

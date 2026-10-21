@@ -296,8 +296,9 @@ function serveStatic(res, pathname) {
   serveFile(res, join(webDir, "index.html"));
 }
 
-export function createServer() {
+export function createServer({ ready = () => true } = {}) {
   return http.createServer(async (req, res) => {
+    if (!ready()) return send(res, 503, { error: "服务正在初始化，请稍后重试" });
     const url = new URL(req.url, "http://localhost");
     const pathname = decodeURIComponent(url.pathname);
     try {
@@ -334,18 +335,30 @@ export function createServer() {
 }
 
 export async function boot({ port = Number(process.env.PORT || 8765), host = process.env.HOST || "127.0.0.1" } = {}) {
-  openDb();
-  catalog.installDefaultCatalog();
-  failInterruptedJobs();
-  recoverCollaboration();
-  svc.rebuildIndex();
-  svc.seedManuals();
-  const mode = await rag.probeEmbeddings();
-  const server = createServer();
-  await new Promise((resolve) => server.listen(port, host, resolve));
-  console.log(`PBS 智能拆解：http://${host}:${port}/`);
-  console.log(`  模型 ${models.selectedModel()} · 检索 ${mode.kind === "hybrid" ? `混合检索（BM25 + 向量 ${mode.model}）` : `仅关键词检索（BM25）—— ${mode.reason}`}`);
-  return server;
+  // Reserve the endpoint before recovering persisted work. A duplicate launch
+  // must not mark another live server's jobs as interrupted.
+  let ready = false;
+  const server = createServer({ ready: () => ready });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, host, () => { server.off("error", reject); resolve(); });
+  });
+  try {
+    openDb();
+    catalog.installDefaultCatalog();
+    failInterruptedJobs();
+    recoverCollaboration();
+    svc.rebuildIndex();
+    svc.seedManuals();
+    const mode = await rag.probeEmbeddings();
+    ready = true;
+    console.log(`PBS 智能拆解：http://${host}:${port}/`);
+    console.log(`  模型 ${models.selectedModel()} · 检索 ${mode.kind === "hybrid" ? `混合检索（BM25 + 向量 ${mode.model}）` : `仅关键词检索（BM25）—— ${mode.reason}`}`);
+    return server;
+  } catch (error) {
+    await new Promise(resolve => server.close(resolve));
+    throw error;
+  }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === normalize(process.argv[1])) boot();

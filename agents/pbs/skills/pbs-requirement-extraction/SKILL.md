@@ -9,7 +9,7 @@ description: 从客户材料提取保留条件和原文引用的需求初稿；�
 
 ## 阅读与拆解
 
-先查看材料目录、处理覆盖和现有需求。完整拆解用 read_document_batch 按原文顺序读取，沿 next_cursor 与 document_version 继续到结束。list_document_sections 查目录，read_evidence 回查原文与上下文，search_evidence 辅助定位。局部咨询围绕所问范围核查，不强制重读全文，不宣称全文覆盖。
+先查看材料目录和 run_report 的处理覆盖。完整拆解或续接用 read_document_batch 的 unprocessed_only:true 按原文顺序读取剩余内容；起点可直接使用 next_unprocessed_cursor，后续沿 next_cursor 与 document_version 继续，不自行构造游标。处理记录与版本绑定，已保存的片段会跳过，跨批片段从已保存的位置继续。每批先保存 requirements 与 ignored，再读下一批；不要连续通读整份材料后才统一提交。已有需求只在核查相关条目时读取，不为找回上下文遍历全量。list_document_sections 查目录，read_evidence 回查原文与上下文，search_evidence 辅助定位；需要重读已处理段落时也可用 unprocessed_only:false。局部咨询围绕所问范围核查，不强制重读全文，不宣称全文覆盖。
 
 需求主体已明确但数量或边界未知时，保存有依据的部分并关联问题；无法判断是否构成要求时，可先保存独立待判断问题。场景是其他视角的组织成果，发现需场景解释的内容时提出具体问题，不在抽取技能中自动执行场景生成。
 

@@ -28,6 +28,7 @@ const docId = (id) => `material:${id}`;
 export function localAgentAdapter(projectId, { signal, onProgress = () => {}, maxCalls = 500, operationScope = "", checkWrite = () => {}, pbsScope } = {}) {
   repo.getProject(projectId);
   let calls = 0; let finished = null;
+  const readThrough = new Map();
   const documents = () => repo.listMaterials(projectId).map((m) => ({ document_id: docId(m.id), document_version: hash(repo.getMaterial(projectId, m.id).text), title: m.title, kind: m.kind, kind_inferred: Boolean(m.meta.kind_inferred), description: m.meta.description ?? "", size: m.size, extracted: Boolean(m.extracted_at) }));
   const document = (id) => {
     const d = documents().find((d) => d.document_id === id);
@@ -36,13 +37,18 @@ export function localAgentAdapter(projectId, { signal, onProgress = () => {}, ma
   };
   const sources = () => repo.listSegments(projectId);
   const evidence = (s, d) => ({ evidence_id: s.uid, document_id: d.document_id, document_version: d.document_version, text: s.text, chapter: s.chapter, star: s.star, triangle: s.triangle });
-  const covered = (d) => new Map(getDb().prepare("SELECT evidence_id,status,reason FROM agent_coverage WHERE project_id=? AND document_version=?").all(projectId, d.document_version).map((s) => [s.evidence_id, s]));
+  const covered = (d) => new Map(getDb().prepare("SELECT evidence_id,status,reason,processed_until FROM agent_coverage WHERE project_id=? AND document_version=?").all(projectId, d.document_version).map((s) => [s.evidence_id, s]));
+  const progress = (d) => {
+    const known = covered(d);
+    const until = s => Math.min(s.text.length, known.has(s.uid) ? known.get(s.uid).processed_until ?? s.text.length : 0);
+    return { known, until, pending: s => s.text.length > 6 && until(s) < s.text.length };
+  };
   const coverage = () => documents().map((d) => {
-    const known = covered(d); const valid = new Set(repo.listRequirements(projectId, { includeDeleted: false }).filter((r) => r.quote_verified).map((r) => r.seg_uid));
-    const all = sources().filter((s) => docId(s.material_id) === d.document_id && s.text.length > 6);
-    const missing = all.filter((s) => !known.has(s.uid) && !valid.has(s.uid));
-    const ignored = [...known.values()].filter((s) => s.status === "ignored");
-    return { ...d, total_sections: all.length, processed: all.length - missing.length, remaining: missing.length, ignored: ignored.slice(0, 12), ignored_count: ignored.length, next_unprocessed: missing.slice(0, 12).map((s) => s.uid) };
+    const p = progress(d), mine = sources().filter(s => docId(s.material_id) === d.document_id);
+    const all = mine.filter(s => s.text.length > 6), missing = all.filter(p.pending);
+    const ignored = [...p.known.values()].filter(s => s.status === "ignored");
+    const first = missing[0];
+    return { ...d, total_sections: all.length, processed: all.length - missing.length, remaining: missing.length, ignored: ignored.slice(0, 12), ignored_count: ignored.length, next_unprocessed: missing.slice(0, 12).map(s => s.uid), next_unprocessed_cursor: first ? `${mine.findIndex(s => s.uid === first.uid)}:${p.until(first)}` : null };
   });
   const report = () => {
     const requirements = repo.listRequirements(projectId, { includeDeleted: false });
@@ -59,7 +65,15 @@ export function localAgentAdapter(projectId, { signal, onProgress = () => {}, ma
     items.forEach((item, index) => { try { accepted.push({ index, ...tx(() => save(item)) }); } catch (error) { errors.push({ index, message: error.message }); } });
     return { accepted, errors };
   };
-  const recordCoverage = (id, version, status, reason = "") => getDb().prepare("INSERT OR REPLACE INTO agent_coverage(project_id,evidence_id,document_version,status,reason) VALUES (?,?,?,?,?)").run(projectId, id, version, status, reason);
+  const recordCoverage = (source, version, status, reason = "") => {
+    const previous = getDb().prepare("SELECT processed_until FROM agent_coverage WHERE project_id=? AND evidence_id=? AND document_version=?").get(projectId, source.uid, version);
+    const before = previous ? previous.processed_until ?? source.text.length : 0;
+    // Long sources commit only the contiguous portion read in this activation.
+    // Reading alone never advances durable processing coverage.
+    const processed = Math.max(before, readThrough.get(`${version}:${source.uid}`) ?? (previous ? before : source.text.length <= 6000 ? source.text.length : 0));
+    getDb().prepare("INSERT OR REPLACE INTO agent_coverage(project_id,evidence_id,document_version,status,reason,processed_until) VALUES (?,?,?,?,?,?)").run(projectId, source.uid, version, status, reason, processed);
+    return source.text.length > 6 && processed > before;
+  };
 
   const handlers = {
     project_state() {
@@ -70,27 +84,34 @@ export function localAgentAdapter(projectId, { signal, onProgress = () => {}, ma
         pbs_items: repo.listItems(projectId).slice(0, 80).map(({ id, code, name, qty, unit, product_ref }) => ({ id, code, name, qty, unit, product_ref })) };
     },
     list_document_sections(args) {
-      const d = document(args.document_id); const known = covered(d);
-      return { document: d, ...page(sources().filter((s) => docId(s.material_id) === d.document_id).map((s) => ({ evidence_id: s.uid, chapter: s.chapter, excerpt: s.text.slice(0, 120), length: s.text.length, processed: known.has(s.uid) })), args, 30) };
+      const d = document(args.document_id), p = progress(d);
+      return { document: d, ...page(sources().filter((s) => docId(s.material_id) === d.document_id).map((s) => ({ evidence_id: s.uid, chapter: s.chapter, excerpt: s.text.slice(0, 120), length: s.text.length, processed: !p.pending(s) })), args, 30) };
     },
     read_document_batch(args) {
       const d = document(args.document_id);
       if ((args.cursor && !args.document_version) || (args.document_version && args.document_version !== d.document_version)) return err("VERSION_CONFLICT", "分页必须携带原文版本，材料变化后请重新读取");
       const mine = sources().filter((s) => docId(s.material_id) === d.document_id);
+      const p = progress(d);
       const [start, offset] = (args.cursor ?? "0:0").split(":").map(Number);
-      if (!Number.isInteger(start) || start < 0 || !Number.isInteger(offset) || offset < 0 || start > mine.length) throw new Error("文档游标无效");
+      if (!Number.isInteger(start) || start < 0 || !Number.isInteger(offset) || offset < 0 || start > mine.length) throw new Error("文档游标无效，请原样使用next_cursor或run_report中的next_unprocessed_cursor，并携带document_version");
       const items = []; let chars = 0, index = start, at = offset;
       for (; index < mine.length && items.length < (args.limit ?? 60) && chars < 6000; index++) {
         const s = mine[index];
         if (at > s.text.length) throw new Error("文档游标位置无效");
+        if (args.unprocessed_only) {
+          if (!p.pending(s)) { at = 0; continue; }
+          at = Math.max(at, p.until(s));
+        }
         const text = s.text.slice(at, at + 6000 - chars);
+        const key = `${d.document_version}:${s.uid}`, through = readThrough.get(key) ?? p.until(s);
+        if (at <= through) readThrough.set(key, Math.max(through, at + text.length));
         items.push({ ...evidence(s, d), text, source_start: at, source_length: s.text.length });
         chars += text.length;
         at += text.length;
         if (at < s.text.length) break;
         at = 0;
       }
-      return { document: d, items, next_cursor: index < mine.length ? `${index}:${at}` : null };
+      return { document: d, items, next_cursor: index < mine.length ? `${index}:${at}` : null, ...(args.unprocessed_only ? { handling_hint: "本批仅含未处理原文；先保存本批需求和ignored处理记录，再沿next_cursor继续。暂时无法处理的片段保留待办，用run_report回查。" } : {}) };
     },
     read_evidence(args) {
       if (/^product-chunk:\d+$/.test(args.evidence_id)) {
@@ -140,14 +161,15 @@ export function localAgentAdapter(projectId, { signal, onProgress = () => {}, ma
         const existing = repo.listRequirements(projectId, { includeDeleted: false }).find((v) => v.seg_uid === source.uid && normalize(v.text) === normalize(r.text));
         if (existing) {
           if (!existing.edited && existing.status === "待确认" && existing.origin === "系统") repo.updateRequirement(projectId, existing.code, { quote: r.quote, quote_verified: true, revision: existing.revision + 1 });
-          recordCoverage(source.uid, d.document_version, "requirement"); return { code: existing.code, kept: true };
+          const advanced = recordCoverage(source, d.document_version, "requirement"); return { code: existing.code, kept: true, advanced };
         }
         const code = repo.insertRequirement(projectId, { text: r.text, seg_uid: source.uid, quote: r.quote, quote_verified: true, category: r.category, priority: r.priority, inferred: Boolean(r.inferred), star: source.star, triangle: source.triangle, params, rejected_params: rejected, ord: source.ord * 10 });
-        recordCoverage(source.uid, d.document_version, "requirement"); return { code, rejected_params: rejected };
+        const advanced = recordCoverage(source, d.document_version, "requirement"); return { code, rejected_params: rejected, advanced };
       });
       const ignored = batch(args.ignored ?? [], (v) => {
-        if (!all.some((s) => s.uid === v.evidence_id) || !v.reason.trim()) throw new Error("忽略必须引用真实片段并填写原因");
-        recordCoverage(v.evidence_id, d.document_version, "ignored", v.reason); return { evidence_id: v.evidence_id };
+        const source = all.find(s => s.uid === v.evidence_id);
+        if (!source || !v.reason.trim()) throw new Error("忽略必须引用真实片段并填写原因");
+        const advanced = recordCoverage(source, d.document_version, "ignored", v.reason); return { evidence_id: v.evidence_id, advanced };
       });
       const c = coverage().find((v) => v.document_id === d.document_id);
       if (!c.remaining) repo.markExtracted(all[0]?.material_id ?? -1);
